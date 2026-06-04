@@ -217,3 +217,274 @@ def test_clean_keeps_newest_runs(tmp_path):
 
     remaining = sorted(p.name for p in runs.iterdir())
     assert remaining == ["20260102-000000_x", "20260103-000000_x"]
+
+
+# ── Acceptance gate (graded keep-best) ───────────────────────────────────────
+#
+# The gate links each notebook version to the executor report that ran it and the
+# critiques grounded on that report. Quality is GRADED (a 0–100 score from the
+# findings), facts are BINARY (a crashing cell or a BLOCKER is a hard floor). It
+# keeps the BEST version: prefer no crucial issue, then higher quality, then earliest
+# — so a revision is adopted only when it genuinely improves the lesson.
+
+from eduforge.executor import executed_notebook_filename  # noqa: E402
+from eduforge.gate import evaluate_candidates, notebook_candidates  # noqa: E402
+
+
+def _review_loop_pipeline() -> PipelineConfig:
+    return load_pipeline(CONFIG_DIR / "pipeline.review-loop.yaml")
+
+
+def _put_report(store: ArtifactStore, report_name: str, ok: bool) -> None:
+    report = {
+        "ok": ok,
+        "executed_notebook": executed_notebook_filename(report_name),
+        "code_cell_count": 1,
+        "failed_cell_count": 0 if ok else 1,
+        "harness_error": None,
+        "cells": [],
+    }
+    store.put(Artifact(name=report_name, kind="json", content=json.dumps(report)))
+
+
+def _put_text(store: ArtifactStore, name: str, content: str) -> None:
+    store.put(Artifact(name=name, kind="text", content=content))
+
+
+def _put_notebook(store: ArtifactStore, name: str, marker: str) -> None:
+    store.put(Artifact(name=name, kind="notebook",
+                       content=build_notebook([{"type": "code", "source": marker}])))
+
+
+# Quality score = 100 − severity burden (BLOCKER=100, CONFUSING=5, NITPICK=1);
+# a version aggregates the findings of BOTH critics.
+CLEAN_FEEDBACK = "Verdict: yes, I'd understand it."                            # → 100
+NITPICK_FEEDBACK = "NITPICK cell 2 — tiny typo. Verdict: yes."                 # → 99
+BLOCKER_FEEDBACK = "BLOCKER cell 1 — claim contradicts output. Verdict: no."   # crucial → 0
+
+
+def _confusing(n: int) -> str:
+    """Feedback carrying n CONFUSING findings (burden 5n → score 100−5n)."""
+    lines = [f"CONFUSING cell {i} — leap {i} I couldn't follow." for i in range(1, n + 1)]
+    return "\n".join(lines) + "\nVerdict: maybe."
+
+
+def _populate_review_loop(store, *, orig_ok, orig_fb, revised_ok, revised_fb,
+                          orig_review_fb=CLEAN_FEEDBACK, revised_review_fb=CLEAN_FEEDBACK):
+    """Seed a store as the review-loop pipeline would, for both versions —
+    including both critics (student + reviewer) per version."""
+    _put_notebook(store, "notebook", "v = 'original'")
+    _put_report(store, "execution_report", ok=orig_ok)
+    _put_text(store, "student_feedback", orig_fb)
+    _put_text(store, "reviewer_feedback", orig_review_fb)
+    _put_notebook(store, "revised_notebook", "v = 'revised'")
+    _put_report(store, "revised_execution_report", ok=revised_ok)
+    _put_text(store, "revised_feedback", revised_fb)
+    _put_text(store, "revised_reviewer_feedback", revised_review_fb)
+
+
+def test_notebook_candidates_link_each_version_to_its_report_and_critics():
+    candidates = notebook_candidates(_review_loop_pipeline())
+    assert [(c.notebook, c.report, c.feedbacks) for c in candidates] == [
+        ("notebook", "execution_report", ("student_feedback", "reviewer_feedback")),
+        ("revised_notebook", "revised_execution_report",
+         ("revised_feedback", "revised_reviewer_feedback")),
+    ]
+
+
+def test_gate_adopts_a_revision_only_when_it_improves_quality(tmp_path):
+    # Original is below the bar (3 CONFUSING → 85); the revision is clean (100).
+    store = ArtifactStore(tmp_path)
+    _populate_review_loop(store, orig_ok=True, orig_fb=_confusing(3),
+                          revised_ok=True, revised_fb=CLEAN_FEEDBACK)
+
+    decision = evaluate_candidates(_review_loop_pipeline(), store)
+
+    assert decision.chosen.candidate.notebook == "revised_notebook"
+    assert decision.chosen.quality_score == 100
+    assert decision.gate_satisfied is True
+
+
+def test_gate_keeps_original_when_revision_is_no_better(tmp_path):
+    # Equal quality → no value in adopting the revision; avoid churn, keep original.
+    store = ArtifactStore(tmp_path)
+    _populate_review_loop(store, orig_ok=True, orig_fb=CLEAN_FEEDBACK,
+                          revised_ok=True, revised_fb=CLEAN_FEEDBACK)
+
+    decision = evaluate_candidates(_review_loop_pipeline(), store)
+
+    assert decision.chosen.candidate.notebook == "notebook"
+    assert decision.gate_satisfied is True
+
+
+def test_gate_keeps_prior_when_revision_fails_execution(tmp_path):
+    store = ArtifactStore(tmp_path)
+    _populate_review_loop(store, orig_ok=True, orig_fb=CLEAN_FEEDBACK,
+                          revised_ok=False, revised_fb=CLEAN_FEEDBACK)
+
+    decision = evaluate_candidates(_review_loop_pipeline(), store)
+
+    assert decision.chosen.candidate.notebook == "notebook"
+    assert decision.gate_satisfied is True  # the version we ship is itself clean
+
+
+def test_gate_keeps_prior_when_revision_has_blocker(tmp_path):
+    store = ArtifactStore(tmp_path)
+    _populate_review_loop(store, orig_ok=True, orig_fb=CLEAN_FEEDBACK,
+                          revised_ok=True, revised_fb=BLOCKER_FEEDBACK)
+
+    decision = evaluate_candidates(_review_loop_pipeline(), store)
+
+    assert decision.chosen.candidate.notebook == "notebook"
+
+
+def test_gate_blocker_from_reviewer_alone_rejects_revision(tmp_path):
+    # A BLOCKER from the reviewer (student clean) must still reject the revision.
+    store = ArtifactStore(tmp_path)
+    _populate_review_loop(store, orig_ok=True, orig_fb=CLEAN_FEEDBACK,
+                          revised_ok=True, revised_fb=CLEAN_FEEDBACK,
+                          revised_review_fb=BLOCKER_FEEDBACK)
+
+    decision = evaluate_candidates(_review_loop_pipeline(), store)
+
+    assert decision.chosen.candidate.notebook == "notebook"
+
+
+def test_gate_ships_least_bad_when_no_version_is_good_enough(tmp_path):
+    # Neither clears the bar, neither is crucial → ship the higher-quality one but
+    # flag the gate as not satisfied (a human should review the residuals).
+    store = ArtifactStore(tmp_path)
+    _populate_review_loop(store, orig_ok=True, orig_fb=_confusing(4),    # quality 80
+                          revised_ok=True, revised_fb=_confusing(3))      # quality 85
+
+    decision = evaluate_candidates(_review_loop_pipeline(), store)
+
+    assert decision.chosen.candidate.notebook == "revised_notebook"
+    assert decision.chosen.quality_score == 85
+    assert decision.gate_satisfied is False
+    assert decision.crucial_open is False
+
+
+def test_gate_flags_crucial_open_when_all_versions_crucial(tmp_path):
+    store = ArtifactStore(tmp_path)
+    _populate_review_loop(store, orig_ok=False, orig_fb=BLOCKER_FEEDBACK,
+                          revised_ok=False, revised_fb=BLOCKER_FEEDBACK)
+
+    decision = evaluate_candidates(_review_loop_pipeline(), store)
+
+    assert decision.chosen.candidate.notebook == "notebook"  # earliest on a tie
+    assert decision.gate_satisfied is False
+    assert decision.crucial_open is True
+
+
+def test_gate_threshold_is_configurable(tmp_path):
+    # A stricter bar makes an otherwise-fine version no longer 'good enough'.
+    store = ArtifactStore(tmp_path)
+    _put_notebook(store, "notebook", "v = 1")
+    _put_report(store, "execution_report", ok=True)
+    _put_text(store, "student_feedback", _confusing(1))   # quality 95
+
+    skeleton = load_pipeline(CONFIG_DIR / "pipeline.skeleton.yaml")
+    assert evaluate_candidates(skeleton, store, min_quality=90).gate_satisfied is True
+    assert evaluate_candidates(skeleton, store, min_quality=99).gate_satisfied is False
+
+
+def test_gate_single_candidate_passes_through(tmp_path):
+    store = ArtifactStore(tmp_path)
+    _put_notebook(store, "notebook", "v = 1")
+    _put_report(store, "execution_report", ok=True)
+    _put_text(store, "student_feedback", CLEAN_FEEDBACK)
+
+    decision = evaluate_candidates(
+        load_pipeline(CONFIG_DIR / "pipeline.skeleton.yaml"), store
+    )
+
+    assert decision.chosen.candidate.notebook == "notebook"
+    assert decision.gate_satisfied is True
+
+
+def test_orchestrator_delivers_the_accepted_notebook(tmp_path):
+    # End-to-end of finalize: a failing revision must not become lesson.ipynb,
+    # and the manifest must record the gate decision.
+    from eduforge.orchestrator import Orchestrator
+
+    store = ArtifactStore(tmp_path)
+    _populate_review_loop(store, orig_ok=True, orig_fb=CLEAN_FEEDBACK,
+                          revised_ok=False, revised_fb=BLOCKER_FEEDBACK)
+    # The executor writes an executed-with-outputs notebook per version on disk.
+    store.write_file(executed_notebook_filename("execution_report"),
+                     build_notebook([{"type": "code", "source": "v = 'original'"}]))
+    store.write_file(executed_notebook_filename("revised_execution_report"),
+                     build_notebook([{"type": "code", "source": "v = 'revised'"}]))
+
+    orch = Orchestrator(_review_loop_pipeline(), tmp_path, tmp_path)
+    orch._finalize(store, "Some topic", "default.md")
+
+    delivered = store.read_file("lesson.ipynb")
+    assert "v = 'original'" in delivered
+    assert "v = 'revised'" not in delivered
+
+    manifest = json.loads(store.read_file("manifest.json"))
+    assert manifest["gate"]["delivered"] == "notebook"
+    assert manifest["gate"]["satisfied"] is True
+    assert manifest["gate"]["delivered_quality"] == 100
+    assert len(manifest["gate"]["candidates"]) == 2
+
+
+def test_summary_surfaces_quality_and_residual_issues(tmp_path):
+    # Minor leftovers must be listed for the human, never silently buried.
+    from eduforge.gate import evaluate_candidates as _eval
+    from eduforge.report import build_summary
+
+    store = ArtifactStore(tmp_path)
+    _put_notebook(store, "notebook", "v = 1")
+    _put_report(store, "execution_report", ok=True)
+    _put_text(store, "student_feedback", _confusing(2))   # quality 90, 2 residuals
+
+    pipeline = load_pipeline(CONFIG_DIR / "pipeline.skeleton.yaml")
+    decision = _eval(pipeline, store)
+
+    summary = build_summary(pipeline, store, "Topic", "default.md", decision)
+    assert "## Acceptance" in summary
+    assert "quality 90/100" in summary
+    assert "Residual issues (2)" in summary
+
+
+# ── Ledger (findings parsing + graded quality score) ─────────────────────────
+
+from eduforge.ledger import (  # noqa: E402
+    burden,
+    has_blocker,
+    parse_findings,
+    quality_score,
+)
+
+
+def test_parse_findings_extracts_severity_and_cell():
+    feedback = "[BLOCKER] cell 3 — wrong claim\nCONFUSING cell 7 — unclear\nVerdict: no."
+    findings = parse_findings(feedback)
+    assert [(f.severity, f.cell) for f in findings] == [("BLOCKER", 3), ("CONFUSING", 7)]
+
+
+def test_parse_findings_ignores_prose_and_verdict_lines():
+    # "no blockers" in prose must NOT register as a finding.
+    feedback = "Overall this reads well, no blockers at all.\nVerdict: yes."
+    assert parse_findings(feedback) == ()
+
+
+def test_quality_score_drops_with_severity_weight():
+    assert quality_score(parse_findings("Verdict: clean.")) == 100
+    assert quality_score(parse_findings("NITPICK cell 1 — typo.")) == 99
+    assert quality_score(parse_findings("CONFUSING cell 1 — unclear.")) == 95
+    assert quality_score(parse_findings("BLOCKER cell 1 — wrong.")) == 0
+
+
+def test_quality_score_clamps_at_zero():
+    feedback = "\n".join("BLOCKER cell 1 — wrong." for _ in range(3))
+    assert burden(parse_findings(feedback)) == 300
+    assert quality_score(parse_findings(feedback)) == 0
+
+
+def test_has_blocker_detects_only_blocker_severity():
+    assert has_blocker(parse_findings("BLOCKER cell 1 — wrong.")) is True
+    assert has_blocker(parse_findings("CONFUSING cell 1 — unclear.")) is False

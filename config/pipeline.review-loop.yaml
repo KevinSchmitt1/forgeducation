@@ -45,6 +45,13 @@ stages:
     output: student_feedback
     output_kind: text
 
+  - name: reviewer
+    type: llm
+    persona: reviewer.md
+    inputs: [notebook, execution_report, profile]
+    output: reviewer_feedback
+    output_kind: text
+
   # ── The loop: revise from feedback, then re-run and re-check ────────────────
   - name: reviser
     type: llm
@@ -65,4 +72,11 @@ stages:
     persona: student.md
     inputs: [revised_notebook, revised_execution_report, profile]
     output: revised_feedback
+    output_kind: text
+
+  - name: reviewer_revised
+    type: llm
+    persona: reviewer.md
+    inputs: [revised_notebook, revised_execution_report, profile]
+    output: revised_reviewer_feedback
     output_kind: text

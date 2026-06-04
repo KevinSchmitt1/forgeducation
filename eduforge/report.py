@@ -10,9 +10,14 @@ pruned (see ArtifactStore.finalize).
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactStore
 from .config import PipelineConfig, StageType
+from .ledger import parse_findings
+
+if TYPE_CHECKING:
+    from .gate import GateDecision
 
 
 def build_summary(
@@ -20,6 +25,7 @@ def build_summary(
     store: ArtifactStore,
     brief: str,
     profile_label: str,
+    gate_decision: "GateDecision | None" = None,
 ) -> str:
     """Render a Markdown summary of the completed run."""
     lines: list[str] = [
@@ -41,9 +47,43 @@ def build_summary(
             f"{_stage_result(stage, store)} |"
         )
 
+    lines += _acceptance_section(gate_decision, store)
     lines += _execution_details(pipeline, store)
     lines += _narrative_outputs(pipeline, store)
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _acceptance_section(decision: "GateDecision | None", store: ArtifactStore) -> list[str]:
+    """The shipped version, its quality score, and the residual issues a human should
+    review — so minor leftovers are surfaced, never silently buried."""
+    if decision is None or decision.chosen is None:
+        return []
+    chosen = decision.chosen
+
+    if decision.crucial_open:
+        verdict = "✗ NEEDS HUMAN REVIEW — crucial issue(s) still open"
+    elif decision.gate_satisfied:
+        verdict = "✓ good enough — cleared the quality bar"
+    else:
+        verdict = "⚠ below quality target — minor issues left for human review"
+
+    lines = [
+        "",
+        "## Acceptance",
+        "",
+        f"- **Shipped:** {chosen.candidate.notebook} — quality "
+        f"{chosen.quality_score}/100",
+        f"- **Verdict:** {verdict}",
+    ]
+
+    findings: list = []
+    for feedback in chosen.candidate.feedbacks:
+        if store.has(feedback):
+            findings += parse_findings(store.get(feedback).content)
+    if findings:
+        lines += ["", f"**Residual issues ({len(findings)}) — for human review:**"]
+        lines += [f"- {finding.text}" for finding in findings]
+    return lines
 
 
 def _overall_line(pipeline: PipelineConfig, store: ArtifactStore) -> str:

@@ -17,6 +17,7 @@ from .agent import LLMAgent
 from .artifacts import Artifact, ArtifactStore
 from .config import PipelineConfig, StageType
 from .executor import ExecutorStage, executed_notebook_filename
+from .gate import GateDecision, evaluate_candidates
 from .report import build_summary
 
 # Files a successful run keeps; everything else is pruned as intermediate plumbing.
@@ -67,25 +68,28 @@ class Orchestrator:
         return store
 
     def _finalize(self, store: ArtifactStore, brief: str, profile_label: str) -> None:
-        """On success: write the deliverable notebook + SUMMARY.md, then prune the
-        intermediate plumbing so the run dir holds only human-facing files."""
-        store.write_file(DELIVERABLE_NOTEBOOK, self._deliverable_notebook(store))
+        """On success: pick the notebook the gate accepts, write it + SUMMARY.md, then
+        prune the intermediate plumbing so the run dir holds only human-facing files."""
+        decision = evaluate_candidates(self._pipeline, store)
+        store.write_file(DELIVERABLE_NOTEBOOK, self._deliverable_notebook(store, decision))
         store.write_file(
-            SUMMARY_FILE, build_summary(self._pipeline, store, brief, profile_label)
+            SUMMARY_FILE,
+            build_summary(self._pipeline, store, brief, profile_label, decision),
         )
         removed = store.finalize(RETAINED_FILES)
         store.write_manifest(
             self._pipeline.name,
             extra={"status": "completed", "retained": sorted(RETAINED_FILES),
-                   "pruned": sorted(removed)},
+                   "pruned": sorted(removed), "gate": _gate_manifest(decision)},
         )
 
-    def _deliverable_notebook(self, store: ArtifactStore) -> str:
-        """The notebook a human should open: the executed-with-outputs notebook from
-        the last executor stage, or the last assembled notebook if none ran."""
-        for stage in reversed(self._pipeline.stages):
-            if stage.type is StageType.EXECUTOR:
-                return store.read_file(executed_notebook_filename(stage.output))
+    def _deliverable_notebook(self, store: ArtifactStore, decision: GateDecision) -> str:
+        """The notebook a human should open: the executed-with-outputs notebook of the
+        version the gate accepted, or the last assembled notebook if none ran."""
+        if decision.chosen is not None:
+            return store.read_file(
+                executed_notebook_filename(decision.chosen.candidate.report)
+            )
         for stage in reversed(self._pipeline.stages):
             if stage.output_kind == "notebook" and store.has(stage.output):
                 return store.get(stage.output).content
@@ -101,3 +105,25 @@ class Orchestrator:
 def _notify(callback, stage_name: str, status: str, detail: str) -> None:
     if callback is not None:
         callback(stage_name, status, detail)
+
+
+def _gate_manifest(decision: GateDecision) -> dict:
+    """Record the acceptance gate's decision for the run's audit trail."""
+    chosen = decision.chosen
+    return {
+        "satisfied": decision.gate_satisfied,
+        "crucial_open": decision.crucial_open,
+        "delivered": chosen.candidate.notebook if chosen else None,
+        "delivered_quality": chosen.quality_score if chosen else None,
+        "candidates": [
+            {
+                "notebook": result.candidate.notebook,
+                "executed_ok": result.executed_ok,
+                "has_blocker": result.has_blocker,
+                "quality_score": result.quality_score,
+                "crucial": result.crucial,
+                "accepted": result.accepted,
+            }
+            for result in decision.results
+        ],
+    }
