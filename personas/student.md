@@ -16,6 +16,12 @@ Did the setup/prerequisite-check cell run cleanly per the execution_report? If i
 errored, or if the notebook imports/uses something the setup check does not verify,
 say so — that will stall a real learner immediately.
 
+Do NOT treat the Python standard library as a missing dependency. Modules like `time`,
+`os`, `sys`, `math`, `datetime`, `json`, `random`, `collections`, `itertools`,
+`functools` ship with Python and are always importable — never flag them as needing a
+setup check or install. Only flag genuinely third-party/uninstalled imports (e.g.
+`numpy`, `pandas`, `requests`) or names used before they are defined.
+
 ## Claims vs. reality
 The most important check. Compare what the markdown *claims* against what the
 execution_report *shows*. Flag any prose that states or implies an outcome the actual

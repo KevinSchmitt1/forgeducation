@@ -10,6 +10,7 @@ Run from the repo root:  pytest -q
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -219,20 +220,68 @@ def test_build_summary_reports_execution_and_narrative(tmp_path):
     assert "1/1 cells failed" in summary   # stage result column
 
 
-def test_clean_keeps_newest_runs(tmp_path):
+def _clean_args(**overrides):
     from argparse import Namespace
 
-    from eduforge.cli import _cmd_clean
+    defaults = {"keep": 10, "runs": None, "yes": True, "dry_run": False}
+    defaults.update(overrides)
+    return Namespace(**defaults)
 
+
+def _make_runs(tmp_path, stamps):
     runs = tmp_path / "runs"
     runs.mkdir()
-    for stamp in ["20260101-000000_x", "20260102-000000_x", "20260103-000000_x"]:
+    for stamp in stamps:
         (runs / stamp).mkdir()
+    return runs
 
-    _cmd_clean(Namespace(keep=2, runs=str(runs)))
+
+def test_clean_keeps_newest_runs(tmp_path):
+    from eduforge.cli import _cmd_clean
+
+    runs = _make_runs(tmp_path, ["20260101-000000_x", "20260102-000000_x", "20260103-000000_x"])
+
+    _cmd_clean(_clean_args(keep=2, runs=str(runs), yes=True))
 
     remaining = sorted(p.name for p in runs.iterdir())
     assert remaining == ["20260102-000000_x", "20260103-000000_x"]
+
+
+def test_clean_dry_run_deletes_nothing(tmp_path):
+    from eduforge.cli import _cmd_clean
+
+    runs = _make_runs(tmp_path, ["20260101-000000_x", "20260102-000000_x", "20260103-000000_x"])
+
+    rc = _cmd_clean(_clean_args(keep=1, runs=str(runs), dry_run=True))
+
+    assert rc == 0
+    assert len(list(runs.iterdir())) == 3  # nothing removed
+
+
+def test_clean_rejects_negative_keep(tmp_path):
+    from eduforge.cli import _cmd_clean
+
+    runs = _make_runs(tmp_path, ["20260101-000000_x"])
+
+    rc = _cmd_clean(_clean_args(keep=-1, runs=str(runs)))
+
+    assert rc == 2
+    assert len(list(runs.iterdir())) == 1  # untouched
+
+
+def test_clean_refuses_without_confirmation_when_not_a_tty(tmp_path, monkeypatch):
+    # No --yes and stdin is not interactive → refuse rather than wipe runs blindly.
+    import sys
+
+    from eduforge.cli import _cmd_clean
+
+    runs = _make_runs(tmp_path, ["20260101-000000_x", "20260102-000000_x"])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+
+    rc = _cmd_clean(_clean_args(keep=0, runs=str(runs), yes=False))
+
+    assert rc == 1
+    assert len(list(runs.iterdir())) == 2  # nothing deleted
 
 
 # ── Acceptance gate (graded keep-best) ───────────────────────────────────────
@@ -245,6 +294,8 @@ def test_clean_keeps_newest_runs(tmp_path):
 
 from eduforge.executor import executed_notebook_filename  # noqa: E402
 from eduforge.gate import evaluate_candidates, notebook_candidates  # noqa: E402
+
+
 def _review_loop_pipeline() -> PipelineConfig:
     return PipelineConfig.model_validate(
         {
@@ -583,28 +634,42 @@ def test_orchestrator_runs_revision_loop_until_good_enough(tmp_path):
     summary = store.read_file("SUMMARY.md")
     assert "**Iterations:** 2" in summary
     assert "**Quality trend:** 85 → 100" in summary
+    # Regression: the success path must pass timings to the summary, not just the
+    # manifest — the README promises per-stage timing + total runtime in SUMMARY.md.
+    assert "Total runtime" in summary
+
+
+def _script_iterations(*, baseline_student, baseline_review, per_iter_student,
+                       per_iter_review, max_iterations):
+    """Build notebook_markers / text_outputs / report_ok dicts covering the baseline
+    plus every revision iteration the full-budget loop may run."""
+    notebook_markers = {"notebook": "baseline"}
+    text_outputs = {
+        "lesson_plan": "plan",
+        "student_feedback": baseline_student,
+        "reviewer_feedback": baseline_review,
+    }
+    report_ok = {"execution_report": True}
+    for i in range(1, max_iterations + 1):
+        notebook_markers[f"revised_notebook__i{i}"] = f"revision-{i}"
+        text_outputs[f"student_feedback__i{i}"] = per_iter_student
+        text_outputs[f"reviewer_feedback__i{i}"] = per_iter_review
+        report_ok[f"revised_execution_report__i{i}"] = True
+    return notebook_markers, text_outputs, report_ok
 
 
 def test_orchestrator_hard_fails_when_crucial_issues_remain(tmp_path):
     from eduforge.orchestrator import Orchestrator
 
     pipeline = load_pipeline(CONFIG_DIR / "pipeline.review-loop.yaml")
+    # Every iteration keeps the same BLOCKER → loop spends its full budget, then hard-fails.
+    markers, texts, reports = _script_iterations(
+        baseline_student=BLOCKER_FEEDBACK, baseline_review=CLEAN_FEEDBACK,
+        per_iter_student=BLOCKER_FEEDBACK, per_iter_review=CLEAN_FEEDBACK,
+        max_iterations=pipeline.revision.max_iterations,
+    )
     runner = _scripted_runner_factory(
-        notebook_markers={
-            "notebook": "baseline",
-            "revised_notebook__i1": "revision-1",
-        },
-        text_outputs={
-            "lesson_plan": "plan",
-            "student_feedback": BLOCKER_FEEDBACK,
-            "reviewer_feedback": CLEAN_FEEDBACK,
-            "student_feedback__i1": BLOCKER_FEEDBACK,
-            "reviewer_feedback__i1": CLEAN_FEEDBACK,
-        },
-        report_ok={
-            "execution_report": True,
-            "revised_execution_report__i1": True,
-        },
+        notebook_markers=markers, text_outputs=texts, report_ok=reports,
     )
 
     runs_root = tmp_path / "runs"
@@ -618,6 +683,42 @@ def test_orchestrator_hard_fails_when_crucial_issues_remain(tmp_path):
     assert manifest["status"] == "failed"
     assert manifest["gate"]["crucial_open"] is True
     assert not (run_dir / "lesson.ipynb").exists()
+    # P3: a failed run still leaves a human-readable summary, not just the manifest.
+    assert (run_dir / "SUMMARY.md").exists()
+    assert "NEEDS HUMAN REVIEW" in (run_dir / "SUMMARY.md").read_text()
+    # last_run_dir is exposed for the CLI to surface, even on failure (#11).
+    assert orch.last_run_dir == run_dir
+
+
+def test_revision_loop_uses_full_budget_on_a_persistent_stall(tmp_path):
+    # P1: with require_progress, a quality tie no longer aborts the loop after one round.
+    # Every version sits at 85 (3 CONFUSING) — below the bar, never crucial — so the loop
+    # should run all max_iterations rounds before shipping the least-bad version.
+    from eduforge.orchestrator import Orchestrator
+
+    pipeline = load_pipeline(CONFIG_DIR / "pipeline.review-loop.yaml")
+    max_iter = pipeline.revision.max_iterations
+    markers, texts, reports = _script_iterations(
+        baseline_student=_confusing(3), baseline_review=CLEAN_FEEDBACK,
+        per_iter_student=_confusing(3), per_iter_review=CLEAN_FEEDBACK,
+        max_iterations=max_iter,
+    )
+    runner = _scripted_runner_factory(
+        notebook_markers=markers, text_outputs=texts, report_ok=reports,
+    )
+
+    runs_root = tmp_path / "runs"
+    orch = Orchestrator(pipeline, tmp_path, runs_root, runner_factory=runner)
+    store = orch.run("How a hash map works", "default.md", profile_label="learner.md")
+
+    manifest = json.loads(store.read_file("manifest.json"))
+    # baseline + every iteration evaluated → full budget spent, not a single round.
+    assert manifest["gate"]["iterations"] == max_iter + 1
+    assert manifest["gate"]["satisfied"] is False
+    assert manifest["gate"]["crucial_open"] is False
+    # #8: timing is recorded for the whole run.
+    assert "total_seconds" in manifest
+    assert manifest["timings"]  # per-stage durations present
 
 
 def test_summary_surfaces_quality_and_residual_issues(tmp_path):
@@ -677,3 +778,376 @@ def test_quality_score_clamps_at_zero():
 def test_has_blocker_detects_only_blocker_severity():
     assert has_blocker(parse_findings("BLOCKER cell 1 — wrong.")) is True
     assert has_blocker(parse_findings("CONFUSING cell 1 — unclear.")) is False
+
+
+# ── Revision stages (P5: reviser anchored to the brief) ──────────────────────
+
+def test_reviser_stage_receives_the_brief_as_input():
+    from eduforge.orchestrator import Orchestrator
+
+    pipeline = load_pipeline(CONFIG_DIR / "pipeline.review-loop.yaml")
+    orch = Orchestrator(pipeline, Path("personas"), Path("runs"))
+    stages = orch._build_revision_stages(
+        policy=pipeline.revision, iteration=1,
+        notebook_name="notebook", ledger_name="issue_ledger__i1",
+    )
+    reviser = stages[0]
+    assert reviser.name == "reviser__i1"
+    assert "brief" in reviser.inputs  # anchor to the original topic, not just the notebook
+
+
+# ── CLI boundaries (#2 bad config, #3 empty topic, #4 honest exit code) ──────
+
+def test_cli_rejects_empty_topic_without_running(capsys):
+    from eduforge.cli import main
+
+    rc = main(["build", "--topic", "   ", "--config", str(CONFIG_DIR / "pipeline.skeleton.yaml")])
+
+    assert rc == 2  # usage error, before any API call
+    assert "topic" in capsys.readouterr().err.lower()
+
+
+def test_cli_reports_clean_error_for_missing_config(capsys, tmp_path):
+    from eduforge.cli import main
+
+    rc = main(["build", "--topic", "Hashing", "--config", str(tmp_path / "nope.yaml")])
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "not found" in err.lower()
+    assert "Traceback" not in err  # clean message, not a raw stack trace
+
+
+def _write_manifest_with_gate(store, gate: dict) -> None:
+    store.write_file("manifest.json", json.dumps({"gate": gate}))
+    store.write_file("lesson.ipynb", "{}")
+    store.write_file("SUMMARY.md", "# s")
+
+
+def test_cli_exits_nonzero_when_crucial_issue_is_open(tmp_path):
+    # #4: a notebook the gate marks crucial-open must NOT report success.
+    from eduforge.cli import _report_outcome
+
+    store = ArtifactStore(tmp_path)
+    _write_manifest_with_gate(store, {"crucial_open": True, "satisfied": False})
+
+    assert _report_outcome(store) == 1
+
+
+def test_cli_warns_but_succeeds_below_quality_bar(tmp_path):
+    from eduforge.cli import _report_outcome
+
+    store = ArtifactStore(tmp_path)
+    _write_manifest_with_gate(store, {"crucial_open": False, "satisfied": False})
+
+    assert _report_outcome(store) == 0
+
+
+def test_cli_reports_clean_success(tmp_path):
+    from eduforge.cli import _report_outcome
+
+    store = ArtifactStore(tmp_path)
+    _write_manifest_with_gate(store, {"crucial_open": False, "satisfied": True})
+
+    assert _report_outcome(store) == 0
+
+
+def test_pipelines_command_lists_bundled_configs(capsys):
+    from eduforge.cli import main
+
+    rc = main(["pipelines"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "skeleton" in out
+    assert "review-loop" in out
+
+
+# ── LLM client connection wiring (no network) ────────────────────────────────
+
+def test_connection_kwargs_for_ollama_uses_placeholder_key(monkeypatch):
+    from eduforge.config import Provider
+    from eduforge.llm import DEFAULT_OLLAMA_BASE_URL, OLLAMA_PLACEHOLDER_KEY, _connection_kwargs
+
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    kwargs = _connection_kwargs(Provider.OLLAMA)
+
+    assert kwargs == {"base_url": DEFAULT_OLLAMA_BASE_URL, "api_key": OLLAMA_PLACEHOLDER_KEY}
+
+
+def test_connection_kwargs_for_ollama_honours_env_base_url(monkeypatch):
+    from eduforge.config import Provider
+    from eduforge.llm import _connection_kwargs
+
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://example.test:9999/v1")
+    assert _connection_kwargs(Provider.OLLAMA)["base_url"] == "http://example.test:9999/v1"
+
+
+def test_connection_kwargs_for_openai_requires_a_key(monkeypatch):
+    from eduforge.config import Provider
+    from eduforge.llm import _connection_kwargs
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        _connection_kwargs(Provider.OPENAI)
+
+
+def test_connection_kwargs_for_openai_passes_key_through(monkeypatch):
+    from eduforge.config import Provider
+    from eduforge.llm import _connection_kwargs
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-123")
+    assert _connection_kwargs(Provider.OPENAI) == {"api_key": "sk-test-123"}
+
+
+# ── Executor: input contract + in-process fallback ───────────────────────────
+
+def test_executor_rejects_more_than_one_input(tmp_path):
+    from eduforge.config import StageConfig
+
+    store = _store_with_notebook(tmp_path, ["x = 1"])
+    stage = StageConfig(
+        name="executor", type="executor", inputs=["notebook", "extra"], output="report"
+    )
+    with pytest.raises(ValueError, match="exactly one input"):
+        ExecutorStage(stage).run(store)
+
+
+def test_in_process_fallback_captures_stdout_and_errors(tmp_path):
+    # The PermissionError fallback runs cells in-process; it must still capture a
+    # cell's printed output and turn an exception into an error output (allow-errors
+    # semantics), so the report stays truthful even without a kernel.
+    import nbformat
+
+    notebook = nbformat.reads(
+        build_notebook([
+            {"type": "code", "source": "print('hello fallback')"},
+            {"type": "markdown", "source": "# skip me"},
+            {"type": "code", "source": "raise ValueError('boom')"},
+        ]),
+        as_version=4,
+    )
+
+    ExecutorStage(_executor_stage())._execute_in_process(notebook)
+
+    code_cells = [c for c in notebook.cells if c.cell_type == "code"]
+    assert "hello fallback" in code_cells[0].outputs[0]["text"]
+    assert code_cells[1].outputs[0]["output_type"] == "error"
+    assert code_cells[1].outputs[0]["ename"] == "ValueError"
+
+
+# ── Progress spinner (TTY-gated) ─────────────────────────────────────────────
+
+class _FakeTTY(io.StringIO):
+    """A writable stream that reports itself as interactive."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_spinner_is_inactive_when_stream_is_not_a_tty():
+    from eduforge.progress import Spinner
+
+    stream = io.StringIO()  # StringIO.isatty() is False
+    spinner = Spinner("planner", stream=stream).start()
+    spinner.stop()
+
+    assert spinner._active is False
+    assert stream.getvalue() == ""  # no animation, nothing to clear
+
+
+def test_spinner_animates_then_clears_on_a_tty():
+    import time
+
+    from eduforge.progress import FRAME_INTERVAL_SECONDS, SPINNER_FRAMES, Spinner
+
+    stream = _FakeTTY()
+    with Spinner("planner", stream=stream):
+        time.sleep(FRAME_INTERVAL_SECONDS * 2)  # let at least one frame render
+
+    output = stream.getvalue()
+    assert any(frame in output for frame in SPINNER_FRAMES)  # animated
+    assert output.endswith("\r\033[K")  # line cleared on exit
+
+
+# ── LLMAgent prompt assembly + post-processing (no network) ──────────────────
+
+def _ollama_agent(persona_dir: Path, *, output_kind: str):
+    """An LLMAgent whose client targets Ollama, so construction needs no API key
+    and no network call (the OpenAI SDK only connects on an actual request)."""
+    from eduforge.agent import LLMAgent
+
+    pipeline = PipelineConfig.model_validate({
+        "name": "t",
+        "defaults": {"provider": "ollama"},
+        "stages": [{
+            "name": "code_author", "persona": "code_author.md",
+            "inputs": ["brief"], "output": "notebook", "output_kind": output_kind,
+        }],
+    })
+    return LLMAgent(pipeline.stages[0], pipeline, persona_dir)
+
+
+def test_agent_post_process_strips_text_output(tmp_path):
+    agent = _ollama_agent(tmp_path, output_kind="text")
+    assert agent._post_process("  spaced feedback  \n") == "spaced feedback"
+
+
+def test_agent_post_process_assembles_notebook_from_json(tmp_path):
+    agent = _ollama_agent(tmp_path, output_kind="notebook")
+    raw = '[{"type": "markdown", "source": "# Title"}, {"type": "code", "source": "x = 1"}]'
+
+    assembled = agent._post_process(raw)
+
+    assert '"cell_type": "markdown"' in assembled
+    assert '"cell_type": "code"' in assembled
+
+
+def test_agent_user_prompt_delimits_inputs_and_indexes_notebooks(tmp_path):
+    agent = _ollama_agent(tmp_path, output_kind="text")
+    store = ArtifactStore(tmp_path)
+    store.put(Artifact(name="brief", kind="text", content="Explain hashing"))
+    store.put(Artifact(
+        name="notebook", kind="notebook",
+        content=build_notebook([{"type": "code", "source": "x = 1"}]),
+    ))
+    # The stage only declares 'brief'; point it at both to exercise notebook rendering.
+    agent._stage = agent._stage.model_copy(update={"inputs": ["brief", "notebook"]})
+
+    prompt = agent._build_user_prompt(store)
+
+    assert '<artifact name="brief" kind="text">' in prompt
+    assert "Explain hashing" in prompt
+    assert '<artifact name="notebook" kind="notebook">' in prompt
+    assert render_indexed(store.get("notebook").content) in prompt
+
+
+# ── LLMClient.complete: success + error wrapping (fake client, no network) ────
+
+def _llm_client_with_fake(create):
+    """An LLMClient whose underlying OpenAI client is replaced by a fake. The Ollama
+    provider lets the real client construct without a key; we then swap the transport."""
+    from types import SimpleNamespace
+
+    from eduforge.config import ModelConfig, Provider
+    from eduforge.llm import LLMClient
+
+    client = LLMClient(ModelConfig(provider=Provider.OLLAMA))
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    return client
+
+
+def _completion(content):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
+def test_llm_complete_returns_model_text():
+    client = _llm_client_with_fake(lambda **_: _completion("the answer"))
+    assert client.complete("sys", "user") == "the answer"
+
+
+def test_llm_complete_wraps_api_errors_with_context():
+    def boom(**_):
+        raise ConnectionError("Connection error.")
+
+    client = _llm_client_with_fake(boom)
+    with pytest.raises(RuntimeError, match="LLM call failed.*ollama.*Connection error"):
+        client.complete("sys", "user")
+
+
+def test_llm_complete_rejects_empty_content():
+    client = _llm_client_with_fake(lambda **_: _completion(""))
+    with pytest.raises(RuntimeError, match="empty content"):
+        client.complete("sys", "user")
+
+
+# ── LLMAgent.run + persona loading (fake client, no network) ─────────────────
+
+def test_agent_load_persona_raises_for_missing_file(tmp_path):
+    agent = _ollama_agent(tmp_path, output_kind="text")  # tmp_path has no persona files
+    with pytest.raises(FileNotFoundError, match="Persona file for stage 'code_author'"):
+        agent._load_persona()
+
+
+def test_agent_run_writes_processed_output_to_store(tmp_path):
+    persona_dir = tmp_path / "personas"
+    persona_dir.mkdir()
+    (persona_dir / "code_author.md").write_text("You are the author.", encoding="utf-8")
+
+    agent = _ollama_agent(persona_dir, output_kind="text")
+    agent._client = _llm_client_with_fake(lambda **_: _completion("  drafted lesson  "))
+
+    store = ArtifactStore(tmp_path)
+    store.put(Artifact(name="brief", kind="text", content="Explain hashing"))
+
+    artifact = agent.run(store)
+
+    assert artifact.content == "drafted lesson"  # post-processed (stripped)
+    assert store.get("notebook").content == "drafted lesson"  # persisted under stage output
+
+
+# ── CLI helpers (header, profile loading, stage reporter, .env) ───────────────
+
+def test_build_header_advertises_revision_rounds():
+    from eduforge.cli import _build_header
+
+    pipeline = load_pipeline(CONFIG_DIR / "pipeline.review-loop.yaml")
+    header = _build_header(pipeline, "learner.md")
+
+    assert "review-loop" in header
+    assert "revision round(s)" in header  # honest about the bounded extra rounds
+    assert "learner.md" in header
+
+
+def test_build_header_for_a_linear_pipeline_counts_stages():
+    from eduforge.cli import _build_header
+
+    pipeline = load_pipeline(CONFIG_DIR / "pipeline.skeleton.yaml")
+    assert "stage(s)" in _build_header(pipeline, "default.md")
+
+
+def test_read_profile_returns_contents(tmp_path):
+    from eduforge.cli import _read_profile
+
+    profile = tmp_path / "p.md"
+    profile.write_text("a web-dev beginner", encoding="utf-8")
+    assert _read_profile(profile) == "a web-dev beginner"
+
+
+def test_read_profile_raises_for_missing_file(tmp_path):
+    from eduforge.cli import _read_profile
+
+    with pytest.raises(FileNotFoundError, match="Learner profile not found"):
+        _read_profile(tmp_path / "missing.md")
+
+
+def test_stage_reporter_prints_done_and_error_lines(capsys):
+    from eduforge.cli import _StageReporter
+
+    reporter = _StageReporter()
+    reporter("planner", "start", "llm")   # spinner inactive under captured (non-TTY) stdout
+    reporter("planner", "done", "lesson_plan.md  (1.2s)")
+    reporter("executor", "error", "boom")
+
+    out = capsys.readouterr().out
+    assert "✓ planner  → lesson_plan.md  (1.2s)" in out
+    assert "✗ executor  → boom" in out
+
+
+def test_load_dotenv_sets_only_absent_keys(tmp_path, monkeypatch):
+    from eduforge.cli import _load_dotenv
+
+    env_file = tmp_path / ".env"
+    env_file.write_text('NEW_KEY="from-file"\nEXISTING=should-not-win\n', encoding="utf-8")
+    monkeypatch.delenv("NEW_KEY", raising=False)
+    monkeypatch.setenv("EXISTING", "already-set")
+
+    _load_dotenv(env_file)
+
+    import os
+    assert os.environ["NEW_KEY"] == "from-file"      # absent key loaded (quotes stripped)
+    assert os.environ["EXISTING"] == "already-set"   # never overrides the environment

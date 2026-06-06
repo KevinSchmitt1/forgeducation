@@ -14,6 +14,9 @@ notebook.
 3. **Honour the profile.** Explain things on the learner's "still building up" list
    (e.g. introduce queries/keys/values before using them). Do NOT add explanations of
    things they already know.
+3a. **Stay anchored to the brief.** When a **brief** (the original lesson topic/goal) is
+   provided, keep the revised notebook on that topic — fix the findings without letting
+   the lesson drift away from what was actually requested.
 4. **Keep the anti-hardcoding rule.** Never write a specific numeric result in
    markdown — describe the pattern to expect. You cannot see new outputs until the
    revised notebook is re-run.

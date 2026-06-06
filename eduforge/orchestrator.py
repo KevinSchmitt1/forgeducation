@@ -12,8 +12,9 @@ enough, progress stalls, or the iteration budget is exhausted.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from .agent import LLMAgent
 from .artifacts import Artifact, ArtifactStore
@@ -44,6 +45,15 @@ class Orchestrator:
         self._personas_dir = personas_dir
         self._runs_root = runs_root
         self._runner_factory = runner_factory or self._build_runner
+        # Per-run state, reset at the top of run():
+        self._last_run_dir: Path | None = None  # exposed so the CLI can point at debug files
+        self._timings: dict[str, float] = {}     # stage name -> wall-clock seconds
+
+    @property
+    def last_run_dir(self) -> Path | None:
+        """The most recent run directory, set as soon as it is created — available even
+        when the run later fails, so callers can point a user at the debug files."""
+        return self._last_run_dir
 
     def run(
         self,
@@ -60,6 +70,8 @@ class Orchestrator:
         progress reporting — the CLI uses it to stream a live status line.
         """
         store = ArtifactStore.create(self._runs_root, self._pipeline.name)
+        self._last_run_dir = store.run_dir
+        self._timings = {}
         store.put(Artifact(name="brief", kind="text", content=brief))
         store.put(Artifact(name="profile", kind="text", content=profile))
 
@@ -70,6 +82,7 @@ class Orchestrator:
                 self._runner_factory,
                 self._pipeline.name,
                 on_stage,
+                self._timings,
             )
 
         runtime_pipeline = self._pipeline
@@ -96,6 +109,12 @@ class Orchestrator:
         )
 
         if revision is not None and decision.crucial_open:
+            # Hard fail, but leave the human something to read: write a SUMMARY.md
+            # (its verdict renders the crucial-open state) and keep every debug file.
+            store.write_file(
+                SUMMARY_FILE,
+                build_summary(pipeline, store, brief, profile_label, decision, self._timings),
+            )
             store.write_manifest(
                 pipeline.name,
                 extra={
@@ -103,6 +122,7 @@ class Orchestrator:
                     "failed_stage": "revision_loop",
                     "error": "Revision loop exhausted with a crucial issue still open",
                     "gate": _gate_manifest(decision),
+                    **self._run_meta(),
                 },
             )
             raise RuntimeError("Revision loop exhausted with a crucial issue still open")
@@ -110,7 +130,7 @@ class Orchestrator:
         store.write_file(DELIVERABLE_NOTEBOOK, self._deliverable_notebook(store, decision))
         store.write_file(
             SUMMARY_FILE,
-            build_summary(pipeline, store, brief, profile_label, decision),
+            build_summary(pipeline, store, brief, profile_label, decision, self._timings),
         )
         removed = store.finalize(RETAINED_FILES)
         store.write_manifest(
@@ -120,8 +140,16 @@ class Orchestrator:
                 "retained": sorted(RETAINED_FILES),
                 "pruned": sorted(removed),
                 "gate": _gate_manifest(decision),
+                **self._run_meta(),
             },
         )
+
+    def _run_meta(self) -> dict:
+        """Timing facts recorded in every manifest, for cost/latency visibility."""
+        return {
+            "timings": dict(self._timings),
+            "total_seconds": round(sum(self._timings.values()), 3),
+        }
 
     def _deliverable_notebook(self, store: ArtifactStore, decision: GateDecision) -> str:
         """The notebook a human should open: the executed-with-outputs notebook of the
@@ -182,6 +210,7 @@ class Orchestrator:
                     self._runner_factory,
                     self._pipeline.name,
                     on_stage,
+                    self._timings,
                 )
 
             runtime_stages.extend(revision_stages)
@@ -197,7 +226,11 @@ class Orchestrator:
 
             _append_ledger_entry(ledger, f"iteration {iteration}", new_result, store)
 
-            if policy.require_progress and _rank(new_result) <= _rank(current_result):
+            # Spend the whole iteration budget on a stuck crucial issue: only bail early
+            # when the revision is *strictly worse* than the current best. A tie (e.g. a
+            # BLOCKER unchanged at rank (0, 0)) keeps iterating so the reviser gets more
+            # attempts — keep-best still prevents a regression from ever shipping.
+            if policy.require_progress and _rank(new_result) < _rank(current_result):
                 break
 
             current_result = decision.chosen or current_result
@@ -223,7 +256,8 @@ class Orchestrator:
                 name=f"reviser__i{iteration}",
                 type=StageType.LLM,
                 persona=policy.reviser,
-                inputs=[notebook_name, ledger_name, "profile"],
+                # 'brief' anchors the reviser to the original topic so revisions don't drift.
+                inputs=["brief", notebook_name, ledger_name, "profile"],
                 output=notebook_output,
                 output_kind="notebook",
                 model=reviser_model,
@@ -257,8 +291,10 @@ def _run_stage(
     runner_factory,
     pipeline_name: str,
     on_stage,
+    timings: dict[str, float] | None = None,
 ) -> None:
     _notify(on_stage, stage.name, "start", stage.type.value)
+    started = time.perf_counter()
     try:
         runner = runner_factory(stage)
         artifact = runner.run(store)
@@ -269,7 +305,10 @@ def _run_stage(
             extra={"status": "failed", "failed_stage": stage.name, "error": str(exc)},
         )
         raise
-    _notify(on_stage, stage.name, "done", artifact.filename)
+    elapsed = time.perf_counter() - started
+    if timings is not None:
+        timings[stage.name] = round(elapsed, 3)
+    _notify(on_stage, stage.name, "done", f"{artifact.filename}  ({elapsed:.1f}s)")
 
 
 def _notify(callback, stage_name: str, status: str, detail: str) -> None:
@@ -282,7 +321,10 @@ def _gate_manifest(decision: GateDecision) -> dict:
     chosen = decision.chosen
     scores = [result.quality_score for result in decision.results]
     shipped_index = (
-        next((index for index, result in enumerate(decision.results, start=1) if result == chosen), None)
+        next(
+            (i for i, result in enumerate(decision.results, start=1) if result == chosen),
+            None,
+        )
         if chosen is not None
         else None
     )
@@ -324,7 +366,9 @@ def _result_for_report(decision: GateDecision, report_name: str) -> CandidateRes
     return None
 
 
-def _append_ledger_entry(ledger: IssueLedger, label: str, result: CandidateResult, store: ArtifactStore) -> None:
+def _append_ledger_entry(
+    ledger: IssueLedger, label: str, result: CandidateResult, store: ArtifactStore
+) -> None:
     findings = tuple(
         finding
         for feedback in result.candidate.feedbacks

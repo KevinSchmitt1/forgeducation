@@ -12,7 +12,7 @@ import os
 try:
     from openai import OpenAI
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
-    OpenAI = None  # type: ignore[assignment]
+    OpenAI = None  # type: ignore[assignment, misc]
 
 from .config import ModelConfig, Provider
 

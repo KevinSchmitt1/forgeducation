@@ -50,7 +50,7 @@ class ArtifactStore:
         self._history: list[str] = []
 
     @classmethod
-    def create(cls, runs_root: str | Path, pipeline_name: str) -> "ArtifactStore":
+    def create(cls, runs_root: str | Path, pipeline_name: str) -> ArtifactStore:
         """Create a fresh, uniquely-named run directory under `runs_root`."""
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         safe_name = pipeline_name.replace(" ", "-").lower()

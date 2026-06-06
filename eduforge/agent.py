@@ -41,7 +41,10 @@ class LLMAgent:
         return store.put(artifact)
 
     def _load_persona(self) -> str:
-        persona_path = self._personas_dir / self._stage.persona
+        persona = self._stage.persona
+        if persona is None:  # guaranteed by config validation for LLM stages; guard for type-safety
+            raise ValueError(f"LLM stage '{self._stage.name}' is missing a persona file")
+        persona_path = self._personas_dir / persona
         if not persona_path.is_file():
             raise FileNotFoundError(
                 f"Persona file for stage '{self._stage.name}' not found: {persona_path}"

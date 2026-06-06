@@ -18,7 +18,17 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local dev only
+.sessions/
+.python-version
 
 # OS / editor
 .DS_Store
 .ipynb_checkpoints/
+
+# bug report for dev use only
+bug_report.md

@@ -25,25 +25,34 @@ def build_summary(
     store: ArtifactStore,
     brief: str,
     profile_label: str,
-    gate_decision: "GateDecision | None" = None,
+    gate_decision: GateDecision | None = None,
+    timings: dict[str, float] | None = None,
 ) -> str:
-    """Render a Markdown summary of the completed run."""
+    """Render a Markdown summary of the completed run.
+
+    `timings` maps stage name -> wall-clock seconds; when given, the table grows a
+    time column and a total-runtime line is recorded.
+    """
+    timings = timings or {}
     lines: list[str] = [
         f"# Run summary — {pipeline.name}",
         "",
         f"- **Topic:** {brief.strip()}",
         f"- **Learner profile:** {profile_label}",
+        _runtime_line(timings),
         "",
         _overall_line(pipeline, store),
         "",
         "## Stages",
         "",
-        "| # | stage | type | result |",
-        "|---|-------|------|--------|",
+        "| # | stage | type | time | result |",
+        "|---|-------|------|------|--------|",
     ]
     for index, stage in enumerate(pipeline.stages, start=1):
+        elapsed = timings.get(stage.name)
+        time_cell = f"{elapsed:.1f}s" if elapsed is not None else "—"
         lines.append(
-            f"| {index} | {stage.name} | {stage.type.value} | "
+            f"| {index} | {stage.name} | {stage.type.value} | {time_cell} | "
             f"{_stage_result(stage, store)} |"
         )
 
@@ -53,7 +62,7 @@ def build_summary(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _acceptance_section(decision: "GateDecision | None", store: ArtifactStore) -> list[str]:
+def _acceptance_section(decision: GateDecision | None, store: ArtifactStore) -> list[str]:
     """The shipped version, its quality score, and the residual issues a human should
     review — so minor leftovers are surfaced, never silently buried."""
     if decision is None or decision.chosen is None:
@@ -87,6 +96,13 @@ def _acceptance_section(decision: "GateDecision | None", store: ArtifactStore) -
         lines += ["", f"**Residual issues ({len(findings)}) — for human review:**"]
         lines += [f"- {finding.text}" for finding in findings]
     return lines
+
+
+def _runtime_line(timings: dict[str, float]) -> str:
+    """A total-runtime bullet, or an empty line when no timing was recorded."""
+    if not timings:
+        return ""
+    return f"- **Total runtime:** {sum(timings.values()):.1f}s"
 
 
 def _overall_line(pipeline: PipelineConfig, store: ArtifactStore) -> str:
@@ -139,7 +155,6 @@ def _narrative_outputs(pipeline: PipelineConfig, store: ArtifactStore) -> list[s
     """Inline the text outputs (plan, feedback) so the dropped files lose nothing."""
     lines: list[str] = []
     for stage in pipeline.stages:
-        if stage.type is StageType.LLM and stage.output_kind == "text":
-            if store.has(stage.output):
-                lines += ["", f"## {stage.name}", "", store.get(stage.output).content]
+        if stage.type is StageType.LLM and stage.output_kind == "text" and store.has(stage.output):
+            lines += ["", f"## {stage.name}", "", store.get(stage.output).content]
     return lines

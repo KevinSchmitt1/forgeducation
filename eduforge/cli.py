@@ -1,10 +1,11 @@
-"""eduforge command-line interface.
+"""eduforge — build an executed, critiqued teaching notebook from a topic.
 
-Usage:
-    eduforge build --topic "How a hash map works"
-    eduforge build --topic "..." --config config/pipeline.skeleton.yaml \
-        --profile profiles/default.md
-    eduforge clean --keep 10
+Examples:
+  eduforge build --topic "How a hash map works"
+  eduforge build --topic "..." --config config/pipeline.skeleton.yaml \
+      --profile profiles/default.md
+  eduforge pipelines            # list the bundled pipeline configs
+  eduforge clean --keep 10      # prune old runs (asks before deleting)
 
 Bundled defaults (pipeline configs, personas, the default profile) ship with the
 package. Run output is written to ./runs in the current working directory. Keys are
@@ -15,12 +16,14 @@ local inference).
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
 
 from .config import load_pipeline
-from .orchestrator import Orchestrator
+from .orchestrator import MANIFEST_FILE, Orchestrator
+from .progress import Spinner
 
 # Repository/package root — where the bundled config/personas/profiles live.
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -28,91 +31,208 @@ DEFAULT_CONFIG = PACKAGE_ROOT / "config" / "pipeline.review-loop.yaml"
 DEFAULT_PROFILE = PACKAGE_ROOT / "profiles" / "default.md"
 DEFAULT_PERSONAS = PACKAGE_ROOT / "personas"
 
+# Exit codes: 0 ok, 1 runtime failure, 2 bad input / usage.
+EXIT_OK = 0
+EXIT_RUNTIME = 1
+EXIT_USAGE = 2
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "clean":
         return _cmd_clean(args)
+    if args.command == "pipelines":
+        return _cmd_pipelines(args)
     return _cmd_build(args)
 
 
 def _cmd_build(args) -> int:
+    topic = (args.topic or "").strip()
+    if not topic:
+        print("✗ --topic must not be empty", file=sys.stderr)
+        return EXIT_USAGE
+
     # Keys come from the environment or a local .env (current dir or package root).
     _load_dotenv(Path.cwd() / ".env")
     _load_dotenv(PACKAGE_ROOT / ".env")
 
-    pipeline = load_pipeline(args.config)
-    profile = _read_profile(Path(args.profile))
+    try:
+        pipeline = load_pipeline(args.config)
+        profile = _read_profile(Path(args.profile))
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
     orchestrator = Orchestrator(
         pipeline=pipeline,
         personas_dir=Path(args.personas),
         runs_root=Path(args.runs),
     )
 
-    print(f"▶ pipeline '{pipeline.name}'  ({len(pipeline.stages)} stages)")
-    print(f"  learner profile: {args.profile}\n")
+    print(_build_header(pipeline, args.profile))
+    reporter = _StageReporter()
     try:
         store = orchestrator.run(
-            args.topic, profile, profile_label=Path(args.profile).name,
-            on_stage=_print_stage,
+            topic, profile, profile_label=Path(args.profile).name,
+            on_stage=reporter,
         )
     except Exception as exc:  # noqa: BLE001 — top-level: report cleanly, exit non-zero
+        reporter.abort()
+        # Flush the (block-buffered when piped) stdout header + stage lines before the
+        # unbuffered stderr error, so the failure message can't jump ahead of them.
+        sys.stdout.flush()
         print(f"\n✗ pipeline failed: {exc}", file=sys.stderr)
-        return 1
+        if orchestrator.last_run_dir is not None:
+            print(f"  debug files: {orchestrator.last_run_dir}", file=sys.stderr)
+        return EXIT_RUNTIME
 
-    print(f"\n✓ done — open {store.run_dir / 'lesson.ipynb'}")
-    print(f"  summary: {store.run_dir / 'SUMMARY.md'}")
-    return 0
+    return _report_outcome(store)
+
+
+def _report_outcome(store) -> int:
+    """Translate the gate's verdict into the user-facing message + exit code, so the
+    CLI never reports success on a notebook the gate considers unusable."""
+    gate = json.loads(store.read_file(MANIFEST_FILE)).get("gate", {})
+    notebook = store.run_dir / "lesson.ipynb"
+    summary = store.run_dir / "SUMMARY.md"
+
+    if gate.get("crucial_open"):
+        print("\n⚠ shipped with crucial issue(s) still open — review before use.")
+        print(f"  open    {notebook}")
+        print(f"  summary {summary}")
+        return EXIT_RUNTIME
+    if not gate.get("satisfied", True):
+        print("\n⚠ done — below the quality bar; minor issues left for human review.")
+        print(f"  open    {notebook}")
+        print(f"  summary {summary}")
+        return EXIT_OK
+
+    print(f"\n✓ done — open {notebook}")
+    print(f"  summary {summary}")
+    return EXIT_OK
 
 
 def _cmd_clean(args) -> int:
-    """Prune old run directories, keeping the newest --keep. Manual only — never
-    runs automatically. Run dirs sort chronologically by their timestamp prefix."""
+    """Prune old run directories, keeping the newest --keep. Manual only — never runs
+    automatically, and never deletes without confirmation (or an explicit --yes)."""
+    if args.keep < 0:
+        print("✗ --keep must be >= 0", file=sys.stderr)
+        return EXIT_USAGE
+
     runs_root = Path(args.runs)
     if not runs_root.is_dir():
         print(f"No runs directory at {runs_root} — nothing to clean.")
-        return 0
+        return EXIT_OK
 
     run_dirs = sorted((p for p in runs_root.iterdir() if p.is_dir()), reverse=True)
     to_remove = run_dirs[args.keep:]
     if not to_remove:
         print(f"{len(run_dirs)} run(s) present; keeping newest {args.keep} — nothing to remove.")
-        return 0
+        return EXIT_OK
+
+    if args.dry_run:
+        print(f"Would remove {len(to_remove)} run(s) (keeping newest {args.keep}):")
+        for path in to_remove:
+            print(f"  {path.name}")
+        print("Dry run — nothing deleted.")
+        return EXIT_OK
+
+    if not args.yes and not _confirm_delete(len(to_remove), args.keep):
+        return EXIT_OK if sys.stdin.isatty() else EXIT_RUNTIME
 
     for path in to_remove:
         shutil.rmtree(path)
     print(f"Removed {len(to_remove)} old run(s); kept newest {args.keep}.")
-    return 0
+    return EXIT_OK
+
+
+def _confirm_delete(count: int, keep: int) -> bool:
+    """Ask before an irreversible delete. Non-interactive callers must pass --yes —
+    we refuse rather than guess, so a script can't wipe runs by accident."""
+    if not sys.stdin.isatty():
+        print(
+            f"✗ Refusing to delete {count} run(s) without confirmation. "
+            "Pass --yes to proceed, or --dry-run to preview.",
+            file=sys.stderr,
+        )
+        return False
+    answer = input(f"Delete {count} run(s), keeping newest {keep}? [y/N] ").strip().lower()
+    if answer != "y":
+        print("Aborted — nothing deleted.")
+        return False
+    return True
+
+
+def _cmd_pipelines(args) -> int:
+    """List the bundled pipeline configs so users can discover them without ls'ing
+    the package directory."""
+    config_dir = PACKAGE_ROOT / "config"
+    configs = sorted(config_dir.glob("pipeline.*.yaml"))
+    if not configs:
+        print(f"No bundled pipelines found in {config_dir}.")
+        return EXIT_OK
+    print("Available pipelines (pass the path with --config):\n")
+    for path in configs:
+        name = path.stem.replace("pipeline.", "")
+        print(f"  {name:<14} {path}")
+    return EXIT_OK
+
+
+def _build_header(pipeline, profile_label: str) -> str:
+    """A one-line, honest run header: advertise the real shape of the run, including
+    that a revision pipeline may add bounded extra rounds beyond its base stages."""
+    base = len(pipeline.stages)
+    if pipeline.revision is not None:
+        shape = (
+            f"{base} base stages + up to {pipeline.revision.max_iterations} "
+            "revision round(s)"
+        )
+    else:
+        shape = f"{base} stage(s)"
+    return f"▶ pipeline '{pipeline.name}' — {shape}\n  learner profile: {profile_label}\n"
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="eduforge", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="eduforge",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     build = sub.add_parser("build", help="Build a lesson notebook from a topic")
     build.add_argument("--topic", required=True, help="The lesson topic or brief")
     build.add_argument(
         "--config", default=str(DEFAULT_CONFIG),
-        help="Path to the pipeline YAML (default: bundled review-loop pipeline)",
+        help="Pipeline YAML (default: bundled review-loop). "
+             "Run 'eduforge pipelines' to list bundled options.",
     )
     build.add_argument(
         "--profile", default=str(DEFAULT_PROFILE),
         help="Learner profile: prior knowledge + environment/prerequisites",
     )
     build.add_argument(
-        "--personas", default=str(DEFAULT_PERSONAS),
-        help="Directory holding persona/system-prompt files",
-    )
-    build.add_argument(
         "--runs", default=str(Path.cwd() / "runs"),
         help="Root directory for run outputs (default: ./runs)",
     )
+    # Internal: persona/system-prompt directory. Hidden — users should not change it.
+    build.add_argument("--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS)
 
-    clean = sub.add_parser("clean", help="Prune old run directories (manual)")
+    sub.add_parser("pipelines", help="List the bundled pipeline configs")
+
+    clean = sub.add_parser("clean", help="Prune old run directories (manual, confirmed)")
     clean.add_argument(
         "--keep", type=int, default=10,
         help="Number of most-recent runs to keep (default: 10)",
+    )
+    clean.add_argument(
+        "--yes", action="store_true",
+        help="Skip the confirmation prompt (required for non-interactive use)",
+    )
+    clean.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would be removed without deleting anything",
     )
     clean.add_argument(
         "--runs", default=str(Path.cwd() / "runs"),
@@ -132,10 +252,27 @@ def _read_profile(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _print_stage(name: str, status: str, detail: str) -> None:
-    glyph = {"start": "…", "done": "✓", "error": "✗"}.get(status, "·")
-    suffix = f"  → {detail}" if status != "start" else f"  ({detail})"
-    print(f"  {glyph} {name}{suffix}")
+class _StageReporter:
+    """Streams a live per-stage status line, with a spinner during the long, silent
+    LLM calls so the terminal never looks hung. Stateful: it owns the active spinner
+    between the `start` and `done`/`error` callbacks for a single stage."""
+
+    def __init__(self) -> None:
+        self._spinner: Spinner | None = None
+
+    def __call__(self, name: str, status: str, detail: str) -> None:
+        if status == "start":
+            self._spinner = Spinner(f"{name}  ({detail})").start()
+            return
+        self.abort()
+        glyph = {"done": "✓", "error": "✗"}.get(status, "·")
+        print(f"  {glyph} {name}  → {detail}")
+
+    def abort(self) -> None:
+        """Stop and clear any in-flight spinner (on stage completion or failure)."""
+        if self._spinner is not None:
+            self._spinner.stop()
+            self._spinner = None
 
 
 def _load_dotenv(path: Path) -> None:

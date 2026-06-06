@@ -48,24 +48,43 @@ eduforge build --topic "How a Bloom filter works" \
 eduforge build --topic "Recursion and the call stack" \
     --profile examples/profiles/web-dev-beginner.md
 
+# Discover the bundled pipelines (skeleton, review-loop)
+eduforge pipelines
+
 # Run fully local / private (start `ollama serve`, set provider: ollama in the YAML)
 ```
+
+While a build runs it streams a live per-stage status line with an elapsed-time
+spinner, so a long LLM call never looks hung.
 
 Output lands in `./runs/<timestamp>_<pipeline>/`:
 
 - `lesson.ipynb` — the deliverable, with **real cell outputs** baked in
-- `SUMMARY.md` — per-stage status, any execution failures, plan + feedback inline
-- `manifest.json` — provenance (what was produced and pruned)
+- `SUMMARY.md` — per-stage status + timing, total runtime, any execution failures,
+  the acceptance verdict, and plan + feedback inline
+- `manifest.json` — provenance (what was produced and pruned) plus per-stage timings
 
 Intermediate plumbing (raw JSON reports, draft notebooks) is pruned automatically on
-success; failed runs keep everything for debugging.
+success; failed runs keep everything **and still write a `SUMMARY.md`** for debugging.
+
+### Exit codes
+
+The CLI tells the truth about what it shipped, so it's safe to wrap in a script:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Done. (A non-fatal "below the quality bar" warning may still print.) |
+| `1` | Runtime failure, **or** a notebook shipped with a crucial issue still open — review `SUMMARY.md` before use. |
+| `2` | Bad input/usage (e.g. empty `--topic`, missing `--config`) — caught before any API call. |
 
 ### Housekeeping
 
-Run directories are never auto-deleted. Prune them yourself:
+Run directories are never auto-deleted, and `clean` never deletes without consent:
 
 ```bash
-eduforge clean --keep 10     # keep the 10 newest runs
+eduforge clean --keep 10              # prompts: "Delete N run(s)? [y/N]"
+eduforge clean --keep 10 --dry-run    # preview what would be removed
+eduforge clean --keep 10 --yes        # skip the prompt (required non-interactively)
 ```
 
 ## How it fits together
@@ -77,6 +96,10 @@ profile  ┴► planner ─► plan ─► code_author ─► notebook ─►  �
             … reviser ─► executor ─► student  (the review-loop config repeats this)
 ```
 
+The review-loop keeps re-revising the current best notebook until it clears the
+quality bar, the iteration budget runs out, or a revision is strictly worse than
+what's already in hand. It only ever **keeps the best** version, never a regression.
+
 | Module | Responsibility |
 |--------|----------------|
 | `eduforge/config.py` | Load + validate the pipeline YAML (dataflow checked) |
@@ -85,9 +108,10 @@ profile  ┴► planner ─► plan ─► code_author ─► notebook ─►  �
 | `eduforge/notebook.py` | Assemble `.ipynb` from JSON cells; index-label for agents |
 | `eduforge/agent.py` | `LLMAgent`: persona + inputs → one output artifact |
 | `eduforge/executor.py` | Run the notebook, capture per-cell errors (anti-bug) |
-| `eduforge/report.py` | Human-readable `SUMMARY.md` |
-| `eduforge/orchestrator.py` | Run stages, pass artifacts, finalize the run |
-| `eduforge/cli.py` | `eduforge build` / `eduforge clean` |
+| `eduforge/report.py` | Human-readable `SUMMARY.md` (timing, verdict, residuals) |
+| `eduforge/orchestrator.py` | Run + time stages, pass artifacts, finalize the run |
+| `eduforge/progress.py` | TTY-only elapsed-time spinner for long stages |
+| `eduforge/cli.py` | `eduforge build` / `pipelines` / `clean` |
 
 Pipelines live in `config/`, agent system-prompts in `personas/`, learner profiles
 in `profiles/` (with more in `examples/profiles/`).
@@ -104,11 +128,23 @@ in `profiles/` (with more in `examples/profiles/`).
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # offline: no API key needed
+pytest -q                        # offline: no API key needed
+pytest --cov=eduforge            # with coverage (~92%)
 ```
 
 Covers config validation, notebook assembly, cell indexing, the executor catching a
-failing cell, run finalization, summary generation, and the clean command.
+failing cell, run finalization, summary generation, the acceptance gate, the bounded
+revision loop, run timing, CLI input validation + exit codes, and the `clean` safety
+guards (confirm / `--yes` / `--dry-run`).
+
+## Quality checks
+
+Lint and type-check use the same `[dev]` extra:
+
+```bash
+ruff check eduforge tests       # lint + import sorting
+mypy                            # static type check (config in pyproject.toml)
+```
 
 ## License
 
