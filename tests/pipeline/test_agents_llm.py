@@ -18,9 +18,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from forged.artifacts import Artifact, ArtifactStore
-from forged.pipeline.state import PipelineStage, PipelineState, create_initial_state
-
+from forged.artifacts import ArtifactStore
+from forged.pipeline.state import PipelineState, create_initial_state
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -126,7 +125,9 @@ def test_code_author_strips_json_fence_and_parses_array(
     artifact_store: ArtifactStore,
     mock_llm_client: MagicMock,
 ) -> None:
-    """CodeAuthorAgent._parse_cells() strips ```json fences and returns a JSON array."""
+    """CodeAuthorAgent._parse_cells() strips ```json fences and assembles valid nbformat."""
+    import nbformat
+
     from forged.pipeline.agents.code_author import CodeAuthorAgent
 
     cells = [{"type": "code", "source": "print('hello')"}]
@@ -138,9 +139,9 @@ def test_code_author_strips_json_fence_and_parses_array(
 
     artifact_name = result.outputs[-1].artifact_name
     stored = artifact_store.get(artifact_name).content
-    parsed = json.loads(stored)
-    assert isinstance(parsed, list)
-    assert parsed[0]["type"] == "code"
+    notebook = nbformat.reads(stored, as_version=4)  # executor contract: must not raise
+    assert notebook.cells[0].cell_type == "code"
+    assert notebook.cells[0].source == "print('hello')"
 
 
 @pytest.mark.unit
@@ -151,6 +152,8 @@ def test_code_author_accepts_bare_json_array(
     mock_llm_client: MagicMock,
 ) -> None:
     """CodeAuthorAgent._parse_cells() accepts a bare JSON array without fences."""
+    import nbformat
+
     from forged.pipeline.agents.code_author import CodeAuthorAgent
 
     cells = [{"type": "markdown", "source": "# Intro"}]
@@ -161,8 +164,8 @@ def test_code_author_accepts_bare_json_array(
 
     artifact_name = result.outputs[-1].artifact_name
     stored = artifact_store.get(artifact_name).content
-    parsed = json.loads(stored)
-    assert isinstance(parsed, list)
+    notebook = nbformat.reads(stored, as_version=4)
+    assert notebook.cells[0].cell_type == "markdown"
 
 
 @pytest.mark.unit
@@ -180,12 +183,14 @@ def test_code_author_falls_back_on_invalid_json(
     result = asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
 
     # Should not raise — should fall back
+    import nbformat
+
     artifact_name = result.outputs[-1].artifact_name
     assert artifact_store.has(artifact_name)
     stored = artifact_store.get(artifact_name).content
-    # Fallback is also a valid JSON array
-    parsed = json.loads(stored)
-    assert isinstance(parsed, list)
+    # Fallback must also satisfy the executor contract: valid nbformat
+    notebook = nbformat.reads(stored, as_version=4)
+    assert len(notebook.cells) > 0
 
 
 @pytest.mark.unit

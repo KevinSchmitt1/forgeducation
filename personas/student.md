@@ -57,9 +57,9 @@ immediately after all prose commentary.
     {
       "source": "<agent-name, e.g. student>",
       "severity": "<BLOCKER | CONFUSING | NITPICK>",
-      "scope": "<cell | notebook>",
+      "scope": "<plan | structure | code | content>",
       "location": {
-        "type": "<cell | notebook>",
+        "type": "<cell | section | lesson_structure | artifact | global>",
         "cell_index": <integer or null>,
         "label": "<optional label or null>"
       },
@@ -73,4 +73,10 @@ Rules:
 - `quality_score`: 0 = completely unusable, 100 = excellent for this learner profile.
 - `blockers`: free-text list of issues that would stop the learner cold (empty list if none).
 - `findings`: one entry per issue flagged above.  Empty list if no findings.
+- `scope` says WHAT KIND of problem it is — this drives where the lesson is sent for fixing:
+  - `plan` / `structure`: the lesson's concept ordering, scope, or prerequisites are wrong (needs replanning).
+  - `code`: the code produces wrong or misleading output, or contradicts the prose (needs recoding).
+  - `content`: code is fine but the explanation/prose is unclear or insufficient (needs rewriting).
+- `location.type` says WHERE the problem sits: `cell` (give `cell_index`), `section`,
+  `lesson_structure`, `artifact`, or `global`.
 - Output the JSON block exactly as shown — no trailing text after the closing ```.

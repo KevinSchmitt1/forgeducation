@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -39,7 +38,7 @@ class LearnerProfile:
         try:
             import yaml
         except ImportError:
-            raise ImportError("pyyaml required; install with: pip install pyyaml")
+            raise ImportError("pyyaml required; install with: pip install pyyaml") from None
 
         with open(path) as f:
             data = yaml.safe_load(f)
@@ -75,7 +74,7 @@ class TopicSpecification:
         try:
             import yaml
         except ImportError:
-            raise ImportError("pyyaml required; install with: pip install pyyaml")
+            raise ImportError("pyyaml required; install with: pip install pyyaml") from None
 
         with open(path) as f:
             data = yaml.safe_load(f)
@@ -137,7 +136,7 @@ class AssessmentApproach:
         try:
             import yaml
         except ImportError:
-            raise ImportError("pyyaml required; install with: pip install pyyaml")
+            raise ImportError("pyyaml required; install with: pip install pyyaml") from None
 
         with open(path) as f:
             data = yaml.safe_load(f)

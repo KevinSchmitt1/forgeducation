@@ -16,9 +16,6 @@ Modes of Operation:
       --topic-spec templates/examples/topic-transformers.yaml \
       --assessment templates/examples/assessment-project.yaml
 
-  4. LEGACY (markdown profile, for backward compatibility):
-    forged build --topic "..." --profile profiles/default.md
-
 Other commands:
   forged pipelines            # list the bundled pipeline configs
   forged clean --keep 10      # prune old runs (asks before deleting)
@@ -45,10 +42,9 @@ from .models import AssessmentApproach, LearnerProfile, TopicSpecification
 from .orchestrator import MANIFEST_FILE, Orchestrator
 from .progress import Spinner
 
-# Repository/package root — where the bundled config/personas/profiles live.
+# Repository/package root — where the bundled config/personas live.
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = PACKAGE_ROOT / "config" / "pipeline.review-loop.yaml"
-DEFAULT_PROFILE = PACKAGE_ROOT / "profiles" / "default.md"
 DEFAULT_PERSONAS = PACKAGE_ROOT / "personas"
 
 # Exit codes: 0 ok, 1 runtime failure, 2 bad input / usage.
@@ -261,18 +257,32 @@ def _cmd_agentic(args) -> int:
         final_state = asyncio.run(run_pipeline(state, store, personas_dir))
 
         elapsed_sec = (datetime.now() - start_time).total_seconds()
-        logger.info("Pipeline complete (terminal=%s, elapsed=%.1fs)", final_state.is_terminal, elapsed_sec)
+        logger.info(
+            "Pipeline complete (terminal=%s, elapsed=%.1fs)",
+            final_state.is_terminal,
+            elapsed_sec,
+        )
 
         _write_agentic_summary(run_dir, final_state, elapsed_sec)
         _write_final_notebook(run_dir, store, final_state)
 
-        if final_state.is_terminal:
+        # Exit-code truth: 0 only when the pipeline ended because the notebook
+        # was ACCEPTABLE. Errors, budget exhaustion, and unclassifiable runs
+        # are terminal too — but they are not success and must not exit 0.
+        if final_state.is_terminal and final_state.terminal_ok:
             print(f"\n✓ Agentic pipeline complete — open {run_dir / 'lesson.ipynb'}")
             print(f"  summary  {run_dir / 'SUMMARY.md'}")
             return EXIT_OK
-        else:
-            print(f"\n⚠ Pipeline did not terminate — check {run_dir / 'SUMMARY.md'}")
+        if final_state.is_terminal:
+            print(
+                f"\n✗ Pipeline ended without an acceptable notebook: "
+                f"{final_state.terminal_reason}",
+                file=sys.stderr,
+            )
+            print(f"  review {run_dir / 'SUMMARY.md'} before using the output", file=sys.stderr)
             return EXIT_RUNTIME
+        print(f"\n⚠ Pipeline did not terminate — check {run_dir / 'SUMMARY.md'}", file=sys.stderr)
+        return EXIT_RUNTIME
 
     except Exception as exc:
         logger.exception("Agentic pipeline failed: %s", exc)
@@ -282,10 +292,15 @@ def _cmd_agentic(args) -> int:
 
 def _write_agentic_summary(run_dir: Path, state, elapsed_sec: float) -> None:
     """Write SUMMARY.md with routing log for agentic pipeline."""
-    from datetime import datetime
+    if state.is_terminal and state.terminal_ok:
+        status = "✓ Acceptable"
+    elif state.is_terminal:
+        status = "✗ Ended without an acceptable notebook"
+    else:
+        status = "✗ Incomplete"
 
     lines = ["# Agentic Pipeline Summary\n\n"]
-    lines.append(f"**Status**: {'✓ Acceptable' if state.is_terminal else '✗ Incomplete'}\n")
+    lines.append(f"**Status**: {status}\n")
     if state.terminal_reason:
         lines.append(f"**Reason**: {state.terminal_reason}\n")
     lines.append(f"**Elapsed**: {elapsed_sec:.1f} seconds\n")
@@ -293,7 +308,7 @@ def _write_agentic_summary(run_dir: Path, state, elapsed_sec: float) -> None:
 
     if state.routing_log:
         lines.append("## Routing Log\n\n")
-        for i, decision in enumerate(state.routing_log, 1):
+        for decision in state.routing_log:
             lines.append(f"### Iteration {decision.iteration}\n")
             lines.append(f"- **From**: {decision.from_stage.value}\n")
             lines.append(f"- **To**: {decision.to_stage.value if decision.to_stage else 'END'}\n")
@@ -304,8 +319,27 @@ def _write_agentic_summary(run_dir: Path, state, elapsed_sec: float) -> None:
 
 
 def _write_final_notebook(run_dir: Path, store, state) -> None:
-    """Extract the latest lesson notebook from artifacts and write to lesson.ipynb."""
+    """Write the deliverable lesson.ipynb.
+
+    Preference order:
+      1. The executed copy of the latest notebook (real cell outputs baked in),
+         written by the executor as <execution_report>_executed.ipynb.
+      2. The latest assembled (unexecuted) notebook from the CodeAuthor.
+      3. An empty-but-valid notebook, so the file is always openable in Jupyter.
+    """
+    import nbformat
+
     from .pipeline.state import PipelineStage
+
+    for output in reversed(state.outputs):
+        if output.stage == PipelineStage.EXECUTOR:
+            executed = run_dir / f"{output.artifact_name}_executed.ipynb"
+            if executed.is_file():
+                (run_dir / "lesson.ipynb").write_text(
+                    executed.read_text(encoding="utf-8"), encoding="utf-8"
+                )
+                return
+            break
 
     for output in reversed(state.outputs):
         if output.stage == PipelineStage.CODE_AUTHOR:
@@ -313,7 +347,8 @@ def _write_final_notebook(run_dir: Path, store, state) -> None:
             (run_dir / "lesson.ipynb").write_text(notebook_content, encoding="utf-8")
             return
 
-    (run_dir / "lesson.ipynb").write_text("[]", encoding="utf-8")
+    empty = nbformat.writes(nbformat.v4.new_notebook())
+    (run_dir / "lesson.ipynb").write_text(empty, encoding="utf-8")
 
 
 def _cmd_pipelines(args) -> int:
@@ -359,10 +394,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--config", default=str(DEFAULT_CONFIG),
         help="Pipeline YAML (default: bundled review-loop). "
              "Run 'forged pipelines' to list bundled options.",
-    )
-    build.add_argument(
-        "--profile", default=str(DEFAULT_PROFILE),
-        help="[Legacy] Learner profile markdown file (for backward compatibility)",
     )
     build.add_argument(
         "--learner-profile",
@@ -455,17 +486,6 @@ def _default_topic_spec(topic: str) -> TopicSpecification:
         depth="intermediate",
         focus_areas=[topic],
     )
-
-
-def _read_profile(path: Path) -> str:
-    """Load the learner profile file. A profile is required so every stage knows
-    who the lesson is for and what environment it targets."""
-    if not path.is_file():
-        raise FileNotFoundError(
-            f"Learner profile not found: {path}. Pass --profile or use the bundled "
-            "profiles/default.md."
-        )
-    return path.read_text(encoding="utf-8")
 
 
 class _StageReporter:

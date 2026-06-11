@@ -2,18 +2,22 @@
 
 Persona: personas/code_author.md
 Input artifacts: lesson_plan_v{N}.md  (reads latest from outputs)
-Output artifact: lesson_notebook_v{iteration}.ipynb  (kind=notebook — JSON cells)
+Output artifact: lesson_notebook_v{iteration}.ipynb  (kind=notebook — real
+nbformat JSON, assembled from the model's cell list via forged.notebook)
 Next stage: EXECUTOR
+
+The stored artifact MUST be valid nbformat: the executor reads it back with
+nbformat.reads(). The model only ever produces the simple cell-list format;
+assembly into .ipynb happens here, exactly as in the linear LLMAgent.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from pathlib import Path
 
 from forged.artifacts import Artifact, ArtifactStore
+from forged.notebook import build_notebook, cells_from_json
 from forged.pipeline.state import PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
@@ -57,7 +61,7 @@ class CodeAuthorAgent(Agent[AgentOutput]):
             response = self._call_llm(user_msg)
         except RuntimeError as exc:
             _LOG.warning("CodeAuthorAgent LLM call failed, using fallback cells: %s", exc)
-            response = json.dumps(_FALLBACK_CELLS)
+            response = build_notebook(_FALLBACK_CELLS)
         artifact_name = f"lesson_notebook_v{state.iteration}"
         store.put(Artifact(name=artifact_name, kind="notebook", content=response))
         output = StageOutput(
@@ -68,34 +72,29 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         return state.with_output(output).with_current_stage(self.next_stage())
 
     def _call_llm(self, user_msg: str) -> str:
-        """Call the LLM and return validated JSON-array cell content."""
+        """Call the LLM and return assembled nbformat notebook JSON."""
         raw = self._llm_client.complete(self.persona, user_msg)
         return self._parse_cells(raw)
 
     def _parse_cells(self, raw: str) -> str:
-        """Strip ```json fences and validate the response is a JSON array.
+        """Validate the model's cell list and assemble a real .ipynb from it.
 
-        Returns the cleaned JSON string. Raises RuntimeError on invalid JSON or
-        when the top-level value is not an array.
+        cells_from_json strips ```json fences, accepts a bare array or a
+        {"cells": [...]} object, and validates every cell. The result is
+        serialized nbformat JSON — the format the executor reads back.
+        Raises RuntimeError on malformed output so run() can fall back.
         """
-        cleaned = raw.strip()
-        # Strip optional ```json ... ``` fence
-        fence_match = re.search(r"```(?:json)?\s*(.*?)```", cleaned, re.DOTALL)
-        if fence_match:
-            cleaned = fence_match.group(1).strip()
         try:
-            parsed = json.loads(cleaned)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"CodeAuthorAgent: LLM returned invalid JSON: {exc}") from exc
-        if not isinstance(parsed, list):
-            raise RuntimeError(
-                f"CodeAuthorAgent: expected a JSON array of cells, got {type(parsed).__name__}"
-            )
-        return json.dumps(parsed)
+            cells = cells_from_json(raw)
+        except ValueError as exc:
+            raise RuntimeError(f"CodeAuthorAgent: {exc}") from exc
+        return build_notebook(cells)
 
     def _build_user_message(self, state: PipelineState, store: ArtifactStore) -> str:
         plan_name = self._latest_plan_name(state)
-        plan_content = store.get(plan_name).content if store.has(plan_name) else "(no plan available)"
+        plan_content = (
+            store.get(plan_name).content if store.has(plan_name) else "(no plan available)"
+        )
         profile_content = store.get("profile").content if store.has("profile") else ""
         parts = [f"Lesson Plan:\n{plan_content}"]
         if profile_content:

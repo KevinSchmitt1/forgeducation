@@ -2,8 +2,8 @@
 
 **As of:** 2026-06-09  
 **Phases complete:** 1–9 (state → routing → agents → LangGraph → reviser feedback → CLI)  
-**Tests:** 290 total (including CLI integration); all passing  
-**Coverage:** 88%+ overall; pipeline modules at 92–100%  
+**Tests:** 292 total (including CLI integration and un-mocked CodeAuthor→Executor contract tests); all passing  
+**Coverage:** 89% overall; pipeline modules at 87–100%  
 **Status:** Production-ready for personal testing
 
 ---
@@ -88,7 +88,7 @@ Coverage: 100%. Tests: `tests/pipeline/test_agents.py`.
 |---|---|---|---|
 | PlannerAgent | `agents/planner.py` | Yes | `personas/planner.md` |
 | CodeAuthorAgent | `agents/code_author.py` | Yes | `personas/code_author.md` |
-| ExecutorAgent | `agents/executor.py` | No (mocked) | none |
+| ExecutorAgent | `agents/executor.py` | No (real notebook execution) | none |
 | StudentAgent | `agents/student.py` | Yes | `personas/student.md` |
 | RevisorAgent | `agents/reviser.py` | No (deterministic) | `personas/reviser.md` |
 
@@ -148,12 +148,13 @@ had one entry; `state.is_terminal` was `True`.
 
 - Deterministic failure classification across 6 categories with auditable matched signals.
 - Budget-aware routing that prevents infinite loops without relying on LLM judgment.
-- Five real LLM agents (Planner, CodeAuthor, Student) with graceful degradation on
-  error; Reviser and Executor are deterministic (no LLM).
+- Three LLM agents (Planner, CodeAuthor, Student) with graceful degradation on
+  error; Reviser (deterministic routing) and Executor (real notebook execution)
+  use no LLM.
 - Full LangGraph graph that compiles, runs, and routes correctly.
 - Complete immutable state trail: every routing decision is recorded in
   `state.routing_log` with classification, evidence, and timestamp.
-- 285 tests passing (216 pipeline-specific), 88% overall coverage.
+- 292 tests passing, 89% overall coverage.
 
 ---
 
@@ -166,10 +167,16 @@ had one entry; `state.is_terminal` was `True`.
 
 ### Budget exhaustion behavior
 
-When a stage hits its budget, the pipeline terminates with `is_terminal=True` and
-`terminal_reason="budget exhausted for <stage>"`. The notebook is still written to
-`lesson.ipynb` (latest CodeAuthor output). This is intentional — budget is a safety valve,
-not a failure condition.
+When a stage hits its budget, the pipeline terminates with `is_terminal=True`,
+`terminal_ok=False`, and `terminal_reason="budget exhausted for <stage>"`. The notebook is
+still written to `lesson.ipynb` (latest executed or assembled notebook), but the CLI exits
+non-zero — budget exhaustion is a safety valve, and the output needs human review before use.
+
+### Content-quality routing is a no-op
+
+`CONTENT_QUALITY` routes to the Reviser, but the agentic Reviser is deterministic and does
+not rewrite prose. The route re-enters the reviser node, immediately exhausts the reviser
+budget (1), and terminates. A prose-rewriting agent is future work.
 
 ---
 
@@ -222,7 +229,7 @@ forged/pipeline/
     ├── __init__.py              # Agent ABC, AgentOutput
     ├── planner.py               # PlannerAgent (LLM)
     ├── code_author.py           # CodeAuthorAgent (LLM)
-    ├── executor.py              # ExecutorAgent (mocked)
+    ├── executor.py              # ExecutorAgent (real notebook execution)
     ├── student.py               # StudentAgent (LLM)
     └── reviser.py               # RevisorAgent (deterministic)
 

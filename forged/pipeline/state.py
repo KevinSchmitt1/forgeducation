@@ -14,7 +14,6 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Literal
 
-
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
 
@@ -66,6 +65,12 @@ class Location:
             )
 
 
+# Shared vocabularies for Evidence — import these wherever findings are built
+# so producers and the classifier can never drift apart.
+Severity = Literal["BLOCKER", "HIGH", "MEDIUM", "LOW"]
+Scope = Literal["plan", "code", "content", "structure", "unknown"]
+
+
 @dataclass(frozen=True)
 class Evidence:
     """A concrete signal that informs a routing decision.
@@ -75,8 +80,8 @@ class Evidence:
     """
 
     source: str
-    severity: Literal["BLOCKER", "HIGH", "MEDIUM", "LOW"]
-    scope: Literal["plan", "code", "content", "structure", "unknown"]
+    severity: Severity
+    scope: Scope
     location: Location
     text: str
 
@@ -138,6 +143,9 @@ class PipelineState:
 
     is_terminal: bool = False
     terminal_reason: str | None = None
+    # True only when the pipeline ended because the notebook was ACCEPTABLE.
+    # Errors, budget exhaustion, and unclassifiable runs are terminal but not ok.
+    terminal_ok: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.current_stage, PipelineStage):
@@ -183,14 +191,17 @@ class PipelineState:
         updated = {**self.stage_attempts, stage.value: current + 1}
         return replace(self, stage_attempts=updated)
 
-    def with_terminal(self, reason: str) -> PipelineState:
+    def with_terminal(self, reason: str, ok: bool = False) -> PipelineState:
         """Return a new state marked as terminal (pipeline complete).
 
         Args:
             reason: Human-readable termination cause, e.g.
                     "acceptable", "budget_exhausted", "unclassifiable".
+            ok: True only when termination means success (notebook acceptable).
+                Defaults to False so error paths can never accidentally report
+                success by omitting the flag.
         """
-        return replace(self, is_terminal=True, terminal_reason=reason)
+        return replace(self, is_terminal=True, terminal_reason=reason, terminal_ok=ok)
 
     # ── Queries ─────────────────────────────────────────────────────────────
 

@@ -29,6 +29,15 @@ from forged.pipeline.agents.student import StudentAgent
 from forged.pipeline.state import PipelineState
 
 
+def _continue_unless_terminal(next_node: str):
+    """Edge function: proceed to next_node, or END once the state is terminal."""
+
+    def route(state: PipelineState) -> str:
+        return END if state.is_terminal else next_node
+
+    return route
+
+
 def revisor_route(state: PipelineState) -> str:
     """Determine which node follows the Reviser based on state.
 
@@ -106,10 +115,20 @@ def build_pipeline_graph(
     graph.add_node("revisor", revisor_node)
 
     graph.add_edge(START, "planner")
-    graph.add_edge("planner", "code_author")
-    graph.add_edge("code_author", "executor")
-    graph.add_edge("executor", "student")
-    graph.add_edge("student", "revisor")
+    # Every forward edge is conditional on the state not being terminal: an
+    # agent that fails hard (e.g. executor crash) marks the state terminal,
+    # and the pipeline must stop instead of spending LLM calls on a dead run.
+    for node, next_node in (
+        ("planner", "code_author"),
+        ("code_author", "executor"),
+        ("executor", "student"),
+        ("student", "revisor"),
+    ):
+        graph.add_conditional_edges(
+            node,
+            _continue_unless_terminal(next_node),
+            {next_node: next_node, END: END},
+        )
 
     graph.add_conditional_edges(
         "revisor",

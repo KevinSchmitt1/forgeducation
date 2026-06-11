@@ -44,31 +44,36 @@ The repo contains two execution paths:
 
 1. **Linear CLI** (`forged build`): the primary, stable, user-facing path in
    [forged/cli.py](forged/cli.py). Use this for real lesson generation.
-2. **Agentic API** (`await forged.pipeline.run_pipeline(...)`): a LangGraph-based pipeline
-   in [forged/pipeline/](forged/pipeline) that classifies failures and reroutes to the
-   appropriate agent. Phases 1–6 are complete.
+2. **Agentic CLI/API** (`forged agentic` or `await forged.pipeline.run_pipeline(...)`):
+   a LangGraph-based pipeline in [forged/pipeline/](forged/pipeline) that classifies
+   failures and reroutes to the appropriate agent. Phases 1–9 are complete.
 
-### What is implemented (Phases 1–6)
+### What is implemented (Phases 1–9)
 
-- **Immutable state schema** (`PipelineState`) with full audit trail in `routing_log`.
+- **Immutable state schema** (`PipelineState`) with full audit trail in `routing_log`
+  and an explicit `terminal_ok` success flag (terminal ≠ success).
 - **Deterministic failure classification** across 6 categories: `BLOCKER_STRUCTURE`,
   `CODE_QUALITY`, `TEST_FAILURE`, `CONTENT_QUALITY`, `ACCEPTABLE`, `UNCLASSIFIABLE`.
 - **Budget-aware routing** that terminates rather than looping indefinitely.
-- **Five agents**: Planner, CodeAuthor, Executor, Student, Reviser — all wired into a
-  compiled LangGraph. LLM agents degrade gracefully on error.
-- **285 tests passing, 88% overall coverage**; `state.py`, `failure.py`, `router.py` at 100%.
+- **Five agents**: Planner, CodeAuthor, Executor (real notebook execution), Student,
+  Reviser — all wired into a compiled LangGraph. LLM agents degrade gracefully on error;
+  a hard agent failure marks the state terminal and stops the graph immediately.
+- **Revision briefs** (`revision_brief_v{N}.md`): structured failure feedback that
+  rerouted agents read on their next pass.
+- **CLI command** (`forged agentic --brief ... --run-dir ...`) with honest exit codes:
+  `0` only when the run ends ACCEPTABLE; errors/budget exhaustion exit `1`.
+- **292 tests passing, 89% overall coverage**; `state.py`, `failure.py`, `router.py` at 100%.
 - **End-to-end validated** with a real `OPENAI_API_KEY`; both linear and agentic paths
-  complete successfully.
+  complete successfully, and `tests/pipeline/test_real_pipeline_integration.py` covers
+  the un-mocked CodeAuthor → executor contract.
 
 ### Known limitations
 
-- `ExecutorAgent` is mocked: always reports execution success. Real notebook execution
-  (Phase 7) is not wired yet.
-- `RevisorAgent` classifies and routes but does not rewrite. When the pipeline loops back
-  to CodeAuthor or Planner, those agents start from the original brief without structured
-  feedback (Phase 8).
-- No CLI command: the agentic path requires direct Python API calls (Phase 9).
-- Budget exhaustion terminates without writing a final deliverable notebook.
+- `CONTENT_QUALITY` routes to the Reviser, but the agentic Reviser is deterministic and
+  does not rewrite prose — the route is a no-op that exhausts the reviser budget (1) and
+  terminates. A prose-rewriting agent is future work.
+- Budget exhaustion still writes `lesson.ipynb` (latest notebook), but the run exits
+  non-zero — review `SUMMARY.md` before use.
 
 For complete details — capabilities, limitations, and the Phase 7–9 roadmap — see
 [docs/architecture/07-agentic-pipeline-status.md](docs/architecture/07-agentic-pipeline-status.md).
@@ -116,7 +121,6 @@ forged/
 │   ├── executor.py             # Executor stage; runs the notebook
 │   ├── artifacts.py            # Store, notebook management
 │   ├── models.py               # Data models: LearnerProfile, TopicSpecification, AssessmentApproach
-│   ├── assessment.py           # AssessmentStage; generates project specs or tests
 │   ├── prompts.py              # Prompt templates for each stage
 │   ├── progress.py             # Spinner for live progress display
 │   └── config.py               # Config file loading
@@ -147,9 +151,6 @@ forged/
 │   ├── planner.md
 │   ├── code_author.md
 │   └── ...
-│
-├── profiles/                   # [Deprecated] Legacy learner profiles (markdown format)
-│   └── default.md
 │
 ├── tests/                      # Test suite
 │   └── ...

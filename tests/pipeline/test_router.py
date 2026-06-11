@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from forged.pipeline.failure import Classification, FailureCategory
-from forged.pipeline.router import Router, RoutingBudget, RoutingRequest, RoutingResult
+from forged.pipeline.router import Router, RoutingBudget, RoutingRequest
 from forged.pipeline.state import (
     Evidence,
     Location,
@@ -25,7 +25,6 @@ from forged.pipeline.state import (
     PipelineState,
     create_initial_state,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -201,7 +200,7 @@ def test_route_respects_student_budget(initial_state: PipelineState) -> None:
     # CONTENT_QUALITY routes to REVISER — testing budget for REVISER separately;
     # here we use a custom budget to test STUDENT limit.
     budget = RoutingBudget(student=1)
-    router = Router(budget=budget)
+    Router(budget=budget)
     exhausted_state = initial_state.with_attempt(PipelineStage.STUDENT)
 
     # Simulate a classification that would route to STUDENT if it existed in the map.

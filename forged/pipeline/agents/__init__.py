@@ -51,12 +51,18 @@ class Agent(ABC, Generic[T]):
         callers learn about misconfiguration at startup, not mid-pipeline.
     """
 
-    def __init__(self, personas_dir: Path | None = None, llm_client: LLMClient | None = None) -> None:
-        from forged.llm import LLMClient as _LLMClient  # local import avoids circular-import risk
+    def __init__(
+        self,
+        personas_dir: Path | None = None,
+        llm_client: LLMClient | None = None,
+    ) -> None:
         from forged.config import ModelConfig
+        from forged.llm import LLMClient as _LLMClient  # local import avoids circular-import risk
         self.personas_dir: Path = Path("personas") if personas_dir is None else Path(personas_dir)
         self.persona: str = self._load_persona()
-        self._llm_client: LLMClient = llm_client if llm_client is not None else _LLMClient(ModelConfig())
+        self._llm_client: LLMClient = (
+            llm_client if llm_client is not None else _LLMClient(ModelConfig())
+        )
 
     @abstractmethod
     def _load_persona(self) -> str:
@@ -116,7 +122,7 @@ class AgentOutput:
     metadata: dict | None = None
 
 
-from .planner import PlannerAgent
+from .planner import PlannerAgent  # noqa: E402  (bottom import avoids circular dependency)
 
 __all__ = [
     "Agent",

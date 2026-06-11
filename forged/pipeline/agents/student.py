@@ -82,7 +82,9 @@ class StudentAgent(Agent[AgentOutput]):
         try:
             parsed = json.loads(candidate)
         except json.JSONDecodeError:
-            _LOG.warning("StudentAgent: could not parse JSON from LLM response; using neutral report")
+            _LOG.warning(
+                "StudentAgent: could not parse JSON from LLM response; using neutral report"
+            )
             return json.dumps(_NEUTRAL_REPORT)
 
         if not isinstance(parsed, dict):
@@ -92,7 +94,9 @@ class StudentAgent(Agent[AgentOutput]):
         required = {"quality_score", "blockers", "findings"}
         missing = required - parsed.keys()
         if missing:
-            _LOG.warning("StudentAgent: grade report missing keys %s; using neutral report", missing)
+            _LOG.warning(
+                "StudentAgent: grade report missing keys %s; using neutral report", missing
+            )
             return json.dumps(_NEUTRAL_REPORT)
 
         return json.dumps(parsed)
@@ -100,8 +104,14 @@ class StudentAgent(Agent[AgentOutput]):
     def _build_user_message(self, state: PipelineState, store: ArtifactStore) -> str:
         notebook_name = self._latest_notebook_name(state)
         exec_name = self._latest_execution_name(state)
-        notebook_content = store.get(notebook_name).content if store.has(notebook_name) else "(no notebook)"
-        exec_content = store.get(exec_name).content if store.has(exec_name) else "(no execution report)"
+        notebook_content = (
+            self._render_notebook(store.get(notebook_name).content)
+            if store.has(notebook_name)
+            else "(no notebook)"
+        )
+        exec_content = (
+            store.get(exec_name).content if store.has(exec_name) else "(no execution report)"
+        )
         profile_content = store.get("profile").content if store.has("profile") else ""
         parts = [
             f"Notebook:\n{notebook_content}",
@@ -110,6 +120,21 @@ class StudentAgent(Agent[AgentOutput]):
         if profile_content:
             parts.append(f"Learner Profile:\n{profile_content}")
         return "\n\n".join(parts)
+
+    def _render_notebook(self, content: str) -> str:
+        """Show the notebook as an index-labelled listing, not raw .ipynb JSON.
+
+        The indices match the executor's cell indices exactly, so the student's
+        cell references line up with the execution report. Falls back to the
+        raw content if the artifact is not parseable nbformat.
+        """
+        from forged.notebook import render_indexed
+
+        try:
+            return render_indexed(content)
+        except Exception:  # noqa: BLE001 — grading should degrade, not crash
+            _LOG.warning("StudentAgent: notebook artifact is not valid nbformat; using raw content")
+            return content
 
     def _latest_notebook_name(self, state: PipelineState) -> str:
         for output in reversed(state.outputs):

@@ -15,14 +15,12 @@ from __future__ import annotations
 import pytest
 
 from forged.pipeline.failure import (
-    Classification,
     ExecutionReport,
     FailureCategory,
     GradeReport,
     classify,
 )
 from forged.pipeline.state import Evidence, Location, LocationType
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

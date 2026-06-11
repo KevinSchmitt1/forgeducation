@@ -19,7 +19,6 @@ from forged.pipeline.state import (
     create_initial_state,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 

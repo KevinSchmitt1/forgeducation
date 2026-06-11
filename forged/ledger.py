@@ -161,7 +161,8 @@ def _parse_structured_findings(feedback: str) -> tuple[Finding, ...] | None:
         severity = str(raw.get("severity", "")).upper()
         if severity not in SEVERITY_WEIGHTS:
             continue
-        location = raw.get("location") if isinstance(raw.get("location"), dict) else {}
+        raw_location = raw.get("location")
+        location = raw_location if isinstance(raw_location, dict) else {}
         cell_index = location.get("cell_index")
         findings.append(
             Finding(

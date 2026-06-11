@@ -47,16 +47,28 @@ class LLMClient:
                 "The openai package is not installed. Install it to run LLM-backed "
                 "stages, or switch the pipeline to a local/non-LLM path."
             )
+        messages: list = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        # OpenAI deprecated `max_tokens` in favour of `max_completion_tokens`
+        # (required by o-series and newer models). Ollama's OpenAI-compatible
+        # endpoint still expects `max_tokens`, so pick per provider.
         try:
-            response = self._client.chat.completions.create(
-                model=self._config.model,
-                temperature=self._config.temperature,
-                max_tokens=self._config.max_tokens,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
+            if self._config.provider is Provider.OLLAMA:
+                response = self._client.chat.completions.create(
+                    model=self._config.model,
+                    temperature=self._config.temperature,
+                    max_tokens=self._config.max_tokens,
+                    messages=messages,
+                )
+            else:
+                response = self._client.chat.completions.create(
+                    model=self._config.model,
+                    temperature=self._config.temperature,
+                    max_completion_tokens=self._config.max_tokens,
+                    messages=messages,
+                )
         except Exception as exc:  # noqa: BLE001 — re-raise with actionable context
             raise RuntimeError(
                 f"LLM call failed (provider={self._config.provider.value}, "

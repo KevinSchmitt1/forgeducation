@@ -13,7 +13,6 @@ from pathlib import Path
 from .artifacts import Artifact, ArtifactStore
 from .config import PipelineConfig, StageConfig
 from .llm import LLMClient
-from .models import AssessmentApproach, LearnerProfile, TopicSpecification
 from .notebook import build_notebook, cells_from_json, render_indexed
 from .prompts import PROMPT_TEMPLATES
 
@@ -124,7 +123,7 @@ class LLMAgent:
         # Render template with context
         try:
             return template.format(**render_context) + "\n\n"
-        except KeyError as e:
+        except KeyError:
             # If a template key is missing, continue without the context prompt
             return ""
 

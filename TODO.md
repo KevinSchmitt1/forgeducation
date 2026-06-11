@@ -7,9 +7,12 @@
 - 65+ tests passing
 - CLI, templates, docs ready
 
-**Current Work:** 🔄 MIGRATION — Linear → Agentic Pipeline (LangGraph)
-- Prerequisite for Step 7 testing and Phase 2
-- Keeps both linear and agentic pipelines available for A/B comparison
+**Migration (Linear → Agentic, LangGraph):** ✅ COMPLETE (Phases 1-9)
+- `forged agentic` CLI live; 292 tests passing, 89% coverage
+- Both linear and agentic pipelines available for A/B comparison
+- See docs/architecture/07-agentic-pipeline-status.md for details
+
+**Current Work:** Step 7 (input-specification testing) is now unblocked
 
 **Roadmap:** Step 7 (testing) → Phase 2 (curriculum planner)
 

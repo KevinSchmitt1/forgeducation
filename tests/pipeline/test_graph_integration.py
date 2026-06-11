@@ -13,7 +13,7 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -25,7 +25,6 @@ from forged.pipeline.state import (
     StageOutput,
     create_initial_state,
 )
-
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 
@@ -247,7 +246,9 @@ def _build_acceptable_agents(
         return state.with_output(output).with_current_stage(PipelineStage.CODE_AUTHOR)
 
     def make_code_author_run(state: PipelineState, store: ArtifactStore) -> PipelineState:
-        store.put(Artifact(name=f"lesson_notebook_v{state.iteration}", kind="notebook", content="[]"))
+        store.put(
+            Artifact(name=f"lesson_notebook_v{state.iteration}", kind="notebook", content="[]")
+        )
         output = StageOutput(
             stage=PipelineStage.CODE_AUTHOR,
             artifact_name=f"lesson_notebook_v{state.iteration}",
@@ -256,7 +257,9 @@ def _build_acceptable_agents(
         return state.with_output(output).with_current_stage(PipelineStage.EXECUTOR)
 
     def make_executor_run(state: PipelineState, store: ArtifactStore) -> PipelineState:
-        store.put(Artifact(name=f"execution_report_v{state.iteration}", kind="json", content=exec_report))
+        store.put(
+            Artifact(name=f"execution_report_v{state.iteration}", kind="json", content=exec_report)
+        )
         output = StageOutput(
             stage=PipelineStage.EXECUTOR,
             artifact_name=f"execution_report_v{state.iteration}",
@@ -265,7 +268,11 @@ def _build_acceptable_agents(
         return state.with_output(output).with_current_stage(PipelineStage.STUDENT)
 
     def make_student_run(state: PipelineState, store: ArtifactStore) -> PipelineState:
-        store.put(Artifact(name=f"student_grade_report_v{state.iteration}", kind="json", content=grade_report))
+        store.put(
+            Artifact(
+                name=f"student_grade_report_v{state.iteration}", kind="json", content=grade_report
+            )
+        )
         output = StageOutput(
             stage=PipelineStage.STUDENT,
             artifact_name=f"student_grade_report_v{state.iteration}",
@@ -332,7 +339,9 @@ def test_full_pipeline_with_one_reroute(
                 "error_summary": None if ok else "NameError",
             }
         )
-        store.put(Artifact(name=f"execution_report_v{state.iteration}", kind="json", content=report))
+        store.put(
+            Artifact(name=f"execution_report_v{state.iteration}", kind="json", content=report)
+        )
         output = StageOutput(
             stage=PipelineStage.EXECUTOR,
             artifact_name=f"execution_report_v{state.iteration}",
@@ -343,7 +352,11 @@ def test_full_pipeline_with_one_reroute(
     good_grade = json.dumps({"quality_score": 90.0, "blockers": [], "findings": []})
 
     def student_run(state: PipelineState, store: ArtifactStore) -> PipelineState:
-        store.put(Artifact(name=f"student_grade_report_v{state.iteration}", kind="json", content=good_grade))
+        store.put(
+            Artifact(
+                name=f"student_grade_report_v{state.iteration}", kind="json", content=good_grade
+            )
+        )
         output = StageOutput(
             stage=PipelineStage.STUDENT,
             artifact_name=f"student_grade_report_v{state.iteration}",
@@ -390,7 +403,11 @@ def test_full_pipeline_respects_budget(
     grade = json.dumps({"quality_score": 50.0, "blockers": [], "findings": []})
 
     def executor_run(state: PipelineState, store: ArtifactStore) -> PipelineState:
-        store.put(Artifact(name=f"execution_report_v{state.iteration}", kind="json", content=failing_report))
+        store.put(
+            Artifact(
+                name=f"execution_report_v{state.iteration}", kind="json", content=failing_report
+            )
+        )
         output = StageOutput(
             stage=PipelineStage.EXECUTOR,
             artifact_name=f"execution_report_v{state.iteration}",
@@ -399,7 +416,9 @@ def test_full_pipeline_respects_budget(
         return state.with_output(output).with_current_stage(PipelineStage.STUDENT)
 
     def student_run(state: PipelineState, store: ArtifactStore) -> PipelineState:
-        store.put(Artifact(name=f"student_grade_report_v{state.iteration}", kind="json", content=grade))
+        store.put(
+            Artifact(name=f"student_grade_report_v{state.iteration}", kind="json", content=grade)
+        )
         output = StageOutput(
             stage=PipelineStage.STUDENT,
             artifact_name=f"student_grade_report_v{state.iteration}",
@@ -574,7 +593,6 @@ def test_reviser_writes_revision_brief(
     it writes a revision_brief with execution/grade context.
     """
     from forged.pipeline.agents.code_author import CodeAuthorAgent
-    from forged.pipeline.agents.executor import ExecutorAgent
     from forged.pipeline.agents.planner import PlannerAgent
     from forged.pipeline.agents.student import StudentAgent
     from forged.pipeline.graph import run_pipeline
@@ -652,13 +670,12 @@ def test_reviser_writes_revision_brief(
 def test_real_executor_detects_code_quality_failure(
     personas_dir: Path, artifact_store: ArtifactStore
 ) -> None:
-    """Real executor detects failing notebook; pipeline classifies as CODE_QUALITY and routes to CodeAuthor.
+    """Real executor detects a failing notebook; classified CODE_QUALITY, routed to CodeAuthor.
 
     This test verifies Phase 7: the real ExecutorStage correctly identifies
     execution failures, leading to CODE_QUALITY classification and rerouting.
     """
     from forged.pipeline.agents.code_author import CodeAuthorAgent
-    from forged.pipeline.agents.executor import ExecutorAgent
     from forged.pipeline.agents.planner import PlannerAgent
     from forged.pipeline.agents.student import StudentAgent
     from forged.pipeline.graph import run_pipeline
@@ -726,8 +743,12 @@ def test_real_executor_detects_code_quality_failure(
         )
 
     assert isinstance(final_state, PipelineState)
-    assert final_state.is_terminal, "Pipeline should terminate (accept second attempt or hit budget)"
-    assert call_count["code_author"] >= 2, "CodeAuthor should have been called at least twice (initial + reroute)"
+    assert final_state.is_terminal, (
+        "Pipeline should terminate (accept second attempt or hit budget)"
+    )
+    assert call_count["code_author"] >= 2, (
+        "CodeAuthor should have been called at least twice (initial + reroute)"
+    )
 
 
 # ── Determinism tests ──────────────────────────────────────────────────────────

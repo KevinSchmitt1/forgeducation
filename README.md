@@ -46,7 +46,7 @@ forged build --topic "How a Bloom filter works" \
 
 # Target a specific learner
 forged build --topic "Recursion and the call stack" \
-    --profile examples/profiles/web-dev-beginner.md
+    --learner-profile templates/examples/learner-beginner.yaml
 
 # Discover the bundled pipelines (skeleton, review-loop)
 forged pipelines
@@ -97,12 +97,15 @@ above.
 
 **Agentic (production-ready):** `forged agentic --brief "..." --run-dir /path` is a
 LangGraph-based pipeline that classifies failures, reroutes to the appropriate agent,
-and provides structured feedback for intelligent iteration. Phases 1–9 complete (290 tests,
-88%+ coverage, end-to-end validated with OpenAI). Features:
+and provides structured feedback for intelligent iteration. Phases 1–9 complete (292 tests,
+89% coverage, end-to-end validated with OpenAI). Features:
   - **Phase 7**: Real executor detects code failures
   - **Phase 8**: Revision brief provides agent feedback for smart rerouting
   - **Phase 9**: CLI command with detailed logging and audit trail
   - **Monitoring**: Full routing log in SUMMARY.md, execution trace in pipeline.log
+  - **Exit-code truth**: exit `0` only when the run ends ACCEPTABLE; errors, budget
+    exhaustion, and unclassifiable runs exit `1` (review `SUMMARY.md` before use).
+    `lesson.ipynb` is the executed notebook with real cell outputs.
 
 For detailed status, capabilities, and testing guide see [TEST.md](TEST.md) and
 [docs/architecture/07-agentic-pipeline-status.md](docs/architecture/07-agentic-pipeline-status.md).
@@ -144,12 +147,12 @@ what's already in hand. It only ever **keeps the best** version, never a regress
 | `forged/progress.py` | TTY-only elapsed-time spinner for long stages |
 | `forged/cli.py` | `forged build` / `pipelines` / `clean` |
 
-Pipelines live in `config/`, agent system-prompts in `personas/`, learner profiles
-in `profiles/` (with more in `examples/profiles/`).
+Pipelines live in `config/`, agent system-prompts in `personas/`, learner profile
+templates in `templates/` (ready-to-use examples in `templates/examples/`).
 
 ## Customise
 
-- **New learner:** copy `profiles/default.md`, edit, pass `--profile`.
+- **New learner:** copy a YAML from `templates/examples/`, edit, pass `--learner-profile`.
 - **New team shape:** copy a file in `config/`, add/remove/reorder stages, pass
   `--config`. A stage references upstream outputs by name; the loader fails fast if
   the dataflow is broken.

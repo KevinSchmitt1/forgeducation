@@ -1143,21 +1143,6 @@ def test_build_header_for_a_linear_pipeline_counts_stages():
     assert "stage(s)" in _build_header(pipeline, "default.md")
 
 
-def test_read_profile_returns_contents(tmp_path):
-    from forged.cli import _read_profile
-
-    profile = tmp_path / "p.md"
-    profile.write_text("a web-dev beginner", encoding="utf-8")
-    assert _read_profile(profile) == "a web-dev beginner"
-
-
-def test_read_profile_raises_for_missing_file(tmp_path):
-    from forged.cli import _read_profile
-
-    with pytest.raises(FileNotFoundError, match="Learner profile not found"):
-        _read_profile(tmp_path / "missing.md")
-
-
 def test_stage_reporter_prints_done_and_error_lines(capsys):
     from forged.cli import _StageReporter
 

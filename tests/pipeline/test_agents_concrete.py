@@ -24,7 +24,6 @@ from forged.pipeline.state import (
     create_initial_state,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
@@ -67,7 +66,11 @@ def state_with_plan(artifact_store: ArtifactStore) -> PipelineState:
     """Pipeline state after planner ran — has a lesson_plan artifact."""
     state = create_initial_state(run_id="test-run-002")
     artifact_store.put(
-        Artifact(name="lesson_plan_v0", kind="text", content="# Lesson: Hash Maps\n\n## Objectives\n- Understand hash maps")
+        Artifact(
+            name="lesson_plan_v0",
+            kind="text",
+            content="# Lesson: Hash Maps\n\n## Objectives\n- Understand hash maps",
+        )
     )
     return state.with_output(
         StageOutput(stage=PipelineStage.PLANNER, artifact_name="lesson_plan_v0", iteration=0)
@@ -809,7 +812,9 @@ def test_revisor_low_quality_routes_to_reviser_when_budget_allows(
         Artifact(name="student_grade_report_v0", kind="json", content=json.dumps(grade_report))
     )
     state = state.with_output(
-        StageOutput(stage=PipelineStage.STUDENT, artifact_name="student_grade_report_v0", iteration=0)
+        StageOutput(
+            stage=PipelineStage.STUDENT, artifact_name="student_grade_report_v0", iteration=0
+        )
     )
 
     # Budget with reviser=2 so first route still has budget
@@ -855,7 +860,9 @@ def test_revisor_accepts_notebook_level_findings_from_real_llm_output(
         Artifact(name="student_grade_report_v0", kind="json", content=json.dumps(grade_report))
     )
     state = state.with_output(
-        StageOutput(stage=PipelineStage.STUDENT, artifact_name="student_grade_report_v0", iteration=0)
+        StageOutput(
+            stage=PipelineStage.STUDENT, artifact_name="student_grade_report_v0", iteration=0
+        )
     )
 
     agent = RevisorAgent(personas_dir=personas_dir)
@@ -885,7 +892,9 @@ def test_revisor_handles_malformed_grade_report_json_gracefully(
         Artifact(name="student_grade_report_v0", kind="json", content="{not valid json")
     )
     state = state.with_output(
-        StageOutput(stage=PipelineStage.STUDENT, artifact_name="student_grade_report_v0", iteration=0)
+        StageOutput(
+            stage=PipelineStage.STUDENT, artifact_name="student_grade_report_v0", iteration=0
+        )
     )
 
     agent = RevisorAgent(personas_dir=personas_dir)

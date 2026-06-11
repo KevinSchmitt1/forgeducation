@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from .failure import Classification, FailureCategory
 from .state import Evidence, PipelineStage, PipelineState, RoutingDecision
 
-
 # ── Budget configuration ───────────────────────────────────────────────────────
 
 

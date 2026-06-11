@@ -40,8 +40,14 @@ class ExecutorAgent(Agent[AgentOutput]):
     async def run(self, state: PipelineState, store: ArtifactStore) -> PipelineState:
         notebook_name = self._latest_notebook_name(state)
         if not store.has(notebook_name):
-            logger.warning(f"Notebook artifact {notebook_name} not found; skipping execution")
-            report = {"ok": True, "failed_cells": [], "error_summary": None}
+            # Honest failure, not fabricated success: a missing notebook means
+            # nothing was executed, and the classifier must see that.
+            logger.warning(f"Notebook artifact {notebook_name} not found; reporting failure")
+            report = {
+                "ok": False,
+                "failed_cells": [],
+                "error_summary": f"Notebook artifact '{notebook_name}' was never produced",
+            }
         else:
             try:
                 report = self._execute_real(notebook_name, store, state)

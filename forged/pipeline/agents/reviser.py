@@ -19,9 +19,17 @@ import json
 import logging
 
 from forged.artifacts import ArtifactStore
-from forged.pipeline.failure import ExecutionReport, GradeReport, classify
+from forged.pipeline.failure import ExecutionReport, FailureCategory, GradeReport, classify
 from forged.pipeline.router import Router, RoutingBudget, RoutingRequest
-from forged.pipeline.state import Evidence, Location, LocationType, PipelineStage, PipelineState, StageOutput
+from forged.pipeline.state import (
+    Evidence,
+    Location,
+    LocationType,
+    PipelineStage,
+    PipelineState,
+    Scope,
+    Severity,
+)
 
 from . import Agent, AgentOutput
 
@@ -35,7 +43,9 @@ class RevisorAgent(Agent[AgentOutput]):
     A custom RoutingBudget can be injected to override defaults (useful in tests).
     """
 
-    def __init__(self, personas_dir=None, llm_client=None, budget: RoutingBudget | None = None) -> None:
+    def __init__(
+        self, personas_dir=None, llm_client=None, budget: RoutingBudget | None = None
+    ) -> None:
         super().__init__(personas_dir=personas_dir, llm_client=llm_client)
         self._router = Router(budget=budget)
 
@@ -59,7 +69,8 @@ class RevisorAgent(Agent[AgentOutput]):
         )
         result = self._router.route(request)
         if result.should_terminate:
-            return state.with_terminal(result.reason)
+            is_acceptable = classification.category == FailureCategory.ACCEPTABLE
+            return state.with_terminal(result.reason, ok=is_acceptable)
         if result.routing_decision is None:
             raise RuntimeError("Router returned non-terminal result with no routing_decision")
         if result.next_stage is None:
@@ -107,8 +118,8 @@ class RevisorAgent(Agent[AgentOutput]):
         findings = [
             Evidence(
                 source=f["source"],
-                severity=f["severity"],
-                scope=f["scope"],
+                severity=self._coerce_severity(f["severity"]),
+                scope=self._coerce_scope(f["scope"]),
                 location=Location(
                     type=self._coerce_location_type(f["location"].get("type")),
                     cell_index=(
@@ -158,7 +169,8 @@ class RevisorAgent(Agent[AgentOutput]):
             lines.append("## Execution Report\n")
             lines.append(f"- **Status**: {'✓ OK' if exec_report.ok else '✗ FAILED'}\n")
             if exec_report.failed_cells:
-                lines.append(f"- **Failed Cells**: {', '.join(map(str, exec_report.failed_cells))}\n")
+                failed = ", ".join(map(str, exec_report.failed_cells))
+                lines.append(f"- **Failed Cells**: {failed}\n")
             if exec_report.error_summary:
                 lines.append(f"- **Error**: {exec_report.error_summary}\n")
             lines.append("\n")
@@ -181,6 +193,38 @@ class RevisorAgent(Agent[AgentOutput]):
             lines.append("- Address the quality gaps identified above\n")
 
         return "".join(lines)
+
+    def _coerce_severity(self, raw: str | None) -> Severity:
+        """Map the student persona's severity vocabulary onto Evidence severities.
+
+        The persona emits BLOCKER/CONFUSING/NITPICK (the linear ledger's
+        contract); the classifier expects BLOCKER/HIGH/MEDIUM/LOW. Coerce here
+        so one persona file can serve both pipelines.
+        """
+        mapping: dict[str, Severity] = {
+            "BLOCKER": "BLOCKER",
+            "HIGH": "HIGH",
+            "MEDIUM": "MEDIUM",
+            "LOW": "LOW",
+            "CONFUSING": "MEDIUM",
+            "NITPICK": "LOW",
+        }
+        return mapping.get((raw or "").strip().upper(), "MEDIUM")
+
+    def _coerce_scope(self, raw: str | None) -> Scope:
+        """Normalize loose scope labels from real LLM output to classifier scopes.
+
+        The classifier only acts on plan/structure (BLOCKER_STRUCTURE) and
+        code (TEST_FAILURE); anything unrecognized becomes "unknown" rather
+        than silently passing through an invalid value.
+        """
+        mapping: dict[str, Scope] = {
+            "plan": "plan",
+            "structure": "structure",
+            "code": "code",
+            "content": "content",
+        }
+        return mapping.get((raw or "").strip().lower(), "unknown")
 
     def _coerce_location_type(self, raw_type: str | None) -> LocationType:
         """Accept slightly looser external labels from LLM output.

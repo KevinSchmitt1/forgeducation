@@ -22,7 +22,6 @@ from enum import Enum
 
 from .state import Evidence
 
-
 # ── Categories ─────────────────────────────────────────────────────────────────
 
 
