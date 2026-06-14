@@ -71,7 +71,7 @@ def stub_llm_client():
     """
 
     class _StubClient:
-        def complete(self, system_prompt: str, user_prompt: str) -> str:
+        def complete(self, system_prompt: str, user_prompt: str, trace_context=None) -> str:
             return "# Lesson Plan\n\n## Objectives\n- Understand the topic"
 
     return _StubClient()

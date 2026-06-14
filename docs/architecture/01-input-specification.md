@@ -2,6 +2,11 @@
 
 **Status:** Design review (Step 1 of input layer redesign)
 
+> **Note (historical):** The *assessment approach* input described in parts of this
+> and the sibling architecture docs was never wired into the pipeline and has been
+> removed. The supported structured inputs are the **learner profile** and **topic
+> specification** only. See git history for the removed design.
+
 ---
 
 ## Overview

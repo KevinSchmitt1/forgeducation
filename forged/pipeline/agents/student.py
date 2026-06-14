@@ -42,12 +42,12 @@ class StudentAgent(Agent[AgentOutput]):
 
     async def run(self, state: PipelineState, store: ArtifactStore) -> PipelineState:
         user_msg = self._build_user_message(state, store)
+        artifact_name = f"student_grade_report_v{state.iteration}"
         try:
-            response = self._call_llm(user_msg)
+            response = self._call_llm(state, store, user_msg, artifact_name)
         except RuntimeError as exc:
             _LOG.warning("StudentAgent LLM call failed, using neutral report: %s", exc)
             response = json.dumps(_NEUTRAL_REPORT)
-        artifact_name = f"student_grade_report_v{state.iteration}"
         store.put(Artifact(name=artifact_name, kind="json", content=response))
         output = StageOutput(
             stage=PipelineStage.STUDENT,
@@ -56,9 +56,25 @@ class StudentAgent(Agent[AgentOutput]):
         )
         return state.with_output(output).with_current_stage(PipelineStage.REVISER)
 
-    def _call_llm(self, user_msg: str) -> str:
+    def _call_llm(
+        self,
+        state: PipelineState,
+        store: ArtifactStore,
+        user_msg: str,
+        output_artifact: str,
+    ) -> str:
         """Call the LLM and return a parsed grade-report JSON string."""
-        raw = self._llm_client.complete(self.persona, user_msg)
+        raw = self._complete_llm(
+            stage_name=PipelineStage.STUDENT,
+            state=state,
+            store=store,
+            user_msg=user_msg,
+            input_artifacts=(
+                self._latest_notebook_name(state),
+                self._latest_execution_name(state),
+            ),
+            output_artifact=output_artifact,
+        )
         return self._parse_grade_report(raw)
 
     def _parse_grade_report(self, raw: str) -> str:
@@ -112,14 +128,11 @@ class StudentAgent(Agent[AgentOutput]):
         exec_content = (
             store.get(exec_name).content if store.has(exec_name) else "(no execution report)"
         )
-        profile_content = store.get("profile").content if store.has("profile") else ""
         parts = [
             f"Notebook:\n{notebook_content}",
             f"Execution Report:\n{exec_content}",
         ]
-        if profile_content:
-            parts.append(f"Learner Profile:\n{profile_content}")
-        return "\n\n".join(parts)
+        return self._context_prefix(store) + "\n\n".join(parts)
 
     def _render_notebook(self, content: str) -> str:
         """Show the notebook as an index-labelled listing, not raw .ipynb JSON.

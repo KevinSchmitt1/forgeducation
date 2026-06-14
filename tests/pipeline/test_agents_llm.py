@@ -100,6 +100,33 @@ def test_planner_calls_llm_with_user_message_containing_run_id(
 
 
 @pytest.mark.unit
+def test_planner_prepends_lesson_context_when_present(
+    personas_dir: Path,
+    initial_state: PipelineState,
+    artifact_store: ArtifactStore,
+    mock_llm_client: MagicMock,
+) -> None:
+    """When a lesson_context artifact exists, the agent prepends it to the user message."""
+    from forged.artifacts import Artifact
+    from forged.pipeline.agents.planner import PlannerAgent
+
+    artifact_store.put(
+        Artifact(
+            name="lesson_context",
+            kind="text",
+            content="## Lesson Context\n\n### Target learner — Ada Lovelace",
+        )
+    )
+    mock_llm_client.complete.return_value = "# Plan"
+    agent = PlannerAgent(personas_dir=personas_dir, llm_client=mock_llm_client)
+    asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
+
+    user_msg = mock_llm_client.complete.call_args[0][1]
+    assert user_msg.startswith("## Lesson Context")
+    assert "Target learner — Ada Lovelace" in user_msg
+
+
+@pytest.mark.unit
 def test_planner_propagates_llm_runtime_error(
     personas_dir: Path,
     initial_state: PipelineState,

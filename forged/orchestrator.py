@@ -21,10 +21,11 @@ from pathlib import Path
 from .agent import LLMAgent
 from .artifacts import Artifact, ArtifactStore
 from .config import PipelineConfig, RevisionPolicy, StageConfig, StageType
+from .context import build_context_block
 from .executor import ExecutorStage, executed_notebook_filename
 from .gate import CandidateResult, GateDecision, evaluate_candidates
 from .ledger import IssueLedger, parse_findings
-from .models import AssessmentApproach, LearnerProfile, TopicSpecification
+from .models import LearnerProfile, TopicSpecification
 from .report import build_summary
 
 
@@ -110,7 +111,6 @@ class Orchestrator:
         brief: str,
         learner_profile: LearnerProfile | str,
         topic_spec: TopicSpecification | None = None,
-        assessment_approach: AssessmentApproach | None = None,
         profile_label: str | None = None,
         on_stage=None,
     ) -> ArtifactStore:
@@ -120,7 +120,6 @@ class Orchestrator:
             brief: Original topic string (e.g., "How hash maps work")
             learner_profile: LearnerProfile object, or a legacy profile label/path
             topic_spec: TopicSpecification object
-            assessment_approach: Optional AssessmentApproach object
             profile_label: Optional legacy label shown in the summary
             on_stage: Progress callback
         """
@@ -151,22 +150,17 @@ class Orchestrator:
             kind="json",
             content=json.dumps(asdict(topic_spec)),
         ))
-        if assessment_approach:
-            store.put(Artifact(
-                name="assessment_approach",
-                kind="json",
-                content=json.dumps(asdict(assessment_approach)),
-            ))
 
-        # Build context dict for agents
-        context = {
-            "learner_profile": learner_profile,
-            "topic_spec": topic_spec,
-            "assessment_approach": assessment_approach,
-            "brief": brief,
-        }
+        # Topic context block, read by every LLM stage — in the initial pass AND the
+        # revision loop — via forged.agent. The learner is intentionally omitted here:
+        # every linear stage already receives it through its `profile` input, so adding
+        # it again would duplicate it. (The agentic path, whose agents have no `profile`
+        # input, passes the learner too — see forged.cli._cmd_agentic.)
+        context_block = build_context_block(None, topic_spec)
+        if context_block:
+            store.put(Artifact(name="lesson_context", kind="text", content=context_block))
 
-        # Run pipeline stages with context
+        # Run pipeline stages
         for stage in self._pipeline.stages:
             _run_stage(
                 stage,
@@ -175,7 +169,6 @@ class Orchestrator:
                 self._pipeline.name,
                 on_stage,
                 self._timings,
-                context=context,
             )
 
         runtime_pipeline = self._pipeline
@@ -342,7 +335,7 @@ class Orchestrator:
         """Create the reviser/executor/critic stages for one iteration."""
         notebook_output = f"revised_notebook__i{iteration}"
         report_output = f"revised_execution_report__i{iteration}"
-        reviser_model = _latest_notebook_model(self._pipeline)
+        reviser_model = self._pipeline.resolved_model_name("reviser")
 
         stages: list[StageConfig] = [
             StageConfig(
@@ -385,17 +378,12 @@ def _run_stage(
     pipeline_name: str,
     on_stage,
     timings: dict[str, float] | None = None,
-    context: dict | None = None,
 ) -> None:
     _notify(on_stage, stage.name, "start", stage.type.value)
     started = time.perf_counter()
     try:
         runner = runner_factory(stage)
-        # Pass context to LLMAgent if available
-        if isinstance(runner, LLMAgent) and context:
-            artifact = runner.run(store, context=context)
-        else:
-            artifact = runner.run(store)
+        artifact = runner.run(store)
     except Exception as exc:  # noqa: BLE001 — record, then halt the run
         _notify(on_stage, stage.name, "error", str(exc))
         store.write_manifest(

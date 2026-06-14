@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from forged.artifacts import Artifact, ArtifactStore
+from forged.config import PipelineConfig, load_pipeline
 from forged.pipeline.state import (
     PipelineStage,
     PipelineState,
@@ -48,6 +49,12 @@ def artifact_store(tmp_path: Path) -> ArtifactStore:
 
 
 @pytest.fixture
+def pipeline_config() -> PipelineConfig:
+    config_path = Path(__file__).resolve().parents[2] / "config" / "pipeline.review-loop.yaml"
+    return load_pipeline(config_path)
+
+
+@pytest.fixture
 def initial_state() -> PipelineState:
     """Fresh pipeline state at iteration 0, stage PLANNER."""
     return create_initial_state(run_id="test-graph-001")
@@ -57,42 +64,58 @@ def initial_state() -> PipelineState:
 
 
 @pytest.mark.integration
-def test_graph_compiles(personas_dir: Path, artifact_store: ArtifactStore) -> None:
+def test_graph_compiles(
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
+) -> None:
     """build_pipeline_graph() returns a compiled graph that can be invoked."""
     from forged.pipeline.graph import build_pipeline_graph
 
-    graph = build_pipeline_graph(store=artifact_store, personas_dir=personas_dir)
+    graph = build_pipeline_graph(
+        store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir
+    )
     assert graph is not None
 
 
 @pytest.mark.integration
-def test_graph_has_all_nodes(personas_dir: Path, artifact_store: ArtifactStore) -> None:
+def test_graph_has_all_nodes(
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
+) -> None:
     """The compiled graph contains exactly the five required nodes."""
     from forged.pipeline.graph import build_pipeline_graph
 
-    graph = build_pipeline_graph(store=artifact_store, personas_dir=personas_dir)
+    graph = build_pipeline_graph(
+        store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir
+    )
     node_names = set(graph.get_graph().nodes.keys())
     required = {"planner", "code_author", "executor", "student", "revisor"}
     assert required.issubset(node_names)
 
 
 @pytest.mark.integration
-def test_graph_has_start_edge(personas_dir: Path, artifact_store: ArtifactStore) -> None:
+def test_graph_has_start_edge(
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
+) -> None:
     """The compiled graph has an edge from __start__ to planner."""
     from forged.pipeline.graph import build_pipeline_graph
 
-    graph = build_pipeline_graph(store=artifact_store, personas_dir=personas_dir)
+    graph = build_pipeline_graph(
+        store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir
+    )
     edges = graph.get_graph().edges
     source_target_pairs = {(e.source, e.target) for e in edges}
     assert ("__start__", "planner") in source_target_pairs
 
 
 @pytest.mark.integration
-def test_graph_has_linear_edges(personas_dir: Path, artifact_store: ArtifactStore) -> None:
+def test_graph_has_linear_edges(
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
+) -> None:
     """The linear edges planner→code_author→executor→student→revisor all exist."""
     from forged.pipeline.graph import build_pipeline_graph
 
-    graph = build_pipeline_graph(store=artifact_store, personas_dir=personas_dir)
+    graph = build_pipeline_graph(
+        store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir
+    )
     edges = graph.get_graph().edges
     source_target_pairs = {(e.source, e.target) for e in edges}
     linear_edges = [
@@ -103,6 +126,25 @@ def test_graph_has_linear_edges(personas_dir: Path, artifact_store: ArtifactStor
     ]
     for src, tgt in linear_edges:
         assert (src, tgt) in source_target_pairs, f"Missing edge: {src} → {tgt}"
+
+
+@pytest.mark.unit
+def test_graph_uses_stage_specific_models(
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
+) -> None:
+    """Graph construction resolves planner/code_author/student models by stage name."""
+    from forged.pipeline.graph import build_pipeline_graph
+
+    captured_models: list[str] = []
+
+    class FakeLLMClient:
+        def __init__(self, config):
+            captured_models.append(config.model)
+
+    with patch("forged.pipeline.graph.LLMClient", FakeLLMClient):
+        build_pipeline_graph(store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir)
+
+    assert captured_models == ["gpt-5-mini", "gpt-5", "gpt-5-mini"]
 
 
 # ── Routing logic tests ────────────────────────────────────────────────────────
@@ -290,7 +332,10 @@ def _build_acceptable_agents(
 
 @pytest.mark.integration
 def test_full_pipeline_acceptable_path(
-    personas_dir: Path, artifact_store: ArtifactStore, initial_state: PipelineState
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+    initial_state: PipelineState,
+    pipeline_config: PipelineConfig,
 ) -> None:
     """Full pipeline runs planner→code_author→executor→student→revisor→END on ACCEPTABLE."""
     from forged.pipeline.agents.code_author import CodeAuthorAgent
@@ -307,8 +352,8 @@ def test_full_pipeline_acceptable_path(
         patch.object(ExecutorAgent, "run", mocks["executor_run"]),
         patch.object(StudentAgent, "run", mocks["student_run"]),
     ):
-        final_state = asyncio.get_event_loop().run_until_complete(
-            run_pipeline(initial_state, artifact_store, personas_dir)
+        final_state = asyncio.run(
+            run_pipeline(initial_state, artifact_store, pipeline_config, personas_dir)
         )
 
     assert isinstance(final_state, PipelineState)
@@ -318,7 +363,10 @@ def test_full_pipeline_acceptable_path(
 
 @pytest.mark.integration
 def test_full_pipeline_with_one_reroute(
-    personas_dir: Path, artifact_store: ArtifactStore, initial_state: PipelineState
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+    initial_state: PipelineState,
+    pipeline_config: PipelineConfig,
 ) -> None:
     """Pipeline routes CODE_QUALITY back to code_author once then terminates ACCEPTABLE."""
     from forged.pipeline.agents.code_author import CodeAuthorAgent
@@ -374,8 +422,8 @@ def test_full_pipeline_with_one_reroute(
         patch.object(ExecutorAgent, "run", mocks["executor_run"]),
         patch.object(StudentAgent, "run", mocks["student_run"]),
     ):
-        final_state = asyncio.get_event_loop().run_until_complete(
-            run_pipeline(initial_state, artifact_store, personas_dir)
+        final_state = asyncio.run(
+            run_pipeline(initial_state, artifact_store, pipeline_config, personas_dir)
         )
 
     assert isinstance(final_state, PipelineState)
@@ -385,7 +433,7 @@ def test_full_pipeline_with_one_reroute(
 
 @pytest.mark.integration
 def test_full_pipeline_respects_budget(
-    personas_dir: Path, artifact_store: ArtifactStore
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
 ) -> None:
     """Pipeline terminates when code_author budget is exhausted.
 
@@ -446,8 +494,8 @@ def test_full_pipeline_respects_budget(
         patch.object(StudentAgent, "run", mocks["student_run"]),
         patch("forged.pipeline.agents.reviser.Router", make_tight_router),
     ):
-        final_state = asyncio.get_event_loop().run_until_complete(
-            run_pipeline(budget_state, artifact_store, personas_dir)
+        final_state = asyncio.run(
+            run_pipeline(budget_state, artifact_store, pipeline_config, personas_dir)
         )
 
     assert isinstance(final_state, PipelineState)
@@ -517,7 +565,10 @@ def test_state_stage_attempts_tracked() -> None:
 
 @pytest.mark.integration
 def test_graph_handles_agent_error(
-    personas_dir: Path, artifact_store: ArtifactStore, initial_state: PipelineState
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+    initial_state: PipelineState,
+    pipeline_config: PipelineConfig,
 ) -> None:
     """If planner returns a terminal state, pipeline terminates gracefully."""
     from forged.pipeline.agents.planner import PlannerAgent
@@ -527,8 +578,8 @@ def test_graph_handles_agent_error(
         return state.with_terminal("Agent error: unexpected exception")
 
     with patch.object(PlannerAgent, "run", AsyncMock(side_effect=failing_planner)):
-        final_state = asyncio.get_event_loop().run_until_complete(
-            run_pipeline(initial_state, artifact_store, personas_dir)
+        final_state = asyncio.run(
+            run_pipeline(initial_state, artifact_store, pipeline_config, personas_dir)
         )
 
     assert isinstance(final_state, PipelineState)
@@ -537,7 +588,10 @@ def test_graph_handles_agent_error(
 
 @pytest.mark.integration
 def test_graph_handles_missing_artifact(
-    personas_dir: Path, artifact_store: ArtifactStore, initial_state: PipelineState
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+    initial_state: PipelineState,
+    pipeline_config: PipelineConfig,
 ) -> None:
     """Reviser with no artifacts in store at all terminates gracefully (UNCLASSIFIABLE)."""
     from forged.pipeline.agents.code_author import CodeAuthorAgent
@@ -572,8 +626,8 @@ def test_graph_handles_missing_artifact(
         patch.object(ExecutorAgent, "run", mocks["executor_run"]),
         patch.object(StudentAgent, "run", mocks["student_run"]),
     ):
-        final_state = asyncio.get_event_loop().run_until_complete(
-            run_pipeline(initial_state, artifact_store, personas_dir)
+        final_state = asyncio.run(
+            run_pipeline(initial_state, artifact_store, pipeline_config, personas_dir)
         )
 
     assert isinstance(final_state, PipelineState)
@@ -585,7 +639,10 @@ def test_graph_handles_missing_artifact(
 
 @pytest.mark.integration
 def test_reviser_writes_revision_brief(
-    personas_dir: Path, artifact_store: ArtifactStore, initial_state: PipelineState
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+    initial_state: PipelineState,
+    pipeline_config: PipelineConfig,
 ) -> None:
     """Reviser writes revision_brief artifact containing failure context for rerouted agents.
 
@@ -653,8 +710,8 @@ def test_reviser_writes_revision_brief(
         patch.object(CodeAuthorAgent, "run", AsyncMock(side_effect=code_author_run)),
         patch.object(StudentAgent, "run", AsyncMock(side_effect=student_run)),
     ):
-        final_state = asyncio.get_event_loop().run_until_complete(
-            run_pipeline(initial_state, artifact_store, personas_dir)
+        final_state = asyncio.run(
+            run_pipeline(initial_state, artifact_store, pipeline_config, personas_dir)
         )
 
     assert final_state.is_terminal, "Pipeline should terminate"
@@ -668,7 +725,7 @@ def test_reviser_writes_revision_brief(
 
 @pytest.mark.integration
 def test_real_executor_detects_code_quality_failure(
-    personas_dir: Path, artifact_store: ArtifactStore
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
 ) -> None:
     """Real executor detects a failing notebook; classified CODE_QUALITY, routed to CodeAuthor.
 
@@ -738,8 +795,8 @@ def test_real_executor_detects_code_quality_failure(
         patch.object(CodeAuthorAgent, "run", AsyncMock(side_effect=code_author_run)),
         patch.object(StudentAgent, "run", AsyncMock(side_effect=student_run)),
     ):
-        final_state = asyncio.get_event_loop().run_until_complete(
-            run_pipeline(initial_state, artifact_store, personas_dir)
+        final_state = asyncio.run(
+            run_pipeline(initial_state, artifact_store, pipeline_config, personas_dir)
         )
 
     assert isinstance(final_state, PipelineState)
@@ -792,7 +849,10 @@ def test_revisor_route_is_deterministic_for_terminal() -> None:
 
 @pytest.mark.integration
 def test_run_pipeline_returns_pipeline_state(
-    personas_dir: Path, artifact_store: ArtifactStore, initial_state: PipelineState
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+    initial_state: PipelineState,
+    pipeline_config: PipelineConfig,
 ) -> None:
     """run_pipeline() returns a PipelineState after execution completes."""
     from forged.pipeline.agents.code_author import CodeAuthorAgent
@@ -809,8 +869,8 @@ def test_run_pipeline_returns_pipeline_state(
         patch.object(ExecutorAgent, "run", mocks["executor_run"]),
         patch.object(StudentAgent, "run", mocks["student_run"]),
     ):
-        final_state = asyncio.get_event_loop().run_until_complete(
-            run_pipeline(initial_state, artifact_store, personas_dir)
+        final_state = asyncio.run(
+            run_pipeline(initial_state, artifact_store, pipeline_config, personas_dir)
         )
 
     assert isinstance(final_state, PipelineState)
@@ -818,7 +878,10 @@ def test_run_pipeline_returns_pipeline_state(
 
 @pytest.mark.integration
 def test_run_pipeline_terminal_state_has_reason(
-    personas_dir: Path, artifact_store: ArtifactStore, initial_state: PipelineState
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+    initial_state: PipelineState,
+    pipeline_config: PipelineConfig,
 ) -> None:
     """run_pipeline() returns a terminal state with a non-None terminal_reason."""
     from forged.pipeline.agents.code_author import CodeAuthorAgent
@@ -835,8 +898,8 @@ def test_run_pipeline_terminal_state_has_reason(
         patch.object(ExecutorAgent, "run", mocks["executor_run"]),
         patch.object(StudentAgent, "run", mocks["student_run"]),
     ):
-        final_state = asyncio.get_event_loop().run_until_complete(
-            run_pipeline(initial_state, artifact_store, personas_dir)
+        final_state = asyncio.run(
+            run_pipeline(initial_state, artifact_store, pipeline_config, personas_dir)
         )
 
     assert final_state.terminal_reason is not None

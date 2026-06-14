@@ -7,18 +7,201 @@ is the privacy switch: point at Ollama and no lesson content leaves the machine.
 
 from __future__ import annotations
 
+import atexit
+import logging
 import os
+import threading
+from dataclasses import dataclass
+from typing import Any
 
 try:
     from openai import OpenAI
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     OpenAI = None  # type: ignore[assignment, misc]
 
+try:
+    from langfuse import Langfuse
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    Langfuse = None  # type: ignore[assignment, misc]
+
 from .config import ModelConfig, Provider
 
 # Default local Ollama endpoint (OpenAI-compatible). Overridable via env.
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OLLAMA_PLACEHOLDER_KEY = "ollama"  # Ollama ignores the key but the SDK requires one.
+_LOG = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LLMTraceContext:
+    """Metadata used to group one LLM call into a Langfuse trace.
+
+    One pipeline run should reuse the same ``run_id`` across all stages so the
+    resulting generations land under a stable trace id.
+    """
+
+    stage_name: str
+    pipeline_kind: str
+    run_id: str
+    run_dir: str | None = None
+    pipeline_name: str | None = None
+    iteration: int | None = None
+    input_artifacts: tuple[str, ...] = ()
+    output_artifact: str | None = None
+
+
+class _LangfuseTracer:
+    """Lazy Langfuse integration for per-call generation tracing.
+
+    The tracer is intentionally optional: tests and local runs without
+    LANGFUSE_* credentials should keep working with zero behavior change.
+    """
+
+    def __init__(self) -> None:
+        self._client: Langfuse | None = None
+        self._disabled = False
+        self._lock = threading.Lock()
+        self._registered_atexit = False
+
+    def start_generation(
+        self,
+        config: ModelConfig,
+        messages: list[dict[str, str]],
+        trace_context: LLMTraceContext | None,
+    ) -> Any | None:
+        client = self._ensure_client()
+        if client is None:
+            return None
+
+        metadata = self._metadata(config, trace_context)
+        observation_name = (
+            f"{trace_context.pipeline_kind}.{trace_context.stage_name}"
+            if trace_context is not None
+            else "llm.complete"
+        )
+        return client.start_observation(
+            name=observation_name,
+            as_type="generation",
+            trace_context=self._trace_payload(client, trace_context),
+            input=messages,
+            metadata=metadata,
+            model=config.model,
+            model_parameters={
+                "temperature": config.temperature,
+                "max_tokens": config.max_tokens,
+            },
+        )
+
+    def record_success(
+        self,
+        observation: Any | None,
+        output: str,
+        usage_details: dict[str, int] | None,
+    ) -> None:
+        if observation is None:
+            return
+        try:
+            observation.update(output=output, usage_details=usage_details)
+            observation.end()
+        except Exception as exc:  # noqa: BLE001 - observability must not break LLM calls
+            _LOG.warning("Langfuse success recording failed: %s", exc)
+
+    def record_error(self, observation: Any | None, message: str) -> None:
+        if observation is None:
+            return
+        try:
+            observation.update(level="ERROR", status_message=message)
+            observation.end()
+        except Exception as exc:  # noqa: BLE001 - observability must not break LLM calls
+            _LOG.warning("Langfuse error recording failed: %s", exc)
+
+    def _ensure_client(self) -> Langfuse | None:
+        if self._disabled:
+            return None
+        if self._client is not None:
+            return self._client
+
+        if Langfuse is None or not _langfuse_configured():
+            _LOG.debug("Langfuse tracing disabled: SDK unavailable or credentials missing")
+            self._disabled = True
+            return None
+
+        with self._lock:
+            if self._disabled:
+                return None
+            if self._client is not None:
+                return self._client
+
+            kwargs: dict[str, Any] = {
+                "public_key": os.getenv("LANGFUSE_PUBLIC_KEY"),
+                "secret_key": os.getenv("LANGFUSE_SECRET_KEY"),
+            }
+            if host := os.getenv("LANGFUSE_HOST") or os.getenv("LANGFUSE_BASE_URL"):
+                kwargs["host"] = host
+            if environment := os.getenv("LANGFUSE_ENV"):
+                kwargs["environment"] = environment
+            if release := os.getenv("LANGFUSE_RELEASE"):
+                kwargs["release"] = release
+
+            try:
+                self._client = Langfuse(**kwargs)
+            except Exception as exc:  # noqa: BLE001 - tracing is best-effort
+                _LOG.warning("Langfuse init failed, tracing disabled: %s", exc)
+                self._disabled = True
+                return None
+
+            if not self._registered_atexit:
+                atexit.register(self._shutdown)
+                self._registered_atexit = True
+        return self._client
+
+    def _shutdown(self) -> None:
+        if self._client is None:
+            return
+        try:
+            self._client.flush()
+            self._client.shutdown()
+        except Exception:  # noqa: BLE001 - best-effort shutdown only
+            pass
+
+    def _trace_payload(
+        self,
+        client: Langfuse,
+        trace_context: LLMTraceContext | None,
+    ) -> dict[str, str] | None:
+        if trace_context is None:
+            return None
+        seed = f"{trace_context.pipeline_kind}:{trace_context.run_id}"
+        return {"trace_id": client.create_trace_id(seed=seed)}
+
+    def _metadata(
+        self,
+        config: ModelConfig,
+        trace_context: LLMTraceContext | None,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "provider": config.provider.value,
+            "model": config.model,
+        }
+        if trace_context is None:
+            return metadata
+
+        metadata.update(
+            {
+                "stage_name": trace_context.stage_name,
+                "pipeline_kind": trace_context.pipeline_kind,
+                "run_id": trace_context.run_id,
+                "run_dir": trace_context.run_dir,
+                "pipeline_name": trace_context.pipeline_name,
+                "iteration": trace_context.iteration,
+                "input_artifacts": list(trace_context.input_artifacts),
+                "output_artifact": trace_context.output_artifact,
+            }
+        )
+        return metadata
+
+
+_TRACER = _LangfuseTracer()
 
 
 class LLMClient:
@@ -31,6 +214,7 @@ class LLMClient:
     def __init__(self, config: ModelConfig):
         self._config = config
         self._client: OpenAI | None = None
+        self._tracer = _TRACER
 
     def _ensure_client(self) -> OpenAI:
         """Build the SDK client on first use.
@@ -50,7 +234,12 @@ class LLMClient:
         self._client = OpenAI(**_connection_kwargs(self._config.provider))
         return self._client
 
-    def complete(self, system_prompt: str, user_prompt: str) -> str:
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        trace_context: LLMTraceContext | None = None,
+    ) -> str:
         """Run a single system+user chat completion and return the text.
 
         Raises RuntimeError with context on any API failure so the orchestrator
@@ -61,6 +250,7 @@ class LLMClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+        observation = self._tracer.start_generation(self._config, messages, trace_context)
         # OpenAI deprecated `max_tokens` in favour of `max_completion_tokens`
         # (required by o-series and newer models). Ollama's OpenAI-compatible
         # endpoint still expects `max_tokens`, so pick per provider.
@@ -80,6 +270,7 @@ class LLMClient:
                     messages=messages,
                 )
         except Exception as exc:  # noqa: BLE001 — re-raise with actionable context
+            self._tracer.record_error(observation, str(exc))
             raise RuntimeError(
                 f"LLM call failed (provider={self._config.provider.value}, "
                 f"model={self._config.model}): {exc}"
@@ -87,10 +278,12 @@ class LLMClient:
 
         content = response.choices[0].message.content
         if not content:
+            self._tracer.record_error(observation, "empty content")
             raise RuntimeError(
                 f"LLM returned empty content (provider={self._config.provider.value}, "
                 f"model={self._config.model})"
             )
+        self._tracer.record_success(observation, content, _usage_details(response))
         return content
 
 
@@ -107,3 +300,24 @@ def _connection_kwargs(provider: Provider) -> dict:
             "stage/pipeline provider to 'ollama' for local inference."
         )
     return {"api_key": api_key}
+
+
+def _langfuse_configured() -> bool:
+    return bool(os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"))
+
+
+def _usage_details(response: Any) -> dict[str, int] | None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+
+    usage_details: dict[str, int] = {}
+    for source_key, target_key in (
+        ("prompt_tokens", "input"),
+        ("completion_tokens", "output"),
+        ("total_tokens", "total"),
+    ):
+        value = getattr(usage, source_key, None)
+        if value is not None:
+            usage_details[target_key] = value
+    return usage_details or None

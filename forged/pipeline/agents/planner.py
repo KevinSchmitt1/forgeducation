@@ -41,11 +41,11 @@ class PlannerAgent(Agent[AgentOutput]):
 
     async def run(self, state: PipelineState, store: ArtifactStore) -> PipelineState:
         user_msg = self._build_user_message(state, store)
+        artifact_name = f"lesson_plan_v{state.iteration}"
         try:
-            response = self._call_llm(user_msg)
+            response = self._call_llm(state, store, user_msg, artifact_name)
         except RuntimeError as exc:
             raise RuntimeError(f"PlannerAgent LLM call failed: {exc}") from exc
-        artifact_name = f"lesson_plan_v{state.iteration}"
         store.put(Artifact(name=artifact_name, kind="text", content=response))
         output = StageOutput(
             stage=PipelineStage.PLANNER,
@@ -54,20 +54,34 @@ class PlannerAgent(Agent[AgentOutput]):
         )
         return state.with_output(output).with_current_stage(self.next_stage())
 
-    def _call_llm(self, user_msg: str) -> str:
+    def _call_llm(
+        self,
+        state: PipelineState,
+        store: ArtifactStore,
+        user_msg: str,
+        output_artifact: str,
+    ) -> str:
         """Call the LLM with the planner system prompt and return the text response."""
-        return self._llm_client.complete(self.persona, user_msg)
+        input_artifacts = ("brief",) if store.has("brief") else ()
+        if self._read_revision_brief(state, store):
+            input_artifacts = (*input_artifacts, f"revision_brief_v{state.iteration - 1}")
+        return self._complete_llm(
+            stage_name=PipelineStage.PLANNER,
+            state=state,
+            store=store,
+            user_msg=user_msg,
+            input_artifacts=input_artifacts,
+            output_artifact=output_artifact,
+        )
 
     def _build_user_message(self, state: PipelineState, store: ArtifactStore) -> str:
         lines = [f"Run ID: {state.run_id}", f"Iteration: {state.iteration}"]
         if store.has("brief"):
             lines.append(f"\nBrief:\n{store.get('brief').content}")
-        if store.has("profile"):
-            lines.append(f"\nProfile:\n{store.get('profile').content}")
         revision_brief = self._read_revision_brief(state, store)
         if revision_brief:
             lines.append(f"\nFeedback from previous attempt:\n{revision_brief}")
-        return "\n".join(lines)
+        return self._context_prefix(store) + "\n".join(lines)
 
     def _read_revision_brief(self, state: PipelineState, store: ArtifactStore) -> str:
         """Read revision_brief artifact if available (feedback from reviser)."""

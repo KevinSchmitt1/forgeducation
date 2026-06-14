@@ -23,17 +23,6 @@ forged build \
   --topic-spec templates/examples/topic-hash-maps.yaml
 ```
 
-### Full Input (Advanced)
-Include assessment generation:
-
-```bash
-forged build \
-  --topic "Transformers" \
-  --learner-profile templates/examples/learner-ml-practitioner.yaml \
-  --topic-spec templates/examples/topic-transformers.yaml \
-  --assessment templates/examples/assessment-project.yaml
-```
-
 ## Template Files
 
 ### Core Templates
@@ -46,12 +35,7 @@ forged build \
 2. **`topic_specification.template.yaml`**
    - Defines what should be learned and how deep
    - Fields: scope, learning_objectives, prerequisites, constraints, depth, focus_areas
-   - Affects: content structure, examples chosen, assessment design
-
-3. **`assessment_approach.template.yaml`**
-   - Specifies how the learner should be assessed
-   - Fields: type (project/test/both), difficulty, rubric, success_criteria
-   - Affects: final assessment notebook generation (optional)
+   - Affects: content structure, examples chosen, depth calibration
 
 ### Example Profiles
 
@@ -68,31 +52,47 @@ forged build \
 
 ## Key Fields Explained
 
-### Material Density
+> The enum fields below accept a **fixed set of values** — these are the only
+> accepted strings (they map to `Literal` types in `forged/models.py`). Any other
+> value is passed to the model verbatim and silently weakens the prompt, so stick
+> to this list.
 
-Controls how much explanation and examples are provided per concept:
+### `material_density` (learner profile)
 
-- **dense**: 2-3 detailed explanations per concept, 5+ examples, frequent check-ins
-- **medium**: 1 focused explanation per concept, 2-3 examples, balanced pace
-- **minimal**: Brief explanation, code-first approach, assumes self-teaching ability
+How much explanation and how many examples per concept:
 
-### Depth Level
+- **dense**: terse explanations, ~1 canonical example per concept
+- **standard**: balanced explanations, 2–3 examples per concept
+- **rich**: elaborate explanations, multiple examples, extension ideas (longer notebook)
 
-Controls the theoretical rigor and scope:
+### `learning_style` (learner profile)
 
-- **surface**: Overview; "what is it" without deep understanding
-- **practical**: Hands-on; understand key trade-offs; implement and use
-- **rigorous**: Theoretical; understand proofs, complexity analysis, edge cases
+How the learner prefers to absorb material — one of:
 
-### Learning Style
+- **socratic** · **project_based** · **visual** · **hands_on** · **reference**
 
-How the learner prefers to absorb information:
+(Note the underscores: `hands_on`, `project_based`.)
 
-- **visual**: Diagrams, mental models, visual representations
-- **hands-on**: Write code immediately, learn by experimenting
-- **conceptual**: Theory first; understand "why" before "how"
-- **example-driven**: See many examples; pattern-match from patterns
-- **problem-solving**: Start with a problem; solve step-by-step
+### `environment` (learner profile)
+
+Where the lesson will run — one of:
+
+- **jupyter_notebook** · **google_colab** · **vscode** · **ide** · **cli** · **book**
+
+### `scope` (topic spec)
+
+The angle the lesson takes — one of:
+
+- **fundamentals**: concepts over code
+- **implementation**: working, runnable code from scratch
+- **optimization**: performance, profiling, trade-offs
+- **usage**: how to use existing tools/APIs effectively
+
+### `depth` (topic spec)
+
+Theoretical rigor — one of:
+
+- **beginner** · **intermediate** · **advanced**
 
 ## Customizing Templates
 
@@ -114,20 +114,13 @@ How the learner prefers to absorb information:
 → Agent prompts include:
 - Learner's background (agents adjust explanation depth)
 - Material density (controls detail level and example count)
-- Learning style (prompts emphasize visual/hands-on/conceptual depending on style)
+- Learning style (prompts emphasize visual / hands_on / socratic depending on style)
 
 ### Topic Specification
 → Agents use for:
 - Planner: scope, objectives, depth guide content structure
 - Code Author: prerequisites, constraints, focus areas guide examples
 - Student: learning objectives validate notebook completeness
-- Assessor: objectives and rubric generate assessment
-
-### Assessment Approach
-→ Generates:
-- Project-based assessment (build something; demonstrate understanding)
-- Knowledge test (answer questions; validate conceptual understanding)
-- Combined assessment (both project + test)
 
 ## Examples
 
@@ -174,24 +167,20 @@ Result: Rigorous explanations, mathematical depth, advanced examples, research-l
 
 ## Advanced: Creating New Profiles
 
-Templates are just YAML files. Create your own:
+Templates are just YAML files. A learner profile has exactly these seven keys —
+all required, flat (no nested objects), enum fields from the lists above:
 
 ```yaml
-# templates/examples/learner-data-scientist-transition.yaml
+# my-learner.yaml
+name: "Data Scientist in Transition"
+description: "Statistics and Python; new to software-engineering practices."
 prior_knowledge:
-  description: "Statistics and Python; new to engineering practices"
-
-learning_style:
-  preference: "Example-driven; learn from Jupyter notebooks"
-
-environment:
-  context: "5-10 hours/week, self-paced"
-
-material_density:
-  level: "medium"
-
-background_context:
-  notes: "Goal: build end-to-end ML pipelines; coming from academia"
+  - "Statistics and probability"
+  - "Python for analysis (pandas, numpy)"
+environment: "jupyter_notebook"
+material_density: "standard"
+learning_style: "project_based"
+background_context: "Goal: build end-to-end ML pipelines; coming from academia."
 ```
 
 Then use it:
@@ -205,10 +194,14 @@ forged build --topic "..." --learner-profile templates/examples/learner-data-sci
 A: Yes! Use a learner profile from one and topic spec from another.
 
 **Q: What if I only provide some fields?**
-A: Missing fields get sensible defaults. All fields are optional.
+A: You can't — within a file, *every* field is required and unknown keys are
+rejected (the loader fails fast before any API call). What's optional is the
+*flag*: omit `--learner-profile` or `--topic-spec` entirely and forged uses a
+sensible built-in default for that whole file.
 
 **Q: How do I know what material_density to pick?**
-A: Consider time availability: `dense` for students with 10+ hours, `medium` for 5-10 hours, `minimal` for quick reviews.
+A: Match it to depth/time: `dense` for terse review, `standard` for a normal
+lesson, `rich` for a thorough walkthrough with extra examples.
 
 **Q: Can I edit templates after using them?**
 A: Yes. Edit the YAML file and re-run; forged will generate new content with updated parameters.

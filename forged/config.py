@@ -80,6 +80,7 @@ class PipelineConfig(BaseModel):
 
     name: str
     defaults: ModelConfig = Field(default_factory=ModelConfig)
+    stage_models: dict[str, ModelConfig] = Field(default_factory=dict)
     stages: list[StageConfig]
     revision: RevisionPolicy | None = None
 
@@ -121,8 +122,26 @@ class PipelineConfig(BaseModel):
         return self
 
     def resolved_model(self, stage: StageConfig) -> ModelConfig:
-        """Stage-level model override wins; otherwise use pipeline defaults."""
-        return stage.model or self.defaults
+        """Resolve the model for a concrete stage config.
+
+        Precedence:
+          1. Explicit stage.model override
+          2. stage_models[stage.name]
+          3. pipeline defaults
+        """
+        return stage.model or self.stage_models.get(stage.name) or self.defaults
+
+    def resolved_model_name(self, stage_name: str) -> ModelConfig:
+        """Resolve the model for a logical stage name.
+
+        Used for synthesized stages that do not exist as base pipeline stages,
+        such as the linear revision-loop reviser, and for the agentic graph's
+        logical agents.
+        """
+        stage = next((item for item in self.stages if item.name == stage_name), None)
+        if stage is not None and stage.model is not None:
+            return stage.model
+        return self.stage_models.get(stage_name) or self.defaults
 
 
 # Seed artifacts every pipeline starts from, before any stage runs:

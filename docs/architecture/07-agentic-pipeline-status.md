@@ -1,9 +1,9 @@
 # Agentic Pipeline — Implementation Status
 
-**As of:** 2026-06-09  
+**As of:** 2026-06-14  
 **Phases complete:** 1–9 (state → routing → agents → LangGraph → reviser feedback → CLI)  
-**Tests:** 292 total (including CLI integration and un-mocked CodeAuthor→Executor contract tests); all passing  
-**Coverage:** 89% overall; pipeline modules at 87–100%  
+**Last full-suite benchmark:** 292 tests passing, 89% overall coverage (2026-06-09)  
+**Focused follow-up validation:** 99 targeted tests passing for stage-specific model configuration and 157 targeted tests passing for Langfuse tracing follow-up (2026-06-14)  
 **Status:** Production-ready for personal testing
 
 ---
@@ -106,7 +106,7 @@ Coverage: 92–96% per agent. Tests: `tests/pipeline/test_agents_concrete.py`,
 
 ### Phase 6 — LangGraph Assembly (`forged/pipeline/graph.py`)
 
-`build_pipeline_graph(store, personas_dir)` wires five nodes into a `StateGraph`:
+`build_pipeline_graph(store, pipeline, personas_dir)` wires five nodes into a `StateGraph`:
 
 ```
 START → planner → code_author → executor → student → revisor
@@ -119,7 +119,7 @@ The conditional edge function `revisor_route(state)` reads `state.routing_log[-1
 to determine the next node name, or returns `END` if the state is terminal or the log is
 empty.
 
-`run_pipeline(initial_state, store, personas_dir)` is the public entry point. It calls
+`run_pipeline(initial_state, store, pipeline, personas_dir)` is the public entry point. It calls
 `graph.ainvoke(initial_state)` and reconstructs a typed `PipelineState` from the returned
 dict.
 
@@ -151,10 +151,50 @@ had one entry; `state.is_terminal` was `True`.
 - Three LLM agents (Planner, CodeAuthor, Student) with graceful degradation on
   error; Reviser (deterministic routing) and Executor (real notebook execution)
   use no LLM.
+- Shared stage-specific model configuration across both linear and agentic paths.
+- Agentic `--config` support so model selection comes from pipeline YAML rather than
+  an implicit per-agent default.
+- Optional Langfuse tracing for every LLM-backed prompt, grouped by pipeline run.
 - Full LangGraph graph that compiles, runs, and routes correctly.
 - Complete immutable state trail: every routing decision is recorded in
   `state.routing_log` with classification, evidence, and timestamp.
-- 292 tests passing, 89% overall coverage.
+- Last known full-suite benchmark: 292 tests passing, 89% overall coverage.
+
+### 2026-06-14 Update — Stage-Specific Models
+
+Stage-specific model defaults are now implemented for both execution paths.
+
+What changed:
+
+- `PipelineConfig` now resolves models through shared defaults plus a logical
+  `stage_models` mapping.
+- The agentic CLI loads pipeline config via `--config` and passes it into graph
+  construction.
+- Planner, CodeAuthor, and Student receive stage-specific `LLMClient` instances
+  during graph assembly.
+- The linear revision-loop reviser now resolves its own configured model explicitly.
+
+Bundled defaults are documented in:
+
+- `docs/architecture/08-stage-specific-models.md`
+
+### 2026-06-14 Update — Langfuse Tracing
+
+Langfuse tracing is now integrated at the shared LLM client layer.
+
+What changed:
+
+- `forged/llm.py` now creates one Langfuse generation per LLM call when
+  `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are configured.
+- Linear and agentic paths both pass stage/run metadata into the tracing layer.
+- Generations are grouped by stable run-based trace id rather than emitted as
+  unrelated single calls.
+- Tracing is best-effort: Langfuse failures do not break successful OpenAI or
+  Ollama calls.
+
+Implementation details are documented in:
+
+- `docs/architecture/09-langfuse-tracing.md`
 
 ---
 
@@ -213,6 +253,40 @@ Changes made:
 - `forged/logging_config.py`: Centralized logging setup
 - Output: lesson.ipynb, SUMMARY.md with routing log, pipeline.log with trace
 - Tests: `test_agentic_cli_runs_pipeline()`, `test_agentic_cli_writes_summary_with_routing_log()`
+
+### ✅ 2026-06-14 Follow-Up — Stage-Specific Models (Complete)
+
+**Done:** both execution paths now share explicit model-resolution logic.
+
+Changes made:
+
+- `forged/config.py`: added `stage_models` and logical-stage model resolution
+- `forged/cli.py`: agentic path now accepts/loads `--config`
+- `forged/pipeline/graph.py`: graph construction injects stage-specific LLM clients
+- `forged/orchestrator.py`: linear reviser resolves `reviser` explicitly
+- `config/pipeline.*.yaml`: bundled mixed-model defaults added
+
+Focused validation:
+
+- `python -m pytest -q tests/test_pipeline.py tests/test_cli_agentic.py tests/pipeline/test_graph_integration.py`
+- Result: `99 passed`
+
+### ✅ 2026-06-14 Follow-Up — Langfuse Tracing (Complete)
+
+**Done:** every real LLM-backed agent prompt is now traced through the shared client seam.
+
+Changes made:
+
+- `forged/llm.py`: added lazy, env-driven Langfuse generation tracing
+- `forged/agent.py`: linear LLMAgent passes run/stage trace context
+- `forged/pipeline/agents/*.py`: Planner, CodeAuthor, and Student pass agentic trace context
+- `.env.example` / `pyproject.toml`: documented and declared the runtime dependency
+
+Focused validation:
+
+- `python -m pytest -q tests/test_pipeline.py tests/pipeline/test_agents_llm.py tests/pipeline/test_agents_concrete.py tests/pipeline/test_real_pipeline_integration.py`
+- `python -m pytest -q tests/pipeline/test_graph_integration.py tests/test_cli_agentic.py`
+- Result: `157 passed`
 
 ---
 

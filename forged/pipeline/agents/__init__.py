@@ -102,6 +102,50 @@ class Agent(ABC, Generic[T]):
         router to determine routing dynamically).
         """
 
+    def _context_prefix(self, store: ArtifactStore) -> str:
+        """Return the shared learner + topic context block as a prompt prefix.
+
+        Both pipelines store the rendered block under the `lesson_context`
+        artifact (see forged.context). Returns '' when no context was supplied,
+        so an agent can prepend it to its user message unconditionally.
+        """
+        if store.has("lesson_context"):
+            block = store.get("lesson_context").content
+            if block:
+                return f"{block}\n\n"
+        return ""
+
+    def _complete_llm(
+        self,
+        *,
+        stage_name: PipelineStage,
+        state: PipelineState,
+        store: ArtifactStore,
+        user_msg: str,
+        input_artifacts: tuple[str, ...],
+        output_artifact: str,
+    ) -> str:
+        from forged.llm import LLMTraceContext
+
+        artifact_names = list(input_artifacts)
+        if store.has("lesson_context") and "lesson_context" not in artifact_names:
+            artifact_names.insert(0, "lesson_context")
+
+        return self._llm_client.complete(
+            self.persona,
+            user_msg,
+            trace_context=LLMTraceContext(
+                stage_name=stage_name.value,
+                pipeline_kind="agentic",
+                run_id=state.run_id,
+                run_dir=str(store.run_dir),
+                pipeline_name="agentic",
+                iteration=state.iteration,
+                input_artifacts=tuple(artifact_names),
+                output_artifact=output_artifact,
+            ),
+        )
+
 
 # ── AgentOutput value object ───────────────────────────────────────────────────
 

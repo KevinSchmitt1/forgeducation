@@ -57,12 +57,12 @@ class CodeAuthorAgent(Agent[AgentOutput]):
 
     async def run(self, state: PipelineState, store: ArtifactStore) -> PipelineState:
         user_msg = self._build_user_message(state, store)
+        artifact_name = f"lesson_notebook_v{state.iteration}"
         try:
-            response = self._call_llm(user_msg)
+            response = self._call_llm(state, store, user_msg, artifact_name)
         except RuntimeError as exc:
             _LOG.warning("CodeAuthorAgent LLM call failed, using fallback cells: %s", exc)
             response = build_notebook(_FALLBACK_CELLS)
-        artifact_name = f"lesson_notebook_v{state.iteration}"
         store.put(Artifact(name=artifact_name, kind="notebook", content=response))
         output = StageOutput(
             stage=PipelineStage.CODE_AUTHOR,
@@ -71,9 +71,26 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         )
         return state.with_output(output).with_current_stage(self.next_stage())
 
-    def _call_llm(self, user_msg: str) -> str:
+    def _call_llm(
+        self,
+        state: PipelineState,
+        store: ArtifactStore,
+        user_msg: str,
+        output_artifact: str,
+    ) -> str:
         """Call the LLM and return assembled nbformat notebook JSON."""
-        raw = self._llm_client.complete(self.persona, user_msg)
+        plan_name = self._latest_plan_name(state)
+        input_artifacts = (plan_name,)
+        if self._read_revision_brief(state, store):
+            input_artifacts = (*input_artifacts, f"revision_brief_v{state.iteration - 1}")
+        raw = self._complete_llm(
+            stage_name=PipelineStage.CODE_AUTHOR,
+            state=state,
+            store=store,
+            user_msg=user_msg,
+            input_artifacts=input_artifacts,
+            output_artifact=output_artifact,
+        )
         return self._parse_cells(raw)
 
     def _parse_cells(self, raw: str) -> str:
@@ -95,14 +112,11 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         plan_content = (
             store.get(plan_name).content if store.has(plan_name) else "(no plan available)"
         )
-        profile_content = store.get("profile").content if store.has("profile") else ""
         parts = [f"Lesson Plan:\n{plan_content}"]
-        if profile_content:
-            parts.append(f"Learner Profile:\n{profile_content}")
         revision_brief = self._read_revision_brief(state, store)
         if revision_brief:
             parts.append(f"Feedback from previous attempt:\n{revision_brief}")
-        return "\n\n".join(parts)
+        return self._context_prefix(store) + "\n\n".join(parts)
 
     def _latest_plan_name(self, state: PipelineState) -> str:
         for output in reversed(state.outputs):

@@ -10,12 +10,6 @@ Modes of Operation:
       --learner-profile templates/examples/learner-backend-junior.yaml \
       --topic-spec templates/examples/topic-hash-maps.yaml
 
-  3. WITH ASSESSMENT (generate project spec or test):
-    forged build --topic "Transformers" \
-      --learner-profile templates/examples/learner-ml-practitioner.yaml \
-      --topic-spec templates/examples/topic-transformers.yaml \
-      --assessment templates/examples/assessment-project.yaml
-
 Other commands:
   forged pipelines            # list the bundled pipeline configs
   forged clean --keep 10      # prune old runs (asks before deleting)
@@ -38,7 +32,8 @@ import sys
 from pathlib import Path
 
 from .config import load_pipeline
-from .models import AssessmentApproach, LearnerProfile, TopicSpecification
+from .context import build_context_block
+from .models import LearnerProfile, TopicSpecification
 from .orchestrator import MANIFEST_FILE, Orchestrator
 from .progress import Spinner
 
@@ -90,12 +85,6 @@ def _cmd_build(args) -> int:
             if args.topic_spec
             else _default_topic_spec(topic)
         )
-
-        assessment_approach = (
-            AssessmentApproach.from_yaml(args.assessment)
-            if args.assessment
-            else None
-        )
     except (FileNotFoundError, ValueError, TypeError) as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return EXIT_USAGE
@@ -118,7 +107,6 @@ def _cmd_build(args) -> int:
             brief=topic,
             learner_profile=learner_profile,
             topic_spec=topic_spec,
-            assessment_approach=assessment_approach,
             on_stage=reporter,
         )
     except Exception as exc:  # noqa: BLE001 — top-level: report cleanly, exit non-zero
@@ -228,6 +216,24 @@ def _cmd_agentic(args) -> int:
         print("✗ --brief must not be empty", file=sys.stderr)
         return EXIT_USAGE
 
+    # Same structured-input contract as `forged build`: load the learner profile
+    # and topic spec (or sensible defaults), failing fast on bad input.
+    try:
+        pipeline = load_pipeline(args.config)
+        learner_profile = (
+            LearnerProfile.from_yaml(args.learner_profile)
+            if args.learner_profile
+            else _default_learner_profile()
+        )
+        topic_spec = (
+            TopicSpecification.from_yaml(args.topic_spec)
+            if args.topic_spec
+            else _default_topic_spec(brief)
+        )
+    except (FileNotFoundError, ValueError, TypeError) as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
     run_dir = Path(args.run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -250,11 +256,16 @@ def _cmd_agentic(args) -> int:
         from .artifacts import Artifact
 
         store.put(Artifact(name="brief", kind="text", content=brief))
+        # The shared learner + topic context block; every LLM agent reads this
+        # (see forged.context, forged.pipeline.agents.Agent._context_prefix).
+        context_block = build_context_block(learner_profile, topic_spec)
+        if context_block:
+            store.put(Artifact(name="lesson_context", kind="text", content=context_block))
 
         state = create_initial_state(run_id=run_dir.name)
         logger.info("Initial state created (run_id=%s, iteration=0)", state.run_id)
 
-        final_state = asyncio.run(run_pipeline(state, store, personas_dir))
+        final_state = asyncio.run(run_pipeline(state, store, pipeline, personas_dir))
 
         elapsed_sec = (datetime.now() - start_time).total_seconds()
         logger.info(
@@ -410,13 +421,6 @@ def _build_parser() -> argparse.ArgumentParser:
              "Uses sensible default if omitted.",
     )
     build.add_argument(
-        "--assessment",
-        type=Path,
-        help="Path to assessment_approach.yaml. Specifies project spec or knowledge test. "
-             "Optional; skips assessment generation if omitted. "
-             "See templates/assessment_approach.template.yaml.",
-    )
-    build.add_argument(
         "--runs", default=str(Path.cwd() / "runs"),
         help="Root directory for run outputs (default: ./runs)",
     )
@@ -427,12 +431,31 @@ def _build_parser() -> argparse.ArgumentParser:
 
     agentic = sub.add_parser("agentic", help="Run the agentic pipeline with agent iteration")
     agentic.add_argument(
+        "--config", default=str(DEFAULT_CONFIG),
+        help="Pipeline YAML used to resolve stage-specific model defaults for the "
+             "agentic run (default: bundled review-loop).",
+    )
+    agentic.add_argument(
         "--brief", required=True,
         help="Lesson topic/brief (e.g., 'Teach me how hash maps work')",
     )
     agentic.add_argument(
         "--run-dir", type=Path, required=True,
         help="Output directory for lesson notebook and metadata",
+    )
+    agentic.add_argument(
+        "--learner-profile",
+        type=Path,
+        help="Path to learner_profile.yaml (background, learning style, material "
+             "density). Copy from templates/examples/ or create your own. "
+             "Uses a sensible default if omitted.",
+    )
+    agentic.add_argument(
+        "--topic-spec",
+        type=Path,
+        help="Path to topic_specification.yaml (scope, objectives, prerequisites, "
+             "depth). Copy from templates/examples/ or create your own. "
+             "Uses a sensible default if omitted.",
     )
     agentic.add_argument(
         "--debug", action="store_true",

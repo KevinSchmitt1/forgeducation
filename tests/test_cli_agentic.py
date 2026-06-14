@@ -17,12 +17,15 @@ import pytest
 
 from forged.artifacts import Artifact, ArtifactStore
 from forged.cli import _cmd_agentic
+from forged.config import load_pipeline
 from forged.pipeline.state import (
     PipelineStage,
     PipelineState,
     StageOutput,
     create_initial_state,
 )
+
+CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
 
 @pytest.mark.integration
@@ -109,9 +112,12 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
     class MockArgs:
         def __init__(self, run_dir_path, personas_path):
             self.brief = "Test lesson brief"
+            self.config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
             self.run_dir = run_dir_path
             self.debug = False
             self.personas = personas_path
+            self.learner_profile = None
+            self.topic_spec = None
 
     args = MockArgs(run_dir, str(personas_dir))
 
@@ -127,6 +133,25 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
     assert (run_dir / "lesson.ipynb").is_file(), "Should write lesson.ipynb"
     assert (run_dir / "SUMMARY.md").is_file(), "Should write SUMMARY.md"
     assert (run_dir / "pipeline.log").is_file(), "Should write pipeline.log"
+    # Even with default profile/topic, the shared context block is stored for agents.
+    assert (run_dir / "lesson_context.md").is_file(), "Should store lesson_context"
+
+
+@pytest.mark.unit
+def test_agentic_cli_rejects_missing_learner_profile(tmp_path: Path) -> None:
+    """A bad --learner-profile path is caught as usage error (exit 2) before any run."""
+    from forged.cli import _cmd_agentic
+
+    class Args:
+        brief = "Teach me coroutines"
+        config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
+        run_dir = tmp_path / "run"
+        debug = False
+        personas = str(tmp_path / "personas")
+        learner_profile = tmp_path / "does-not-exist.yaml"
+        topic_spec = None
+
+    assert _cmd_agentic(Args()) == 2
 
 
 @pytest.mark.integration
@@ -155,3 +180,35 @@ def test_agentic_cli_writes_summary_with_routing_log(tmp_path: Path) -> None:
     assert "code_quality" in summary
     assert "NameError" in summary
     assert "Acceptable" in summary
+
+
+@pytest.mark.unit
+def test_agentic_cli_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
+    """The agentic command loads pipeline config and passes it into run_pipeline()."""
+    personas_dir = tmp_path / "personas"
+    personas_dir.mkdir()
+    for name in ("planner", "code_author", "student", "reviser"):
+        (personas_dir / f"{name}.md").write_text(f"Persona for {name}.", encoding="utf-8")
+
+    class Args:
+        brief = "Teach me stacks"
+        config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
+        run_dir = tmp_path / "run"
+        debug = False
+        personas = str(personas_dir)
+        learner_profile = None
+        topic_spec = None
+
+    captured = {}
+
+    async def fake_run_pipeline(state, store, pipeline, personas_dir_arg):
+        captured["pipeline"] = pipeline
+        captured["personas_dir"] = personas_dir_arg
+        return state.with_terminal("acceptable", ok=True)
+
+    with patch("forged.pipeline.graph.run_pipeline", new=fake_run_pipeline):
+        result = _cmd_agentic(Args())
+
+    assert result == 0
+    assert captured["pipeline"].name == load_pipeline(Args.config).name
+    assert Path(captured["personas_dir"]) == personas_dir

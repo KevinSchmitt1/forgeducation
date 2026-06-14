@@ -7,13 +7,14 @@ name = "forged"
 version = "0.1.0"
 description = "A multi-agent CLI that builds and self-checks IT learning notebooks"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "forged contributors" }]
 keywords = ["education", "notebooks", "agents", "llm", "jupyter"]
 
 dependencies = [
     "openai>=1.45.0",      # OpenAI + Ollama client (needs max_completion_tokens support)
+    "langfuse>=3.0.0",     # trace every LLM-backed agent prompt
     "pydantic>=2.0.0",     # config validation
     "pyyaml>=6.0",         # pipeline config files
     "nbformat>=5.10.0",    # assemble .ipynb

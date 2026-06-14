@@ -21,6 +21,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from forged.artifacts import ArtifactStore
+from forged.config import PipelineConfig
+from forged.llm import LLMClient
 from forged.pipeline.agents.code_author import CodeAuthorAgent
 from forged.pipeline.agents.executor import ExecutorAgent
 from forged.pipeline.agents.planner import PlannerAgent
@@ -66,6 +68,7 @@ def revisor_route(state: PipelineState) -> str:
 
 def build_pipeline_graph(
     store: ArtifactStore,
+    pipeline: PipelineConfig,
     personas_dir: Path | None = None,
 ) -> CompiledStateGraph:
     """Assemble and compile the LangGraph pipeline.
@@ -85,10 +88,19 @@ def build_pipeline_graph(
     if personas_dir is None:
         personas_dir = Path("personas")
 
-    planner = PlannerAgent(personas_dir=personas_dir)
-    code_author = CodeAuthorAgent(personas_dir=personas_dir)
+    planner = PlannerAgent(
+        personas_dir=personas_dir,
+        llm_client=LLMClient(pipeline.resolved_model_name("planner")),
+    )
+    code_author = CodeAuthorAgent(
+        personas_dir=personas_dir,
+        llm_client=LLMClient(pipeline.resolved_model_name("code_author")),
+    )
     executor = ExecutorAgent(personas_dir=personas_dir)
-    student = StudentAgent(personas_dir=personas_dir)
+    student = StudentAgent(
+        personas_dir=personas_dir,
+        llm_client=LLMClient(pipeline.resolved_model_name("student")),
+    )
     revisor = RevisorAgent(personas_dir=personas_dir)
 
     graph = StateGraph(PipelineState)
@@ -147,6 +159,7 @@ def build_pipeline_graph(
 async def run_pipeline(
     initial_state: PipelineState,
     store: ArtifactStore,
+    pipeline: PipelineConfig,
     personas_dir: Path | None = None,
 ) -> PipelineState:
     """Build and execute the pipeline, returning the final PipelineState.
@@ -163,7 +176,7 @@ async def run_pipeline(
     Returns:
         The final PipelineState after the pipeline reaches a terminal node.
     """
-    graph = build_pipeline_graph(store=store, personas_dir=personas_dir)
+    graph = build_pipeline_graph(store=store, pipeline=pipeline, personas_dir=personas_dir)
     result = await graph.ainvoke(initial_state)
 
     if isinstance(result, PipelineState):

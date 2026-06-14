@@ -14,6 +14,8 @@ Welcome! This guide helps you understand the codebase and contribute effectively
 | Add a new agent stage | `docs/architecture/02-agent-input-flow.md` + `docs/architecture/03-implementation-plan.md` |
 | Modify how learner profiles work | `docs/architecture/01-input-specification.md` + `templates/README.md` |
 | Change the CLI | Check `forged/cli.py` + `docs/architecture/03-implementation-plan.md` |
+| Understand model selection | `docs/architecture/08-stage-specific-models.md` |
+| Understand tracing / observability | `docs/architecture/09-langfuse-tracing.md` |
 | Add a new data model | `forged/models.py` + `docs/architecture/01-input-specification.md` |
 | Understand the template system | `templates/README.md` (user guide) + `docs/architecture/01-input-specification.md` (design) |
 
@@ -25,7 +27,7 @@ User Input                           Pipeline Execution
 │ topic                       │     │ stage 1: planner           │
 │ --learner-profile (opt)     │ ──► │   ↓                        │
 │ --topic-spec (opt)          │     │ stage 2: code_author       │
-│ --assessment (opt)          │     │   ↓                        │
+│                             │     │   ↓                        │
 └─────────────────────────────┘     │ stage 3: executor          │
                                     │   (runs notebook)          │
                                     │   ↓                        │
@@ -44,9 +46,7 @@ The repo contains two execution paths:
 
 1. **Linear CLI** (`forged build`): the primary, stable, user-facing path in
    [forged/cli.py](forged/cli.py). Use this for real lesson generation.
-2. **Agentic CLI/API** (`forged agentic` or `await forged.pipeline.run_pipeline(...)`):
-   a LangGraph-based pipeline in [forged/pipeline/](forged/pipeline) that classifies
-   failures and reroutes to the appropriate agent. Phases 1–9 are complete.
+2. **Agentic CLI/API** (`forged agentic` or `await forged.pipeline.run_pipeline(...)`): a LangGraph-based pipeline in [forged/pipeline/](forged/pipeline) that classifies failures and reroutes to the appropriate agent. Phases 1–9 are complete, stage-specific model defaults are configured through pipeline YAML, and every LLM-backed prompt is traced to Langfuse when credentials are present; see [docs/architecture/08-stage-specific-models.md](docs/architecture/08-stage-specific-models.md) and [docs/architecture/09-langfuse-tracing.md](docs/architecture/09-langfuse-tracing.md).
 
 ### What is implemented (Phases 1–9)
 
@@ -77,11 +77,15 @@ The repo contains two execution paths:
 
 For complete details — capabilities, limitations, and the Phase 7–9 roadmap — see
 [docs/architecture/07-agentic-pipeline-status.md](docs/architecture/07-agentic-pipeline-status.md).
+For the model-configuration follow-up, see
+[docs/architecture/08-stage-specific-models.md](docs/architecture/08-stage-specific-models.md).
+For tracing and observability details, see
+[docs/architecture/09-langfuse-tracing.md](docs/architecture/09-langfuse-tracing.md).
 
 ### Data Flow
 
 1. **User provides input** → `--topic`, optional `--learner-profile`, `--topic-spec`
-2. **CLI parses input** → loads YAML files, creates data models (LearnerProfile, TopicSpecification, AssessmentApproach)
+2. **CLI parses input** → loads YAML files, creates data models (LearnerProfile, TopicSpecification)
 3. **Orchestrator threads context** → passes learner profile + topic spec through pipeline
 4. **Each agent renders prompts** → uses context to customize explanations for learner
 5. **Pipeline stages run** → planner → code_author → executor → student → reviser (if enabled)
@@ -92,7 +96,7 @@ For complete details — capabilities, limitations, and the Phase 7–9 roadmap 
 The `docs/architecture/` directory contains design decisions and implementation details:
 
 ### 01-input-specification.md
-**What:** Design of learner profiles, topic specifications, and assessment approaches  
+**What:** Design of learner profiles and topic specifications  
 **Why:** Explains the pedagogical reasoning behind each field  
 **For:** Understanding what data we collect and why  
 **Read if:** You're adding new fields to learner profiles or topic specs
@@ -109,6 +113,24 @@ The `docs/architecture/` directory contains design decisions and implementation 
 **For:** Understanding how the code is structured  
 **Read if:** You're working on models.py, cli.py, orchestrator.py, or agent.py
 
+### 07-agentic-pipeline-status.md
+**What:** Current implemented state of the LangGraph agentic pipeline  
+**Why:** Captures what is done, what is stable, and which limitations remain  
+**For:** Understanding the actual agentic architecture in the repo today  
+**Read if:** You're changing routing, graph wiring, agentic CLI behavior, or revision flow
+
+### 08-stage-specific-models.md
+**What:** Shared model-resolution design for linear + agentic execution paths  
+**Why:** Explains how model defaults, logical stage models, and overrides now work  
+**For:** Understanding or changing per-stage model/provider selection  
+**Read if:** You're changing model configuration, adding tracking, or running model comparisons
+
+### 09-langfuse-tracing.md
+**What:** Langfuse tracing implementation for linear + agentic LLM calls  
+**Why:** Explains where traces are created, what metadata is attached, and what is still missing  
+**For:** Understanding observability for prompts, model usage, and run-level grouping  
+**Read if:** You're changing tracing, adding trace links to artifacts, or debugging Langfuse setup
+
 ## Project Structure
 
 ```
@@ -120,16 +142,22 @@ forged/
 │   ├── agent.py                # LLMAgent base class; renders context-aware prompts
 │   ├── executor.py             # Executor stage; runs the notebook
 │   ├── artifacts.py            # Store, notebook management
-│   ├── models.py               # Data models: LearnerProfile, TopicSpecification, AssessmentApproach
-│   ├── prompts.py              # Prompt templates for each stage
+│   ├── models.py               # Data models: LearnerProfile, TopicSpecification
+│   ├── context.py              # Shared learner/topic prompt-context rendering
 │   ├── progress.py             # Spinner for live progress display
-│   └── config.py               # Config file loading
+│   ├── config.py               # Config file loading
+│
+│   └── pipeline/               # Agentic pipeline package
+│       ├── state.py            # Immutable agentic state + audit trail
+│       ├── failure.py          # Deterministic failure classification
+│       ├── router.py           # Budget-aware routing
+│       ├── graph.py            # LangGraph assembly + execution entrypoints
+│       └── agents/             # Planner/CodeAuthor/Executor/Student/Reviser
 │
 ├── templates/                  # User-facing template files
 │   ├── README.md               # User guide: how to customize templates
 │   ├── learner_profile.template.yaml
 │   ├── topic_specification.template.yaml
-│   ├── assessment_approach.template.yaml
 │   └── examples/               # Ready-to-use examples
 │       ├── learner-beginner.yaml
 │       ├── learner-backend-junior.yaml
@@ -141,7 +169,10 @@ forged/
 │   └── architecture/           # Design & implementation docs
 │       ├── 01-input-specification.md
 │       ├── 02-agent-input-flow.md
-│       └── 03-implementation-plan.md
+│       ├── 03-implementation-plan.md
+│       ├── 07-agentic-pipeline-status.md
+│       ├── 08-stage-specific-models.md
+│       └── 09-langfuse-tracing.md
 │
 ├── config/                     # Pipeline configurations
 │   ├── pipeline.review-loop.yaml     # Full pipeline with revisions
@@ -181,36 +212,27 @@ Defines what should be learned: scope, objectives, prerequisites, constraints, d
 
 **Used by:** Planner (structure), CodeAuthor (examples), Student (validation), Reviser (feedback)
 
-### Assessment Approach
-Optional configuration for generating project specs or knowledge tests.
-
-**Fields:** type (project/test/both), difficulty, project spec, test spec
-
-**Location:** `templates/assessment_approach.template.yaml` (user file) or `forged/models.py` (code)
-
-**Used by:** AssessmentStage (new stage that runs after revisions)
-
 ### Context
-Dictionary passed through the pipeline containing rendered learner profile + topic spec. Each agent uses relevant fields to customize prompts.
+Rendered learner-profile + topic-spec markdown block passed through the pipeline so agents can tailor explanations consistently.
 
 **Example keys:** prior_knowledge, material_density, learning_objectives, depth, focus_areas
 
-**Created by:** CLI (via models.to_prompt_context())
-**Consumed by:** Agents (in prompts via {placeholder} syntax)
+**Created by:** CLI (`build_context_block()` in `forged/context.py`)
+**Consumed by:** Linear `LLMAgent` and agentic pipeline agents via the `lesson_context` artifact
 
 ## Common Tasks
 
 ### Add a New Agent Stage
 
-1. Create a new class in `forged/agents/your_stage.py`
-2. Inherit from `LLMAgent`
-3. Override `run(brief, context)` → return (report, artifact)
+1. Decide whether the new stage belongs in the linear path, the agentic path, or both.
+2. For the linear path, add or adapt a stage runner via `forged/agent.py` / `forged/orchestrator.py` and YAML config.
+3. For the agentic path, create a new class in `forged/pipeline/agents/your_stage.py`.
 4. Add a persona file in `personas/your_stage.md`
-5. Add stage to pipeline YAML in `config/pipeline.yaml`
-6. Update `orchestrator.py` to instantiate your stage
-7. Add docstring explaining what context fields your stage uses
+5. Add stage to the relevant pipeline YAML in `config/`
+6. Update `forged/pipeline/graph.py` if the agentic graph needs a new node/edge
+7. Add tests for routing, artifacts, and prompt inputs
 
-**References:** `docs/architecture/02-agent-input-flow.md`, `docs/architecture/03-implementation-plan.md`
+**References:** `docs/architecture/02-agent-input-flow.md`, `docs/architecture/07-agentic-pipeline-status.md`
 
 ### Modify the Learner Profile
 
@@ -244,12 +266,12 @@ pytest -v                       # verbose
 
 ## Session Notes
 
-Development sessions are documented in `.sessions/` for context and decision-making:
+Key implementation sessions are documented in `docs/architecture/`.
 
-- `SESSION-2026-06-06-input-layer-implementation.md` — Input specification design and code implementation
-- `SESSION-2026-06-07-template-creation-and-testing.md` — Template files and backward compatibility testing
+- `07-agentic-pipeline-status.md` — implemented agentic pipeline and limitations
+- `08-stage-specific-models.md` — model-resolution follow-up and bundled defaults
 
-Check these for design rationale and blockers encountered.
+Use these first for design rationale and current-state questions.
 
 ## For Contributors
 

@@ -47,7 +47,7 @@ class StubLLMClient:
     def __init__(self, response: str) -> None:
         self._response = response
 
-    def complete(self, system_prompt: str, user_prompt: str) -> str:
+    def complete(self, system_prompt: str, user_prompt: str, trace_context=None) -> str:
         return self._response
 
 

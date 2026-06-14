@@ -34,25 +34,54 @@ pip install -e .            # editable install; adds the `forged` command
 cp .env.example .env        # then put your OPENAI_API_KEY in .env
 ```
 
+If you also want prompt tracing, add your `LANGFUSE_PUBLIC_KEY` and
+`LANGFUSE_SECRET_KEY` to `.env`. When those keys are present, every LLM-backed
+agent prompt is traced automatically.
+
 ## Use
 
+A lesson is built from a **topic** plus, optionally, two **context** files that
+describe *who* it's for (a learner profile) and *what* it should cover (a topic
+spec). Two engines can build it — see [Execution paths](#execution-paths). The
+agentic engine is the recommended one: it runs the notebook, classifies any
+failure, and re-routes to the right agent to fix it.
+
 ```bash
-# Full pipeline (plan → author → run → student → revise → re-run → re-check)
-forged build --topic "How a Bloom filter works"
+# 1. Minimal — just a topic; sensible defaults for everything else.
+forged agentic --brief "How a Bloom filter works" --run-dir ./runs/bloom
 
-# Cheaper, shorter pipeline
-forged build --topic "How a Bloom filter works" \
-    --config config/pipeline.skeleton.yaml
+# 2. Full context (recommended) — tailor the lesson to a specific learner + topic.
+forged agentic \
+    --brief "Transformer attention from scratch" \
+    --learner-profile templates/examples/learner-ml-practitioner.yaml \
+    --topic-spec      templates/examples/topic-transformers.yaml \
+    --run-dir ./runs/transformers
 
-# Target a specific learner
-forged build --topic "Recursion and the call stack" \
-    --learner-profile templates/examples/learner-beginner.yaml
+# The same two context flags work on the linear engine (writes to ./runs/<ts>_<pipeline>/):
+forged build \
+    --topic "Recursion and the call stack" \
+    --learner-profile templates/examples/learner-beginner.yaml \
+    --topic-spec      templates/examples/topic-hash-maps.yaml
 
-# Discover the bundled pipelines (skeleton, review-loop)
+# Cheaper/shorter linear pipeline; list bundled pipelines; go fully local with Ollama
+forged build --topic "How a Bloom filter works" --config config/pipeline.skeleton.yaml
 forged pipelines
-
-# Run fully local / private (start `ollama serve`, set provider: ollama in the YAML)
+# (start `ollama serve`, set provider: ollama in the YAML — nothing leaves your machine)
 ```
+
+### Writing the two context files
+
+Each flag takes a YAML file. The fastest path is to copy a ready-made one from
+`templates/examples/` and edit the values:
+
+- **Learner profiles** — `learner-beginner.yaml`, `learner-backend-junior.yaml`,
+  `learner-ml-practitioner.yaml`
+- **Topic specs** — `topic-hash-maps.yaml`, `topic-transformers.yaml`
+
+Every field is **required** and the enum fields accept a **fixed set of values**
+(a missing key or an unknown key fails fast before any API call). The full schema
+and the allowed values for each field are documented in
+**[templates/README.md](templates/README.md)**.
 
 While a build runs it streams a live per-stage status line with an elapsed-time
 spinner, so a long LLM call never looks hung.
@@ -89,26 +118,34 @@ forged clean --keep 10 --yes        # skip the prompt (required non-interactivel
 
 ### Execution paths
 
-There are two ways the pipeline can run:
+There are two ways the pipeline can run. Both accept the same `--learner-profile`
+and `--topic-spec` context files; the difference is how they iterate.
 
-**Linear (primary, stable):** `forged build` runs every stage once in a fixed sequence —
-planner → code_author → executor → student → reviser. This is the path powering everything
-above.
+**Linear (`forged build`, simple + predictable):** runs every stage once in a fixed
+sequence — planner → code_author → executor → student → reviser — followed by a bounded
+revision loop. No failure classification; good when you want a deterministic single pass.
 
-**Agentic (production-ready):** `forged agentic --brief "..." --run-dir /path` is a
-LangGraph-based pipeline that classifies failures, reroutes to the appropriate agent,
-and provides structured feedback for intelligent iteration. Phases 1–9 complete (292 tests,
-89% coverage, end-to-end validated with OpenAI). Features:
+**Agentic (`forged agentic`, recommended):** a LangGraph pipeline that classifies
+failures, reroutes to the appropriate agent, and feeds structured feedback back in for
+intelligent iteration:
+
+```bash
+forged agentic --brief "..." --run-dir ./runs/my-lesson \
+    --learner-profile path/to/learner.yaml --topic-spec path/to/topic.yaml
+```
+
+Phases 1–9 complete (300 tests, end-to-end validated with OpenAI). Features:
   - **Phase 7**: Real executor detects code failures
   - **Phase 8**: Revision brief provides agent feedback for smart rerouting
   - **Phase 9**: CLI command with detailed logging and audit trail
   - **Monitoring**: Full routing log in SUMMARY.md, execution trace in pipeline.log
+  - **Tracing**: Every LLM-backed prompt is grouped into a Langfuse trace per run when `LANGFUSE_*` keys are configured
   - **Exit-code truth**: exit `0` only when the run ends ACCEPTABLE; errors, budget
     exhaustion, and unclassifiable runs exit `1` (review `SUMMARY.md` before use).
     `lesson.ipynb` is the executed notebook with real cell outputs.
 
 For detailed status, capabilities, and testing guide see [TEST.md](TEST.md) and
-[docs/architecture/07-agentic-pipeline-status.md](docs/architecture/07-agentic-pipeline-status.md).
+[docs/architecture/07-agentic-pipeline-status.md](docs/architecture/07-agentic-pipeline-status.md). For tracing specifics, see [docs/architecture/09-langfuse-tracing.md](docs/architecture/09-langfuse-tracing.md).
 
 ## Developing
 

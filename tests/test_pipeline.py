@@ -32,6 +32,9 @@ def test_skeleton_config_loads_expected_stages():
     assert [s.name for s in pipeline.stages] == [
         "planner", "code_author", "executor", "student",
     ]
+    assert pipeline.resolved_model_name("planner").model == "gpt-5-mini"
+    assert pipeline.resolved_model_name("code_author").model == "gpt-5"
+    assert pipeline.resolved_model_name("student").model == "gpt-5-mini"
 
 
 def test_profile_is_a_valid_seed_input():
@@ -133,6 +136,42 @@ def test_review_loop_config_validates():
     assert pipeline.revision.reviser == "reviser.md"
     assert pipeline.revision.critics == ["student.md", "reviewer.md"]
     assert pipeline.revision.max_iterations == 3
+    assert pipeline.resolved_model_name("reviewer").model == "gpt-5-mini"
+    assert pipeline.resolved_model_name("reviser").model == "gpt-5"
+
+
+def test_resolved_model_prefers_stage_override_then_stage_models_then_defaults():
+    pipeline = PipelineConfig.model_validate(
+        {
+            "name": "models",
+            "defaults": {"provider": "openai", "model": "fallback-model"},
+            "stage_models": {
+                "planner": {"provider": "openai", "model": "planner-model"},
+                "reviser": {"provider": "openai", "model": "reviser-model"},
+            },
+            "stages": [
+                {
+                    "name": "planner",
+                    "persona": "planner.md",
+                    "inputs": ["brief"],
+                    "output": "plan",
+                    "model": {"provider": "openai", "model": "stage-override"},
+                },
+                {
+                    "name": "student",
+                    "persona": "student.md",
+                    "inputs": ["plan"],
+                    "output": "feedback",
+                },
+            ],
+        }
+    )
+
+    assert pipeline.resolved_model(pipeline.stages[0]).model == "stage-override"
+    assert pipeline.resolved_model(pipeline.stages[1]).model == "fallback-model"
+    assert pipeline.resolved_model_name("planner").model == "stage-override"
+    assert pipeline.resolved_model_name("reviser").model == "reviser-model"
+    assert pipeline.resolved_model_name("unknown").model == "fallback-model"
 
 
 # ── Executor (the anti-bug layer) ────────────────────────────────────────────
@@ -1096,6 +1135,79 @@ def test_llm_complete_rejects_empty_content():
     client = _llm_client_with_fake(lambda **_: _completion(""))
     with pytest.raises(RuntimeError, match="empty content"):
         client.complete("sys", "user")
+
+
+def test_llm_complete_records_trace_context_and_usage():
+    from types import SimpleNamespace
+
+    from forged.config import ModelConfig, Provider
+    from forged.llm import LLMClient, LLMTraceContext
+
+    class _FakeTracer:
+        def __init__(self):
+            self.started = None
+            self.succeeded = None
+            self.errored = None
+
+        def start_generation(self, config, messages, trace_context):
+            self.started = (config, messages, trace_context)
+            return "observation"
+
+        def record_success(self, observation, output, usage_details):
+            self.succeeded = (observation, output, usage_details)
+
+        def record_error(self, observation, message):
+            self.errored = (observation, message)
+
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="the answer"))],
+        usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7, total_tokens=18),
+    )
+    client = LLMClient(ModelConfig(provider=Provider.OLLAMA, model="demo-model"))
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **_: response))
+    )
+    tracer = _FakeTracer()
+    client._tracer = tracer
+    trace_context = LLMTraceContext(
+        stage_name="planner",
+        pipeline_kind="agentic",
+        run_id="run-123",
+        run_dir="/tmp/run-123",
+        iteration=2,
+    )
+
+    result = client.complete("sys", "user", trace_context=trace_context)
+
+    assert result == "the answer"
+    assert tracer.started is not None
+    assert tracer.started[1] == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "user"},
+    ]
+    assert tracer.started[2] == trace_context
+    assert tracer.succeeded == (
+        "observation",
+        "the answer",
+        {"input": 11, "output": 7, "total": 18},
+    )
+    assert tracer.errored is None
+
+
+def test_llm_complete_works_without_langfuse_credentials(monkeypatch):
+    from forged.config import ModelConfig, Provider
+    from forged.llm import LLMClient, _LangfuseTracer
+
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+    monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
+
+    client = _llm_client_with_fake(lambda **_: _completion("the answer"))
+    client._config = ModelConfig(provider=Provider.OLLAMA)
+    client._tracer = _LangfuseTracer()
+
+    assert client.complete("sys", "user") == "the answer"
 
 
 # ── LLMAgent.run + persona loading (fake client, no network) ─────────────────

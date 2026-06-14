@@ -15,9 +15,36 @@ name: skeleton
 # Switch provider to `ollama` (and model to e.g. `llama3.1`) for fully local runs.
 defaults:
   provider: openai
-  model: gpt-4o-mini
+  model: gpt-5-mini
   temperature: 0.4
   max_tokens: 4096
+
+stage_models:
+  planner:
+    provider: openai
+    model: gpt-5-mini
+    temperature: 0.4
+    max_tokens: 4096
+  code_author:
+    provider: openai
+    model: gpt-5
+    temperature: 0.2
+    max_tokens: 4096
+  student:
+    provider: openai
+    model: gpt-5-mini
+    temperature: 0.4
+    max_tokens: 4096
+  reviewer:
+    provider: openai
+    model: gpt-5-mini
+    temperature: 0.4
+    max_tokens: 4096
+  reviser:
+    provider: openai
+    model: gpt-5
+    temperature: 0.2
+    max_tokens: 4096
 
 stages:
   - name: planner
@@ -33,12 +60,6 @@ stages:
     inputs: [lesson_plan, profile]
     output: notebook
     output_kind: notebook
-    # Code generation benefits from low temperature (fewer silly mistakes).
-    model:
-      provider: openai
-      model: gpt-4o-mini
-      temperature: 0.2
-      max_tokens: 4096
 
   - name: executor
     type: executor

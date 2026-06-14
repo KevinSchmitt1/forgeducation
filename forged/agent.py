@@ -12,9 +12,8 @@ from pathlib import Path
 
 from .artifacts import Artifact, ArtifactStore
 from .config import PipelineConfig, StageConfig
-from .llm import LLMClient
+from .llm import LLMClient, LLMTraceContext
 from .notebook import build_notebook, cells_from_json, render_indexed
-from .prompts import PROMPT_TEMPLATES
 
 
 class LLMAgent:
@@ -26,17 +25,28 @@ class LLMAgent:
         self._personas_dir = personas_dir
         self._client = LLMClient(pipeline.resolved_model(stage))
 
-    def run(self, store: ArtifactStore, context: dict | None = None) -> Artifact:
+    def run(self, store: ArtifactStore) -> Artifact:
         """Read inputs from the store, call the model, write the output artifact.
 
-        Args:
-            store: ArtifactStore with inputs
-            context: Optional context dict with learner_profile, topic_spec, etc.
+        The learner + topic context, when present, is read from the shared
+        `lesson_context` artifact and prepended to every stage's prompt.
         """
         system_prompt = self._load_persona()
-        user_prompt = self._build_user_prompt(store, context=context)
+        user_prompt = self._build_user_prompt(store)
 
-        raw = self._client.complete(system_prompt, user_prompt)
+        raw = self._client.complete(
+            system_prompt,
+            user_prompt,
+            trace_context=LLMTraceContext(
+                stage_name=self._stage.name,
+                pipeline_kind="linear",
+                run_id=store.run_dir.name,
+                run_dir=str(store.run_dir),
+                pipeline_name=self._pipeline.name,
+                input_artifacts=_linear_input_artifacts(store, self._stage.inputs),
+                output_artifact=self._stage.output,
+            ),
+        )
         content = self._post_process(raw)
 
         artifact = Artifact(
@@ -57,15 +67,14 @@ class LLMAgent:
             )
         return persona_path.read_text(encoding="utf-8")
 
-    def _build_user_prompt(self, store: ArtifactStore, context: dict | None = None) -> str:
+    def _build_user_prompt(self, store: ArtifactStore) -> str:
         """Present each input artifact in a clearly delimited block so the model
-        can tell its sources apart. If context is provided, prepend stage-specific
-        learner/topic guidance."""
-
-        # Build stage-specific context if available
-        context_prompt = ""
-        if context:
-            context_prompt = self._build_context_prompt(store, context)
+        can tell its sources apart, prefixed with the shared learner + topic
+        context block when one is available (see forged.context)."""
+        context_block = (
+            store.get("lesson_context").content if store.has("lesson_context") else ""
+        )
+        context_prefix = f"{context_block}\n\n" if context_block else ""
 
         sections = []
         for name in self._stage.inputs:
@@ -87,45 +96,10 @@ class LLMAgent:
         return (
             f"You are operating as the '{self._stage.name}' stage of a lesson-"
             f"building pipeline. Your inputs follow.\n\n"
-            f"{context_prompt}"
+            f"{context_prefix}"
             f"{body}\n\n"
             "Produce only your stage's output, following your role instructions."
         )
-
-    def _build_context_prompt(self, store: ArtifactStore, context: dict) -> str:
-        """Build stage-specific context prompt with learner/topic information."""
-        template_key = f"{self._stage.name}_prompt"
-        template = PROMPT_TEMPLATES.get(template_key)
-
-        if not template:
-            return ""
-
-        # Build context dict for rendering
-        render_context = {}
-
-        # Add learner/topic context if available
-        if "learner_profile" in context and context["learner_profile"]:
-            render_context.update(context["learner_profile"].to_prompt_context())
-
-        if "topic_spec" in context and context["topic_spec"]:
-            render_context.update(context["topic_spec"].to_prompt_context())
-
-        # Add assessment context if available
-        if "assessment_approach" in context and context["assessment_approach"]:
-            approach = context["assessment_approach"]
-            render_context["assessment_type"] = approach.type
-            render_context["assessment_difficulty"] = approach.assessment_difficulty
-
-        # Add brief if available
-        if "brief" in context:
-            render_context["brief"] = context["brief"]
-
-        # Render template with context
-        try:
-            return template.format(**render_context) + "\n\n"
-        except KeyError:
-            # If a template key is missing, continue without the context prompt
-            return ""
 
     def _post_process(self, raw: str) -> str:
         """Transform raw model text into the declared output kind. For notebooks,
@@ -133,3 +107,10 @@ class LLMAgent:
         if self._stage.output_kind == "notebook":
             return build_notebook(cells_from_json(raw))
         return raw.strip()
+
+
+def _linear_input_artifacts(store: ArtifactStore, inputs: list[str]) -> tuple[str, ...]:
+    artifact_names = list(inputs)
+    if store.has("lesson_context") and "lesson_context" not in artifact_names:
+        artifact_names.insert(0, "lesson_context")
+    return tuple(artifact_names)
