@@ -276,6 +276,7 @@ def _cmd_agentic(args) -> int:
 
         _write_agentic_summary(run_dir, final_state, elapsed_sec)
         _write_final_notebook(run_dir, store, final_state)
+        _write_learner_package(run_dir, store, final_state, topic, learner_profile)
 
         # Exit-code truth: 0 only when the pipeline ended because the notebook
         # was ACCEPTABLE. Errors, budget exhaustion, and unclassifiable runs
@@ -377,6 +378,36 @@ def _write_final_notebook(run_dir: Path, store, state) -> None:
 
     empty = nbformat.writes(nbformat.v4.new_notebook())
     (run_dir / "lesson.ipynb").write_text(empty, encoding="utf-8")
+
+
+def _write_learner_package(run_dir: Path, store, state, topic: str, learner_profile) -> None:
+    """Write the self-contained deliverable (README.md + requirements.txt) from the
+    latest lesson plan, so even a degraded agentic run ships something a learner can
+    set up and open — not just a notebook (P6). Best-effort: never fail the run over
+    packaging; a missing/unparseable plan still yields a usable README + empty deps."""
+    import logging
+
+    from .packaging import PackageContext, write_package
+    from .pipeline.state import PipelineStage
+
+    plan = ""
+    for output in reversed(state.outputs):
+        if output.stage == PipelineStage.PLANNER and store.has(output.artifact_name):
+            plan = store.get(output.artifact_name).content
+            break
+
+    try:
+        write_package(
+            run_dir,
+            plan,
+            PackageContext(
+                topic=topic,
+                learner_name=learner_profile.name,
+                learner_description=learner_profile.description,
+            ),
+        )
+    except OSError as exc:
+        logging.getLogger(__name__).warning("Failed to write learner package: %s", exc)
 
 
 def _cmd_pipelines(args) -> int:

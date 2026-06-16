@@ -23,6 +23,20 @@ versions), any model downloads (with size), and hardware notes. Honour the profi
 environment — prefer CPU-runnable, dependency-light demos; flag and justify anything
 heavy. The code author will turn this into a runnable setup-check cell, so be precise.
 
+After the prose, emit a fenced code block tagged `requirements` listing ONLY the
+pip-installable Python packages this lesson imports, one per line, with a version
+specifier where the version matters (PEP 508 style, e.g. `transformers>=4.30`). This
+block is parsed verbatim to build the environment, so it must be `pip install`-able as
+written: no conda commands, no shell, no comments, no system packages, no model
+downloads. Put conda-only, hardware, or model-download notes in the prose above — never
+in the block. Omit the standard library. If the lesson needs no third-party packages,
+emit an empty block. Example:
+
+```requirements
+numpy>=1.26
+matplotlib>=3.8
+```
+
 ## Learning objectives
 3–5 bullet points, each a concrete capability the learner will gain.
 
