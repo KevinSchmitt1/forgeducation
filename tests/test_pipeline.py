@@ -1196,7 +1196,7 @@ def test_llm_complete_records_trace_context_and_usage():
 
 def test_llm_complete_works_without_langfuse_credentials(monkeypatch):
     from forged.config import ModelConfig, Provider
-    from forged.llm import LLMClient, _LangfuseTracer
+    from forged.llm import _LangfuseTracer
 
     monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
     monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)

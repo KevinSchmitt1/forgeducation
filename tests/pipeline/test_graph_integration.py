@@ -142,7 +142,9 @@ def test_graph_uses_stage_specific_models(
             captured_models.append(config.model)
 
     with patch("forged.pipeline.graph.LLMClient", FakeLLMClient):
-        build_pipeline_graph(store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir)
+        build_pipeline_graph(
+            store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir
+        )
 
     assert captured_models == ["gpt-5-mini", "gpt-5", "gpt-5-mini"]
 
