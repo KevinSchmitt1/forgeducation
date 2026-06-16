@@ -80,7 +80,7 @@ class CodeAuthorAgent(Agent[AgentOutput]):
     ) -> str:
         """Call the LLM and return assembled nbformat notebook JSON."""
         plan_name = self._latest_plan_name(state)
-        input_artifacts = (plan_name,)
+        input_artifacts: tuple[str, ...] = (plan_name,)
         if self._read_revision_brief(state, store):
             input_artifacts = (*input_artifacts, f"revision_brief_v{state.iteration - 1}")
         raw = self._complete_llm(

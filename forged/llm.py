@@ -79,6 +79,10 @@ class _LangfuseTracer:
             if trace_context is not None
             else "llm.complete"
         )
+        model_parameters: dict[str, str | int | float | bool | list[str] | None] = {
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+        }
         return client.start_observation(
             name=observation_name,
             as_type="generation",
@@ -86,10 +90,7 @@ class _LangfuseTracer:
             input=messages,
             metadata=metadata,
             model=config.model,
-            model_parameters={
-                "temperature": config.temperature,
-                "max_tokens": config.max_tokens,
-            },
+            model_parameters=model_parameters,
         )
 
     def record_success(
