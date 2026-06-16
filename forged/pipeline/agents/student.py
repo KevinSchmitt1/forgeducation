@@ -14,13 +14,38 @@ import re
 from pathlib import Path
 
 from forged.artifacts import Artifact, ArtifactStore
-from forged.pipeline.state import PipelineStage, PipelineState, StageOutput
+from forged.pipeline.failure import RUBRIC_DIMENSIONS, RubricScores
+from forged.pipeline.state import Degradation, PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
 
 _LOG = logging.getLogger(__name__)
 
-_NEUTRAL_REPORT = {"quality_score": 50.0, "blockers": [], "findings": []}
+# Required top-level keys for a usable grade report. rubric is optional so that a
+# valid-but-rubric-less grade still counts as graded; a report missing any of
+# these is treated as a failed assessment, not silently coerced to a score.
+_REQUIRED_KEYS = {"quality_score", "blockers", "findings"}
+
+
+def _failed_report(reason: str) -> str:
+    """A grade report that records the *absence* of an assessment.
+
+    graded=False is the honest signal the classifier needs: it means the student
+    could not judge the lesson, NOT that the lesson scored low. The score is 0.0
+    only as a placeholder — the classifier ignores it when graded is False. This
+    is the fix for the silent neutral-50 fallback that let a failed grader look
+    like mediocre content and burn a no-op reviser lap.
+    """
+    return json.dumps(
+        {
+            "quality_score": 0.0,
+            "graded": False,
+            "rubric": None,
+            "blockers": [],
+            "findings": [],
+            "error": reason[:300],
+        }
+    )
 
 
 class StudentAgent(Agent[AgentOutput]):
@@ -43,18 +68,35 @@ class StudentAgent(Agent[AgentOutput]):
     async def run(self, state: PipelineState, store: ArtifactStore) -> PipelineState:
         user_msg = self._build_user_message(state, store)
         artifact_name = f"student_grade_report_v{state.iteration}"
+        degradation: Degradation | None = None
         try:
-            response = self._call_llm(state, store, user_msg, artifact_name)
+            response, graded = self._call_llm(state, store, user_msg, artifact_name)
+            if not graded:
+                # The specific reason (e.g. which keys were missing) lives in the
+                # failed report's "error" field — surface it rather than a generic line.
+                detail = json.loads(response).get(
+                    "error", "Student response could not be parsed into a grade report"
+                )
+                _LOG.warning("StudentAgent could not parse a grade report: %s", detail)
+                degradation = Degradation(
+                    stage=PipelineStage.STUDENT, kind="grade_unparseable", detail=detail
+                )
         except RuntimeError as exc:
-            _LOG.warning("StudentAgent LLM call failed, using neutral report: %s", exc)
-            response = json.dumps(_NEUTRAL_REPORT)
+            _LOG.warning("StudentAgent LLM call failed, marking grade as failed: %s", exc)
+            response = _failed_report(str(exc))
+            degradation = Degradation(
+                stage=PipelineStage.STUDENT, kind="grade_failed", detail=str(exc)
+            )
         store.put(Artifact(name=artifact_name, kind="json", content=response))
         output = StageOutput(
             stage=PipelineStage.STUDENT,
             artifact_name=artifact_name,
             iteration=state.iteration,
         )
-        return state.with_output(output).with_current_stage(PipelineStage.REVISER)
+        new_state = state.with_output(output)
+        if degradation is not None:
+            new_state = new_state.with_degradation(degradation)
+        return new_state.with_current_stage(PipelineStage.REVISER)
 
     def _call_llm(
         self,
@@ -62,8 +104,13 @@ class StudentAgent(Agent[AgentOutput]):
         store: ArtifactStore,
         user_msg: str,
         output_artifact: str,
-    ) -> str:
-        """Call the LLM and return a parsed grade-report JSON string."""
+    ) -> tuple[str, bool]:
+        """Call the LLM and return (grade-report JSON, graded).
+
+        graded is False when the response could not be parsed into a usable
+        grade report — the caller records a degradation and the classifier
+        treats the run as UNCLASSIFIABLE rather than poor content.
+        """
         raw = self._complete_llm(
             stage_name=PipelineStage.STUDENT,
             state=state,
@@ -77,14 +124,14 @@ class StudentAgent(Agent[AgentOutput]):
         )
         return self._parse_grade_report(raw)
 
-    def _parse_grade_report(self, raw: str) -> str:
+    def _parse_grade_report(self, raw: str) -> tuple[str, bool]:
         """Extract and validate the JSON grade report from the LLM response.
 
-        Tries to find a trailing ```json block or a bare JSON object.  On any
-        parse error or missing required keys the method gracefully degrades to
-        a neutral report rather than crashing the pipeline.
+        Tries a trailing ```json block, then a bare JSON object. On any parse
+        error or missing required key the report is marked ungraded (graded=False)
+        — an honest "could not assess", never a silent neutral score.
 
-        Returns a JSON string with quality_score, blockers, and findings.
+        Returns (json_string, graded).
         """
         # Try to extract a ```json ... ``` fence at the end of the response
         fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
@@ -98,24 +145,49 @@ class StudentAgent(Agent[AgentOutput]):
         try:
             parsed = json.loads(candidate)
         except json.JSONDecodeError:
-            _LOG.warning(
-                "StudentAgent: could not parse JSON from LLM response; using neutral report"
-            )
-            return json.dumps(_NEUTRAL_REPORT)
+            return _failed_report("Could not parse JSON from student response"), False
 
         if not isinstance(parsed, dict):
-            _LOG.warning("StudentAgent: LLM returned non-dict JSON; using neutral report")
-            return json.dumps(_NEUTRAL_REPORT)
+            return _failed_report("Student response was not a JSON object"), False
 
-        required = {"quality_score", "blockers", "findings"}
-        missing = required - parsed.keys()
+        missing = _REQUIRED_KEYS - parsed.keys()
         if missing:
-            _LOG.warning(
-                "StudentAgent: grade report missing keys %s; using neutral report", missing
-            )
-            return json.dumps(_NEUTRAL_REPORT)
+            return _failed_report(f"Grade report missing keys: {sorted(missing)}"), False
 
-        return json.dumps(parsed)
+        # A successfully parsed report is, by definition, a real grade.
+        parsed["graded"] = True
+        rubric = self._normalize_rubric(parsed.get("rubric"))
+        parsed["rubric"] = rubric
+        # Derive the routing score from the rubric so the five concrete dimensions
+        # — not a separate, possibly-inconsistent number the model emitted — drive
+        # the quality threshold. Reports without a usable rubric keep the model's
+        # own quality_score.
+        if rubric is not None:
+            parsed["quality_score"] = RubricScores(**rubric).composite()
+        return json.dumps(parsed), True
+
+    @staticmethod
+    def _normalize_rubric(rubric: object) -> dict | None:
+        """Keep the rubric only when every dimension is a real number in [0, 100].
+
+        A grade without a usable rubric is still a valid grade (graded stays True);
+        we simply drop a malformed rubric rather than fail the whole assessment.
+        bool is excluded explicitly (it is a subclass of int) so a stray `true`
+        cannot masquerade as the score 1.0.
+        """
+        if not isinstance(rubric, dict):
+            return None
+
+        def _is_score(value: object) -> bool:
+            return (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and 0 <= value <= 100
+            )
+
+        if not all(_is_score(rubric.get(dim)) for dim in RUBRIC_DIMENSIONS):
+            return None
+        return {dim: float(rubric[dim]) for dim in RUBRIC_DIMENSIONS}
 
     def _build_user_message(self, state: PipelineState, store: ArtifactStore) -> str:
         notebook_name = self._latest_notebook_name(state)

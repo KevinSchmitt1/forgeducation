@@ -218,6 +218,27 @@ def test_code_author_falls_back_on_invalid_json(
     # Fallback must also satisfy the executor contract: valid nbformat
     notebook = nbformat.reads(stored, as_version=4)
     assert len(notebook.cells) > 0
+    # …and the fallback must be recorded as a degradation, not silently shipped.
+    assert result.degradations[-1].kind == "llm_empty_fallback"
+    assert result.degradations[-1].stage.value == "code_author"
+
+
+@pytest.mark.unit
+def test_code_author_no_degradation_on_success(
+    personas_dir: Path,
+    initial_state: PipelineState,
+    artifact_store: ArtifactStore,
+    mock_llm_client: MagicMock,
+) -> None:
+    """A successful authoring pass records no degradation."""
+    from forged.pipeline.agents.code_author import CodeAuthorAgent
+
+    cells = [{"type": "markdown", "source": "# Lesson"}, {"type": "code", "source": "print(1)"}]
+    mock_llm_client.complete.return_value = json.dumps(cells)
+    agent = CodeAuthorAgent(personas_dir=personas_dir, llm_client=mock_llm_client)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
+
+    assert result.degradations == []
 
 
 @pytest.mark.unit
@@ -290,13 +311,17 @@ def test_student_parses_bare_json_object(
 
 
 @pytest.mark.unit
-def test_student_degrades_gracefully_on_unparseable_response(
+def test_student_marks_ungraded_on_unparseable_response(
     personas_dir: Path,
     initial_state: PipelineState,
     artifact_store: ArtifactStore,
     mock_llm_client: MagicMock,
 ) -> None:
-    """StudentAgent.run() uses neutral report when LLM response contains no valid JSON."""
+    """An unparseable response → graded=False + a degradation, NOT a neutral 50.
+
+    Regression guard: a student that cannot produce JSON must not be coerced into
+    a routable mediocre score.
+    """
     from forged.pipeline.agents.student import StudentAgent
 
     mock_llm_client.complete.return_value = "I reviewed the notebook. Looks fine overall."
@@ -305,20 +330,19 @@ def test_student_degrades_gracefully_on_unparseable_response(
 
     artifact_name = result.outputs[-1].artifact_name
     stored = json.loads(artifact_store.get(artifact_name).content)
-    # Neutral fallback values
-    assert stored["quality_score"] == pytest.approx(50.0)
-    assert stored["blockers"] == []
-    assert stored["findings"] == []
+    assert stored["graded"] is False
+    assert stored["quality_score"] != pytest.approx(50.0)
+    assert result.degradations[-1].kind == "grade_unparseable"
 
 
 @pytest.mark.unit
-def test_student_degrades_gracefully_on_llm_error(
+def test_student_marks_failed_on_llm_error(
     personas_dir: Path,
     initial_state: PipelineState,
     artifact_store: ArtifactStore,
     mock_llm_client: MagicMock,
 ) -> None:
-    """StudentAgent.run() uses neutral report when the LLM call itself raises RuntimeError."""
+    """A raised LLM call → graded=False + a 'grade_failed' degradation, not neutral 50."""
     from forged.pipeline.agents.student import StudentAgent
 
     mock_llm_client.complete.side_effect = RuntimeError("quota exceeded")
@@ -327,7 +351,106 @@ def test_student_degrades_gracefully_on_llm_error(
 
     artifact_name = result.outputs[-1].artifact_name
     stored = json.loads(artifact_store.get(artifact_name).content)
-    assert stored["quality_score"] == pytest.approx(50.0)
+    assert stored["graded"] is False
+    assert stored["quality_score"] != pytest.approx(50.0)
+    assert result.degradations[-1].kind == "grade_failed"
+    assert "quota exceeded" in result.degradations[-1].detail
+
+
+@pytest.mark.unit
+def test_student_passes_through_rubric_and_marks_graded(
+    personas_dir: Path,
+    initial_state: PipelineState,
+    artifact_store: ArtifactStore,
+    mock_llm_client: MagicMock,
+) -> None:
+    """A well-formed report with a rubric is stored graded=True with the rubric intact."""
+    from forged.pipeline.agents.student import StudentAgent
+
+    report = {
+        "quality_score": 82.0,
+        "blockers": [],
+        "findings": [],
+        "rubric": {
+            "structure": 80,
+            "explanation_depth": 85,
+            "code_clarity": 78,
+            "correctness": 90,
+            "learner_fit": 77,
+        },
+    }
+    mock_llm_client.complete.return_value = f"Findings...\n```json\n{json.dumps(report)}\n```"
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=mock_llm_client)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
+
+    stored = json.loads(artifact_store.get(result.outputs[-1].artifact_name).content)
+    assert stored["graded"] is True
+    assert stored["rubric"]["structure"] == pytest.approx(80.0)
+    assert result.degradations == []
+
+
+@pytest.mark.unit
+def test_student_quality_score_is_derived_from_rubric_composite(
+    personas_dir: Path,
+    initial_state: PipelineState,
+    artifact_store: ArtifactStore,
+    mock_llm_client: MagicMock,
+) -> None:
+    """quality_score is overwritten with the rubric mean, ignoring a disagreeing scalar.
+
+    Guards against an LLM that emits an inflated standalone score while its rubric
+    tells a harsher story — the five dimensions are the source of truth.
+    """
+    from forged.pipeline.agents.student import StudentAgent
+
+    report = {
+        "quality_score": 95.0,  # inflated; must be ignored
+        "blockers": [],
+        "findings": [],
+        "rubric": {
+            "structure": 40, "explanation_depth": 40, "code_clarity": 40,
+            "correctness": 40, "learner_fit": 40,
+        },
+    }
+    mock_llm_client.complete.return_value = json.dumps(report)
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=mock_llm_client)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
+
+    stored = json.loads(artifact_store.get(result.outputs[-1].artifact_name).content)
+    assert stored["quality_score"] == pytest.approx(40.0)
+
+
+@pytest.mark.unit
+def test_student_rejects_boolean_rubric_value(
+    personas_dir: Path,
+    initial_state: PipelineState,
+    artifact_store: ArtifactStore,
+    mock_llm_client: MagicMock,
+) -> None:
+    """A boolean in the rubric is rejected (bool is a subclass of int) → rubric dropped.
+
+    The grade stays valid (graded=True) but keeps the model's own quality_score
+    rather than coercing `true` into 1.0.
+    """
+    from forged.pipeline.agents.student import StudentAgent
+
+    report = {
+        "quality_score": 70.0,
+        "blockers": [],
+        "findings": [],
+        "rubric": {
+            "structure": True, "explanation_depth": 80, "code_clarity": 80,
+            "correctness": 80, "learner_fit": 80,
+        },
+    }
+    mock_llm_client.complete.return_value = json.dumps(report)
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=mock_llm_client)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
+
+    stored = json.loads(artifact_store.get(result.outputs[-1].artifact_name).content)
+    assert stored["graded"] is True
+    assert stored["rubric"] is None
+    assert stored["quality_score"] == pytest.approx(70.0)
 
 
 @pytest.mark.unit
@@ -366,5 +489,6 @@ def test_student_grade_report_missing_keys_degrades(
 
     artifact_name = result.outputs[-1].artifact_name
     stored = json.loads(artifact_store.get(artifact_name).content)
-    # Should fall back to neutral
-    assert stored["quality_score"] == pytest.approx(50.0)
+    # Missing required keys → ungraded, not a neutral score
+    assert stored["graded"] is False
+    assert stored["quality_score"] != pytest.approx(50.0)

@@ -19,8 +19,10 @@ if TYPE_CHECKING:
 
 try:
     from openai import OpenAI
+    from openai._types import Omit as _OmitSentinel
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     OpenAI = None  # type: ignore[assignment, misc]
+    _OmitSentinel = None  # type: ignore[assignment, misc]
 
 try:
     from langfuse import Langfuse
@@ -83,9 +85,10 @@ class _LangfuseTracer:
             else "llm.complete"
         )
         model_parameters: dict[str, str | int | float | bool | list[str] | None] = {
-            "temperature": config.temperature,
             "max_tokens": config.max_tokens,
         }
+        if config.temperature is not None:
+            model_parameters["temperature"] = config.temperature
         return client.start_observation(
             name=observation_name,
             as_type="generation",
@@ -258,20 +261,25 @@ class LLMClient:
         # OpenAI deprecated `max_tokens` in favour of `max_completion_tokens`
         # (required by o-series and newer models). Ollama's OpenAI-compatible
         # endpoint still expects `max_tokens`, so pick per provider.
+        # _OmitSentinel tells the OpenAI SDK to omit the parameter entirely — required
+        # for models like gpt-5/gpt-5-mini that reject any non-default temperature.
+        temperature = (
+            self._config.temperature if self._config.temperature is not None else _OmitSentinel()
+        )
         try:
             if self._config.provider is Provider.OLLAMA:
                 response = client.chat.completions.create(
                     model=self._config.model,
-                    temperature=self._config.temperature,
                     max_tokens=self._config.max_tokens,
                     messages=messages,
+                    temperature=temperature,
                 )
             else:
                 response = client.chat.completions.create(
                     model=self._config.model,
-                    temperature=self._config.temperature,
                     max_completion_tokens=self._config.max_tokens,
                     messages=messages,
+                    temperature=temperature,
                 )
         except Exception as exc:  # noqa: BLE001 — re-raise with actionable context
             self._tracer.record_error(observation, str(exc))
@@ -280,12 +288,22 @@ class LLMClient:
                 f"model={self._config.model}): {exc}"
             ) from exc
 
-        content = response.choices[0].message.content
+        choice = response.choices[0]
+        content = choice.message.content
         if not content:
-            self._tracer.record_error(observation, "empty content")
+            refusal = getattr(choice.message, "refusal", None)
+            finish = getattr(choice, "finish_reason", None)
+            detail = f"refusal={refusal!r}" if refusal else f"finish_reason={finish!r}"
+            _LOG.error(
+                "LLM returned empty content — %s (provider=%s, model=%s)",
+                detail,
+                self._config.provider.value,
+                self._config.model,
+            )
+            self._tracer.record_error(observation, f"empty content: {detail}")
             raise RuntimeError(
-                f"LLM returned empty content (provider={self._config.provider.value}, "
-                f"model={self._config.model})"
+                f"LLM returned empty content: {detail} "
+                f"(provider={self._config.provider.value}, model={self._config.model})"
             )
         self._tracer.record_success(observation, content, _usage_details(response))
         return content

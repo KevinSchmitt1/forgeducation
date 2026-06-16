@@ -111,7 +111,7 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
 
     class MockArgs:
         def __init__(self, run_dir_path, personas_path):
-            self.brief = "Test lesson brief"
+            self.topic = "Test lesson brief"
             self.config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
             self.run_dir = run_dir_path
             self.debug = False
@@ -143,7 +143,7 @@ def test_agentic_cli_rejects_missing_learner_profile(tmp_path: Path) -> None:
     from forged.cli import _cmd_agentic
 
     class Args:
-        brief = "Teach me coroutines"
+        topic = "Teach me coroutines"
         config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
         run_dir = tmp_path / "run"
         debug = False
@@ -183,6 +183,32 @@ def test_agentic_cli_writes_summary_with_routing_log(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_agentic_summary_surfaces_degradations(tmp_path: Path) -> None:
+    """SUMMARY.md includes a Degradations section so fallbacks are never silent."""
+    from forged.cli import _write_agentic_summary
+    from forged.pipeline.state import Degradation
+
+    state = create_initial_state()
+    state = state.with_degradation(
+        Degradation(
+            stage=PipelineStage.STUDENT,
+            kind="grade_failed",
+            detail="LLM returned empty content",
+        )
+    ).with_terminal("Acceptable", ok=True)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    _write_agentic_summary(run_dir, state, 5.0)
+
+    summary = (run_dir / "SUMMARY.md").read_text(encoding="utf-8")
+    assert "Degradations" in summary
+    assert "grade_failed" in summary
+    assert "empty content" in summary
+
+
+@pytest.mark.unit
 def test_agentic_cli_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
     """The agentic command loads pipeline config and passes it into run_pipeline()."""
     personas_dir = tmp_path / "personas"
@@ -191,7 +217,7 @@ def test_agentic_cli_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
         (personas_dir / f"{name}.md").write_text(f"Persona for {name}.", encoding="utf-8")
 
     class Args:
-        brief = "Teach me stacks"
+        topic = "Teach me stacks"
         config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
         run_dir = tmp_path / "run"
         debug = False

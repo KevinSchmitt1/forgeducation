@@ -1,0 +1,27 @@
+# Example: Backend Junior Developer
+# ==================================
+# Learner profile for a junior backend developer (2-3 years experience)
+# learning systems-level concepts
+
+name: "Kevin: Junior Data Scientist and AI Engineer"
+
+description: |
+  Rudimentary experience with Python and machine learning. Transitioning from data science to AI engineering, 
+  with a focus on deep learning and model deployment.
+
+prior_knowledge:
+  - "Python and basic data structures (lists, dicts, sets)"
+  - "SQL and relational databases"
+  - "REST API design"
+  - "LLM CLI usage and prompt engineering"
+
+environment: "jupyter_notebook"
+
+material_density: "standard"
+
+learning_style: "hands_on"
+
+background_context: |
+  Goal: Transition from data science to AI engineering.
+  Motivated by understanding deep learning and model deployment.
+  Works at a company with ~100 engineers; no big tech experience.

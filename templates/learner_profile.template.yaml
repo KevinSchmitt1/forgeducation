@@ -1,48 +1,40 @@
 # Learner Profile Template
 # ========================
-# Describe the learner's background, goals, and preferences.
-# All fields optional; omit any that don't apply.
+# Copy this file, fill in every field, then pass it with:
+#   forged build --topic "..." --learner-profile path/to/profile.yaml
 #
-# Usage: forged build --topic "..." --learner-profile path/to/profile.yaml
+# All seven fields are required. Enum fields only accept the listed values.
+
+name: ""
+# Display name for this learner persona.
+# Example: "Backend Junior Developer"
+
+description: ""
+# One short paragraph describing the learner and their goal.
+# Example: "3 years of Python/Django; transitioning toward SRE roles."
 
 prior_knowledge:
-  # What does this learner already know?
-  # Examples:
-  # - "Familiar with Python, unfamiliar with systems programming"
-  # - "Data science background; new to ML engineering"
-  # - "Complete beginner in programming"
-  description: ""
+  - ""
+# Bullet list of things the learner already knows well.
+# Agents will not re-explain these; be honest to avoid over-simplified content.
+# Example:
+#   - "Python and basic data structures (lists, dicts, sets)"
+#   - "SQL and relational databases"
 
-learning_style:
-  # How does this learner prefer to learn?
-  # Common options: visual, hands-on, conceptual, example-driven, problem-solving
-  # Examples:
-  # - "Hands-on: loves writing code and experimenting"
-  # - "Conceptual: wants deep understanding of theory first"
-  # - "Visual: prefers diagrams and mental models"
-  preference: ""
+environment: "jupyter_notebook"
+# Where the lesson will run. One of:
+#   jupyter_notebook | google_colab | vscode | ide | cli | book
 
-environment:
-  # Where and how will this learner engage with the material?
-  # Examples:
-  # - "Self-paced, can dedicate 5-10 hours/week"
-  # - "Intensive bootcamp, 8 hours/day for 2 weeks"
-  # - "Commute study, 30-minute sessions"
-  context: ""
+material_density: "standard"
+# How much explanation and how many examples per concept. One of:
+#   dense    — terse explanations, ~1 canonical example per concept
+#   standard — balanced explanations, 2–3 examples per concept
+#   rich     — elaborate explanations, multiple examples, extension ideas
 
-material_density:
-  # How much explanation detail is needed?
-  # Options: dense (lots of detail), medium (balanced), minimal (concise)
-  # Examples:
-  # - "dense" → detailed explanations, multiple examples per concept
-  # - "medium" → focused explanations, 1-2 examples per concept
-  # - "minimal" → brief explanations, code-first approach
-  level: "medium"
+learning_style: "hands_on"
+# How the learner prefers to absorb material. One of:
+#   socratic | project_based | visual | hands_on | reference
 
-background_context:
-  # Any other relevant context?
-  # Examples:
-  # - "Industry: backend infrastructure; goal is to learn LLM application deployment"
-  # - "Career transition: switching from ops to SRE; strong linux knowledge"
-  # - "Motivated by: building a personal project (chatbot)"
-  notes: ""
+background_context: ""
+# Any other constraints or context relevant to content generation.
+# Example: "Goal: transition to SRE. No GPU; CPU-only environment."

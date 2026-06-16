@@ -44,6 +44,8 @@ forged build \
 - **`examples/learner-beginner.yaml`** — Complete beginner; needs dense explanations, visual learning, slow pace
 - **`examples/learner-backend-junior.yaml`** — Backend developer; hands-on, medium detail, practical focus
 - **`examples/learner-ml-practitioner.yaml`** — ML engineer; conceptual depth, rigorous explanations, research papers
+- **`examples/learner-web-dev-beginner.yaml`** — Self-taught web developer; newer to CS fundamentals, visual style, rich detail
+- **`examples/learner-ml-engineer-apple-silicon.yaml`** — ML engineer on Apple Silicon; hands-on, CPU/MPS-only environment
 
 #### Topic Specifications
 

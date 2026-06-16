@@ -18,6 +18,7 @@ from forged.pipeline.failure import (
     ExecutionReport,
     FailureCategory,
     GradeReport,
+    RubricScores,
     classify,
 )
 from forged.pipeline.state import Evidence, Location, LocationType
@@ -733,3 +734,161 @@ def test_failure_category_values_are_lowercase_strings() -> None:
     for member in FailureCategory:
         assert member.value == member.value.lower()
         assert isinstance(member.value, str)
+
+
+# ── RubricScores ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_rubric_composite_is_mean_of_dimensions() -> None:
+    """composite() is the equal-weighted mean of the five dimensions."""
+    rubric = RubricScores(
+        structure=80.0,
+        explanation_depth=60.0,
+        code_clarity=70.0,
+        correctness=90.0,
+        learner_fit=50.0,
+    )
+    assert rubric.composite() == pytest.approx((80 + 60 + 70 + 90 + 50) / 5)
+
+
+@pytest.mark.unit
+def test_rubric_is_immutable() -> None:
+    """RubricScores must be frozen — it is part of the audit trail."""
+    rubric = RubricScores(
+        structure=1.0, explanation_depth=1.0, code_clarity=1.0,
+        correctness=1.0, learner_fit=1.0,
+    )
+    with pytest.raises((TypeError, AttributeError)):
+        rubric.structure = 99.0  # type: ignore[misc]
+
+
+@pytest.mark.unit
+def test_grade_report_rubric_defaults_to_none() -> None:
+    """rubric is optional; legacy GradeReport(quality_score=...) still works."""
+    assert GradeReport(quality_score=80.0).rubric is None
+
+
+@pytest.mark.unit
+def test_grade_report_graded_defaults_to_true() -> None:
+    """A grade report is graded unless explicitly marked as a failed assessment."""
+    assert GradeReport(quality_score=80.0).graded is True
+
+
+# ── Failed grade → UNCLASSIFIABLE (not low content) ───────────────────────────
+
+
+@pytest.mark.unit
+def test_classify_failed_grade_is_unclassifiable_not_content_quality(
+    ok_execution: ExecutionReport,
+) -> None:
+    """A failed grade (graded=False) must NOT be treated as poor content.
+
+    This is the regression guard for the localLLM run: a student LLM failure fell
+    back to score 50 and was routed to the no-op reviser. An ungraded report is an
+    absence of signal → UNCLASSIFIABLE (human review), never CONTENT_QUALITY.
+    """
+    ungraded = GradeReport(quality_score=50.0, graded=False)
+
+    result = classify(execution_report=ok_execution, grade_report=ungraded)
+
+    assert result.category == FailureCategory.UNCLASSIFIABLE
+    assert result.category != FailureCategory.CONTENT_QUALITY
+
+
+@pytest.mark.unit
+def test_classify_execution_failure_beats_failed_grade(
+    failed_execution: ExecutionReport,
+) -> None:
+    """A real execution failure still wins over an ungraded report.
+
+    If the code didn't run, that concrete signal routes to CodeAuthor regardless
+    of whether grading succeeded.
+    """
+    ungraded = GradeReport(quality_score=50.0, graded=False)
+
+    result = classify(execution_report=failed_execution, grade_report=ungraded)
+
+    assert result.category == FailureCategory.CODE_QUALITY
+
+
+@pytest.mark.unit
+def test_classify_none_grade_with_ok_execution_still_acceptable(
+    ok_execution: ExecutionReport,
+) -> None:
+    """grade_report=None (grader not run) stays ACCEPTABLE — distinct from graded=False.
+
+    Pins the boundary: 'no grader yet' is not the same as 'grader failed'.
+    """
+    result = classify(execution_report=ok_execution, grade_report=None)
+
+    assert result.category == FailureCategory.ACCEPTABLE
+
+
+# ── Structural (anti-hollow) gate ─────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_classify_hollow_notebook_is_not_acceptable(
+    ok_execution: ExecutionReport,
+    high_quality_grade: GradeReport,
+) -> None:
+    """A green, well-graded but hollow notebook → UNCLASSIFIABLE, never ACCEPTABLE.
+
+    This is the deterministic backstop for when the LLM student wrongly passes a
+    lesson whose core cells were all skipped.
+    """
+    from forged.pipeline.structure import StructuralReport
+
+    hollow = StructuralReport(is_hollow=True, reasons=["4 of 6 code cells were skipped"])
+
+    result = classify(
+        execution_report=ok_execution,
+        grade_report=high_quality_grade,
+        structural_report=hollow,
+    )
+
+    assert result.category == FailureCategory.UNCLASSIFIABLE
+    assert "skipped" in result.reason
+
+
+@pytest.mark.unit
+def test_classify_non_hollow_structure_still_acceptable(
+    ok_execution: ExecutionReport,
+    high_quality_grade: GradeReport,
+) -> None:
+    """A healthy structural report does not disturb the ACCEPTABLE verdict."""
+    from forged.pipeline.structure import StructuralReport
+
+    healthy = StructuralReport(is_hollow=False)
+
+    result = classify(
+        execution_report=ok_execution,
+        grade_report=high_quality_grade,
+        structural_report=healthy,
+    )
+
+    assert result.category == FailureCategory.ACCEPTABLE
+
+
+@pytest.mark.unit
+def test_classify_structural_gate_does_not_override_low_quality(
+    ok_execution: ExecutionReport,
+    low_quality_grade: GradeReport,
+) -> None:
+    """A low grade still routes to CONTENT_QUALITY before the structural gate is reached.
+
+    The gate only guards the ACCEPTABLE path; it must not pre-empt the normal
+    content-revision route.
+    """
+    from forged.pipeline.structure import StructuralReport
+
+    hollow = StructuralReport(is_hollow=True, reasons=["hollow"])
+
+    result = classify(
+        execution_report=ok_execution,
+        grade_report=low_quality_grade,
+        structural_report=hollow,
+    )
+
+    assert result.category == FailureCategory.CONTENT_QUALITY
