@@ -118,6 +118,27 @@ class StageOutput:
     data: dict | None = None
 
 
+@dataclass(frozen=True)
+class Degradation:
+    """A point where an agent silently fell back instead of doing its real job.
+
+    Recorded whenever the pipeline degrades gracefully — an LLM call failed and a
+    fallback was used, or a grade could not be produced. These are normally only
+    visible in the logs; surfacing them on the state lets SUMMARY.md tell the truth
+    about what was real versus salvaged, and prevents a degraded run from quietly
+    looking like a clean one.
+
+    Attributes:
+        stage: which stage degraded.
+        kind: short machine label, e.g. "llm_empty_fallback", "grade_failed".
+        detail: human-readable explanation (often the original error message).
+    """
+
+    stage: PipelineStage
+    kind: str
+    detail: str
+
+
 # ── Main state ─────────────────────────────────────────────────────────────────
 
 
@@ -140,6 +161,7 @@ class PipelineState:
     outputs: list[StageOutput] = field(default_factory=list)
     stage_attempts: dict[str, int] = field(default_factory=dict)
     routing_log: list[RoutingDecision] = field(default_factory=list)
+    degradations: list[Degradation] = field(default_factory=list)
 
     is_terminal: bool = False
     terminal_reason: str | None = None
@@ -181,6 +203,15 @@ class PipelineState:
             routing_log=self.routing_log + [decision],
             iteration=self.iteration + 1,
         )
+
+    def with_degradation(self, degradation: Degradation) -> PipelineState:
+        """Return a new state with one degradation appended.
+
+        Creates a new list to preserve immutability of the original, mirroring
+        with_output(). Use this whenever an agent falls back instead of producing
+        its real output, so the degradation can be surfaced rather than buried.
+        """
+        return replace(self, degradations=self.degradations + [degradation])
 
     def with_attempt(self, stage: PipelineStage) -> PipelineState:
         """Return a new state with the attempt counter for a stage incremented.

@@ -105,6 +105,31 @@ def test_route_unclassifiable_terminates(router: Router, initial_state: Pipeline
 
 
 @pytest.mark.unit
+def test_route_unclassifiable_preserves_specific_reason(
+    router: Router, initial_state: PipelineState
+) -> None:
+    """The specific classifier reason (e.g. structural-hollow detail) survives termination.
+
+    A hollow-notebook UNCLASSIFIABLE must reach SUMMARY.md with its real
+    explanation, not a flattened generic 'unable to classify' line.
+    """
+    request = RoutingRequest(
+        state=initial_state,
+        classification=make_classification(
+            FailureCategory.UNCLASSIFIABLE,
+            reason="Notebook executed cleanly but does not demonstrate the lesson: "
+            "4 of 6 code cells were skipped. Manual review required.",
+        ),
+        evidence=[],
+    )
+
+    result = router.route(request)
+
+    assert result.should_terminate is True
+    assert "4 of 6 code cells were skipped" in result.reason
+
+
+@pytest.mark.unit
 def test_route_blocker_structure_to_planner(router: Router, initial_state: PipelineState) -> None:
     """BLOCKER_STRUCTURE must route to PLANNER when budget allows."""
     request = make_request(initial_state, FailureCategory.BLOCKER_STRUCTURE)

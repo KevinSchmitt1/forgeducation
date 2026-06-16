@@ -186,8 +186,12 @@ class Router:
             )
 
         if category == FailureCategory.UNCLASSIFIABLE:
+            # Preserve the classifier's specific reason (e.g. a structural-hollow
+            # explanation) instead of flattening every unclassifiable run to one
+            # generic line — the human reading SUMMARY.md needs the detail.
             return _terminate(
-                "Unable to classify the issue. Manual review required."
+                request.classification.reason
+                or "Unable to classify the issue. Manual review required."
             )
 
         target_stage = _CATEGORY_TO_STAGE[category]

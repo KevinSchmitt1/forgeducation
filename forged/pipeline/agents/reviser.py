@@ -17,9 +17,20 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import TYPE_CHECKING
 
 from forged.artifacts import ArtifactStore
-from forged.pipeline.failure import ExecutionReport, FailureCategory, GradeReport, classify
+
+if TYPE_CHECKING:
+    from forged.pipeline.structure import StructuralReport
+from forged.pipeline.failure import (
+    RUBRIC_DIMENSIONS,
+    ExecutionReport,
+    FailureCategory,
+    GradeReport,
+    RubricScores,
+    classify,
+)
 from forged.pipeline.router import Router, RoutingBudget, RoutingRequest
 from forged.pipeline.state import (
     Evidence,
@@ -61,7 +72,10 @@ class RevisorAgent(Agent[AgentOutput]):
 
         exec_report = self._read_execution_report(state, store)
         grade_report = self._read_grade_report(state, store)
-        classification = classify(exec_report, grade_report)
+        structural_report = self._assess_structure(state, store)
+        classification = classify(
+            exec_report, grade_report, structural_report=structural_report
+        )
         request = RoutingRequest(
             state=state,
             classification=classification,
@@ -136,9 +150,51 @@ class RevisorAgent(Agent[AgentOutput]):
         ]
         return GradeReport(
             quality_score=raw.get("quality_score", 0.0),
+            rubric=self._coerce_rubric(raw.get("rubric")),
+            graded=raw.get("graded", True),
             blockers=raw.get("blockers", []),
             findings=findings,
         )
+
+    @staticmethod
+    def _coerce_rubric(raw: object) -> RubricScores | None:
+        """Rebuild RubricScores from the grade-report JSON when present and complete.
+
+        The student already normalises the rubric to all five numeric dimensions
+        (or null), so a partial/malformed rubric here is simply dropped rather
+        than failing the read.
+        """
+        if not isinstance(raw, dict) or not all(
+            isinstance(raw.get(d), (int, float)) and not isinstance(raw.get(d), bool)
+            for d in RUBRIC_DIMENSIONS
+        ):
+            return None
+        return RubricScores(**{d: float(raw[d]) for d in RUBRIC_DIMENSIONS})
+
+    def _assess_structure(
+        self, state: PipelineState, store: ArtifactStore
+    ) -> StructuralReport | None:
+        """Run the deterministic anti-hollow check on the executed notebook.
+
+        Reads the executor's executed-with-outputs notebook from the run dir and
+        assesses it. Returns None when the executed notebook is absent or
+        unparseable (e.g. a mocked executor in tests) so the classifier simply
+        skips the structural gate rather than crashing or false-failing.
+        """
+        from forged.executor import executed_notebook_filename
+        from forged.pipeline.structure import assess_structure
+
+        exec_name = self._latest_artifact_name(
+            state, PipelineStage.EXECUTOR, "execution_report"
+        )
+        executed_path = store.run_dir / executed_notebook_filename(exec_name)
+        if not executed_path.exists():
+            return None
+        try:
+            return assess_structure(executed_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001 — gating must degrade, not crash
+            _LOG.warning("RevisorAgent: could not assess notebook structure: %s", exc)
+            return None
 
     def _latest_artifact_name(
         self, state: PipelineState, stage: PipelineStage, fallback_prefix: str
@@ -175,13 +231,27 @@ class RevisorAgent(Agent[AgentOutput]):
                 lines.append(f"- **Error**: {exec_report.error_summary}\n")
             lines.append("\n")
 
-        if grade_report:
+        # Only show a quality score when there is a real grade behind it. An
+        # ungraded report (grader failed) carries a placeholder 0.0 that would
+        # otherwise read as "scored zero" to the rerouted agent.
+        if grade_report and grade_report.graded:
             lines.append("## Quality Report\n")
             lines.append(f"- **Score**: {grade_report.quality_score}/100\n")
+            if grade_report.rubric is not None:
+                r = grade_report.rubric
+                lines.append(
+                    "- **Rubric** (0–100): "
+                    f"structure {r.structure:.0f}, "
+                    f"explanation_depth {r.explanation_depth:.0f}, "
+                    f"code_clarity {r.code_clarity:.0f}, "
+                    f"correctness {r.correctness:.0f}, "
+                    f"learner_fit {r.learner_fit:.0f}\n"
+                )
             if grade_report.findings:
                 lines.append("- **Key Findings**:\n")
                 for finding in grade_report.findings[:5]:
-                    lines.append(f"  - [{finding.severity}] {finding.text}\n")
+                    loc = self._format_location(finding.location)
+                    lines.append(f"  - [{finding.severity}] {loc}{finding.text}\n")
             lines.append("\n")
 
         lines.append("## Action Items\n")
@@ -193,6 +263,19 @@ class RevisorAgent(Agent[AgentOutput]):
             lines.append("- Address the quality gaps identified above\n")
 
         return "".join(lines)
+
+    @staticmethod
+    def _format_location(location: Location) -> str:
+        """Render a finding's anchor as a short prefix, e.g. 'cell 3 — '.
+
+        Gives the rerouted agent a concrete place to look instead of a bare
+        sentence. Returns '' for global findings that have no specific anchor.
+        """
+        if location.type == LocationType.CELL and location.cell_index is not None:
+            return f"cell {location.cell_index} — "
+        if location.label:
+            return f"{location.label} — "
+        return ""
 
     def _coerce_severity(self, raw: str | None) -> Severity:
         """Map the student persona's severity vocabulary onto Evidence severities.

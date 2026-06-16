@@ -52,6 +52,13 @@ immediately after all prose commentary.
 ```json
 {
   "quality_score": <number 0-100>,
+  "rubric": {
+    "structure": <number 0-100>,
+    "explanation_depth": <number 0-100>,
+    "code_clarity": <number 0-100>,
+    "correctness": <number 0-100>,
+    "learner_fit": <number 0-100>
+  },
   "blockers": [<string>, ...],
   "findings": [
     {
@@ -71,6 +78,15 @@ immediately after all prose commentary.
 
 Rules:
 - `quality_score`: 0 = completely unusable, 100 = excellent for this learner profile.
+  Set it to the average of your five rubric scores.
+- `rubric`: score each dimension 0–100 for THIS learner profile. Be honest and
+  harsh where deserved — a lesson whose core cells were skipped or whose
+  explanations are stubs should score low on the relevant dimensions:
+  - `structure`: concept ordering and lesson flow.
+  - `explanation_depth`: are the explanations real and sufficient, not one-line stubs?
+  - `code_clarity`: is the code readable and understandable for this learner?
+  - `correctness`: does the code actually do what the prose claims (per the execution_report)?
+  - `learner_fit`: pitched right for the profile — neither too shallow nor too advanced?
 - `blockers`: free-text list of issues that would stop the learner cold (empty list if none).
 - `findings`: one entry per issue flagged above.  Empty list if no findings.
 - `scope` says WHAT KIND of problem it is — this drives where the lesson is sent for fixing:

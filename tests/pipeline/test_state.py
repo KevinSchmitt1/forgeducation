@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from forged.pipeline.state import (
+    Degradation,
     Evidence,
     Location,
     LocationType,
@@ -442,3 +443,58 @@ def test_stage_output_is_immutable(sample_output: StageOutput):
 def test_routing_decision_is_immutable(sample_routing_decision: RoutingDecision):
     with pytest.raises((TypeError, AttributeError)):
         sample_routing_decision.reason = "mutated"  # type: ignore[misc]
+
+
+# ── Degradation channel ────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_new_state_has_no_degradations(initial_state: PipelineState):
+    """A fresh state starts with an empty degradations list."""
+    assert initial_state.degradations == []
+
+
+@pytest.mark.unit
+def test_with_degradation_appends(initial_state: PipelineState):
+    """with_degradation returns a new state carrying the appended degradation."""
+    # Arrange
+    deg = Degradation(
+        stage=PipelineStage.STUDENT,
+        kind="grade_failed",
+        detail="LLM returned empty content",
+    )
+
+    # Act
+    new_state = initial_state.with_degradation(deg)
+
+    # Assert
+    assert new_state.degradations == [deg]
+
+
+@pytest.mark.unit
+def test_with_degradation_does_not_mutate_original(initial_state: PipelineState):
+    """The original state is untouched — immutability holds."""
+    deg = Degradation(stage=PipelineStage.CODE_AUTHOR, kind="llm_empty_fallback", detail="x")
+
+    initial_state.with_degradation(deg)
+
+    assert initial_state.degradations == []
+
+
+@pytest.mark.unit
+def test_with_degradation_preserves_order(initial_state: PipelineState):
+    """Multiple degradations accumulate in the order they were recorded."""
+    d1 = Degradation(stage=PipelineStage.CODE_AUTHOR, kind="llm_empty_fallback", detail="first")
+    d2 = Degradation(stage=PipelineStage.STUDENT, kind="grade_failed", detail="second")
+
+    new_state = initial_state.with_degradation(d1).with_degradation(d2)
+
+    assert new_state.degradations == [d1, d2]
+
+
+@pytest.mark.unit
+def test_degradation_is_immutable():
+    """Degradation must be frozen — it is an audit record."""
+    deg = Degradation(stage=PipelineStage.STUDENT, kind="grade_failed", detail="x")
+    with pytest.raises((TypeError, AttributeError)):
+        deg.detail = "mutated"  # type: ignore[misc]

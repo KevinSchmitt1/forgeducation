@@ -618,6 +618,118 @@ def test_revisor_agent_run_adds_routing_decision(
 
 
 @pytest.mark.unit
+def test_revisor_terminates_on_hollow_executed_notebook(
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+) -> None:
+    """A green, well-graded run whose executed notebook is hollow must NOT be accepted.
+
+    End-to-end through the reviser: the structural gate reads the executed notebook
+    from the run dir and forces a non-acceptable terminal state.
+    """
+    import nbformat
+
+    from forged.executor import executed_notebook_filename
+    from forged.pipeline.agents.reviser import RevisorAgent
+
+    # Hollow executed notebook: most code cells printed a skip message.
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [nbformat.v4.new_markdown_cell("# Lesson")]
+    for text in (
+        "Missing prerequisites detected",
+        "Baseline generation skipped: missing torch",
+        "Training skipped: missing deps",
+        "Post-training generation skipped",
+    ):
+        cell = nbformat.v4.new_code_cell("...")
+        cell.outputs = [nbformat.v4.new_output("stream", name="stdout", text=text)]
+        nb.cells.append(cell)
+    (artifact_store.run_dir / executed_notebook_filename("execution_report_v0")).write_text(
+        nbformat.writes(nb), encoding="utf-8"
+    )
+
+    # State: executor ran (ok) and student graded high — would normally be ACCEPTABLE.
+    state = create_initial_state(run_id="hollow-run")
+    artifact_store.put(
+        Artifact(
+            name="execution_report_v0",
+            kind="json",
+            content=json.dumps({"ok": True, "failed_cells": [], "error_summary": None}),
+        )
+    )
+    grade = {"quality_score": 90.0, "graded": True, "blockers": [], "findings": []}
+    artifact_store.put(
+        Artifact(name="student_grade_report_v0", kind="json", content=json.dumps(grade))
+    )
+    state = (
+        state.with_output(
+            StageOutput(
+                stage=PipelineStage.EXECUTOR,
+                artifact_name="execution_report_v0",
+                iteration=0,
+            )
+        )
+        .with_output(
+            StageOutput(
+                stage=PipelineStage.STUDENT,
+                artifact_name="student_grade_report_v0",
+                iteration=0,
+            )
+        )
+        .with_current_stage(PipelineStage.REVISER)
+    )
+
+    agent = RevisorAgent(personas_dir=personas_dir)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(state, artifact_store))
+
+    assert result.is_terminal is True
+    assert result.terminal_ok is False
+    assert "skipped" in (result.terminal_reason or "")
+
+
+@pytest.mark.unit
+def test_revision_brief_includes_rubric_and_cell_reference(personas_dir: Path) -> None:
+    """The brief carries the rubric breakdown and cell-referenced findings.
+
+    A rerouted agent should get specifics (which dimension is weak, which cell to
+    look at), not just a generic 'revise the lesson' instruction.
+    """
+    from forged.pipeline.agents.reviser import RevisorAgent
+    from forged.pipeline.failure import (
+        Classification,
+        ExecutionReport,
+        FailureCategory,
+        GradeReport,
+        RubricScores,
+    )
+    from forged.pipeline.state import Evidence, Location, LocationType, PipelineStage
+
+    rubric = RubricScores(
+        structure=70, explanation_depth=30, code_clarity=80, correctness=85, learner_fit=40
+    )
+    finding = Evidence(
+        source="student",
+        severity="CONFUSING",
+        scope="content",
+        location=Location(type=LocationType.CELL, cell_index=4),
+        text="Label masking is used but never explained",
+    )
+    grade = GradeReport(quality_score=61.0, rubric=rubric, findings=[finding])
+    classification = Classification(
+        category=FailureCategory.CONTENT_QUALITY, reason="Quality below threshold"
+    )
+
+    agent = RevisorAgent(personas_dir=personas_dir)
+    brief = agent._synthesize_revision_brief(
+        ExecutionReport(ok=True), grade, classification, PipelineStage.CODE_AUTHOR
+    )
+
+    assert "explanation_depth 30" in brief
+    assert "cell 4 —" in brief
+    assert "Label masking" in brief
+
+
+@pytest.mark.unit
 def test_revisor_agent_run_reads_classification(
     personas_dir: Path,
     state_with_grade: PipelineState,

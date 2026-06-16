@@ -18,7 +18,7 @@ from pathlib import Path
 
 from forged.artifacts import Artifact, ArtifactStore
 from forged.notebook import build_notebook, cells_from_json
-from forged.pipeline.state import PipelineStage, PipelineState, StageOutput
+from forged.pipeline.state import Degradation, PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
 
@@ -58,18 +58,28 @@ class CodeAuthorAgent(Agent[AgentOutput]):
     async def run(self, state: PipelineState, store: ArtifactStore) -> PipelineState:
         user_msg = self._build_user_message(state, store)
         artifact_name = f"lesson_notebook_v{state.iteration}"
+        degradation: Degradation | None = None
         try:
             response = self._call_llm(state, store, user_msg, artifact_name)
         except RuntimeError as exc:
             _LOG.warning("CodeAuthorAgent LLM call failed, using fallback cells: %s", exc)
             response = build_notebook(_FALLBACK_CELLS)
+            # The fallback is a 2-cell stub — a near-total content collapse. Record
+            # it so SUMMARY.md can tell the truth instead of presenting the stub as
+            # an authored lesson.
+            degradation = Degradation(
+                stage=PipelineStage.CODE_AUTHOR, kind="llm_empty_fallback", detail=str(exc)
+            )
         store.put(Artifact(name=artifact_name, kind="notebook", content=response))
         output = StageOutput(
             stage=PipelineStage.CODE_AUTHOR,
             artifact_name=artifact_name,
             iteration=state.iteration,
         )
-        return state.with_output(output).with_current_stage(self.next_stage())
+        new_state = state.with_output(output)
+        if degradation is not None:
+            new_state = new_state.with_degradation(degradation)
+        return new_state.with_current_stage(self.next_stage())
 
     def _call_llm(
         self,

@@ -211,9 +211,9 @@ def _cmd_agentic(args) -> int:
     from .pipeline.graph import run_pipeline
     from .pipeline.state import create_initial_state
 
-    brief = (args.brief or "").strip()
-    if not brief:
-        print("✗ --brief must not be empty", file=sys.stderr)
+    topic = (args.topic or "").strip()
+    if not topic:
+        print("✗ --topic must not be empty", file=sys.stderr)
         return EXIT_USAGE
 
     # Same structured-input contract as `forged build`: load the learner profile
@@ -228,7 +228,7 @@ def _cmd_agentic(args) -> int:
         topic_spec = (
             TopicSpecification.from_yaml(args.topic_spec)
             if args.topic_spec
-            else _default_topic_spec(brief)
+            else _default_topic_spec(topic)
         )
     except (FileNotFoundError, ValueError, TypeError) as exc:
         print(f"✗ {exc}", file=sys.stderr)
@@ -255,7 +255,7 @@ def _cmd_agentic(args) -> int:
         store = ArtifactStore(run_dir)
         from .artifacts import Artifact
 
-        store.put(Artifact(name="brief", kind="text", content=brief))
+        store.put(Artifact(name="brief", kind="text", content=topic))
         # The shared learner + topic context block; every LLM agent reads this
         # (see forged.context, forged.pipeline.agents.Agent._context_prefix).
         context_block = build_context_block(learner_profile, topic_spec)
@@ -283,6 +283,13 @@ def _cmd_agentic(args) -> int:
         if final_state.is_terminal and final_state.terminal_ok:
             print(f"\n✓ Agentic pipeline complete — open {run_dir / 'lesson.ipynb'}")
             print(f"  summary  {run_dir / 'SUMMARY.md'}")
+            if final_state.degradations:
+                # Acceptable, but not pristine: never let a fallback pass unmentioned.
+                print(
+                    f"  ⚠ {len(final_state.degradations)} degradation(s) occurred during "
+                    f"the run — see the Degradations section in SUMMARY.md",
+                    file=sys.stderr,
+                )
             return EXIT_OK
         if final_state.is_terminal:
             print(
@@ -316,6 +323,16 @@ def _write_agentic_summary(run_dir: Path, state, elapsed_sec: float) -> None:
         lines.append(f"**Reason**: {state.terminal_reason}\n")
     lines.append(f"**Elapsed**: {elapsed_sec:.1f} seconds\n")
     lines.append(f"**Iterations**: {state.iteration}\n\n")
+
+    if state.degradations:
+        lines.append("## Degradations\n\n")
+        lines.append(
+            "These stages fell back instead of producing real output — treat the "
+            "result with suspicion:\n\n"
+        )
+        for deg in state.degradations:
+            lines.append(f"- **{deg.stage.value}** ({deg.kind}): {deg.detail}\n")
+        lines.append("\n")
 
     if state.routing_log:
         lines.append("## Routing Log\n\n")
@@ -436,8 +453,8 @@ def _build_parser() -> argparse.ArgumentParser:
              "agentic run (default: bundled review-loop).",
     )
     agentic.add_argument(
-        "--brief", required=True,
-        help="Lesson topic/brief (e.g., 'Teach me how hash maps work')",
+        "--topic", required=True,
+        help="Lesson topic (e.g., 'Teach me how hash maps work')",
     )
     agentic.add_argument(
         "--run-dir", type=Path, required=True,
