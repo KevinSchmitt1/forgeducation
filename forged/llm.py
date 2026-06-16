@@ -12,7 +12,10 @@ import logging
 import os
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from langfuse.types import TraceContext
 
 try:
     from openai import OpenAI
@@ -169,11 +172,11 @@ class _LangfuseTracer:
         self,
         client: Langfuse,
         trace_context: LLMTraceContext | None,
-    ) -> dict[str, str] | None:
+    ) -> TraceContext | None:
         if trace_context is None:
             return None
         seed = f"{trace_context.pipeline_kind}:{trace_context.run_id}"
-        return {"trace_id": client.create_trace_id(seed=seed)}
+        return cast("TraceContext", {"trace_id": client.create_trace_id(seed=seed)})
 
     def _metadata(
         self,
