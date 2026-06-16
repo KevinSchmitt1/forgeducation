@@ -1,0 +1,29 @@
+# Example: ML Engineer (Apple Silicon)
+# ======================================
+# Learner profile for an ML engineer moving into deep learning and LLMs
+# on Apple Silicon hardware
+
+name: "ML Engineer (Apple Silicon)"
+
+description: |
+  Solid classical-ML background moving into deep learning and LLMs.
+  Learns best with theory paired immediately to runnable code,
+  anchored to ML concepts already known.
+
+prior_knowledge:
+  - "Python, NumPy, Pandas, Matplotlib"
+  - "Classical ML: training loops, overfitting, cross-validation, scikit-learn"
+  - "Neural network basics: forward pass, backprop, loss functions, softmax"
+  - "Linear algebra: dot products, matrix shapes, matrix multiplication"
+
+environment: "jupyter_notebook"
+
+material_density: "standard"
+
+learning_style: "hands_on"
+
+background_context: |
+  Apple Silicon Mac. PyTorch device should be "mps" if available, else "cpu".
+  No CUDA. Prefer CPU/MPS-runnable demos; large model downloads must be called
+  out explicitly. Privacy-sensitive context: prefer local or self-hosted options
+  and do not assume it is fine to send data to a hosted API.

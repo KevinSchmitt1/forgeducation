@@ -1,0 +1,29 @@
+# Example: Self-Taught Web Developer
+# ====================================
+# Learner profile for a web developer who is newer to CS fundamentals
+
+name: "Self-Taught Web Developer"
+
+description: |
+  Comfortable with HTML, CSS, JavaScript, and basic Python.
+  Newer to computer-science fundamentals. Wants concrete, visual,
+  runnable examples and plain-language explanations without heavy
+  mathematical notation.
+
+prior_knowledge:
+  - "Basic programming: variables, loops, functions, arrays/lists, dictionaries"
+  - "Reading and running Python in a notebook"
+  - "Installing packages with pip"
+
+environment: "jupyter_notebook"
+
+material_density: "rich"
+
+learning_style: "visual"
+
+background_context: |
+  CS fundamentals (data structures, algorithmic complexity, recursion) are new
+  territory. Any mathematical notation should be avoided in favour of words and
+  worked examples. Standard laptop, CPU only. Python 3.10+ in Jupyter.
+  Standard library only where possible; avoid heavy dependencies.
+  Print intermediate steps so the learner can follow along.

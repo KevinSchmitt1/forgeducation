@@ -33,7 +33,7 @@ class ModelConfig(BaseModel):
 
     provider: Provider = Provider.OPENAI
     model: str = "gpt-4o-mini"
-    temperature: float = Field(default=0.4, ge=0.0, le=2.0)
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, gt=0)
 
 
