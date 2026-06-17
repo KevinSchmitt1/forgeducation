@@ -1,7 +1,7 @@
 # Output-Quality Remediation — Problem Analysis & Implementation Plan
 
 **As of:** 2026-06-16
-**Status:** IN PROGRESS — Phases 1–4 of 6 complete (offline, zero API spend so far). Phases 5–6 remain.
+**Status:** IN PROGRESS — Phases 1–4 complete + Phase 5 **code complete (offline/mocked)**; the one paid+network E2E for Phase 5 is the only remaining step before Phase 6. Zero API/network spend so far.
 **Source run analysed:** `runs/localLLM/` (topic: *"setup and train local LLMs on Apple Silicon M1"*, learner: Kevin — junior DS→AI). Ended **non-acceptable**, quality score 50, reviser budget exhausted, 4 iterations, 656s.
 **Decisions locked:** D1 = provision env **on by default** (per-run venv); D2 = **separate** `ContentReviserAgent`; P2 = **rubric/dimensioned** student scoring.
 
@@ -19,22 +19,26 @@ This section is for the next agent/session picking up the work. The plan below
 - **Phase 2 (deterministic structural / anti-hollow gate) — ✅ DONE.**
 - **Phase 3 (dependency extraction + self-contained deliverable) — ✅ DONE.**
 - **Phase 4 (real agentic prose ContentReviser + content-quality routing) — ✅ DONE.**
-- **Phases 5–6 — ⏳ NOT STARTED.** Next up: **Phase 5 (default environment provisioning
-  + content-addressed cache)** — the first phase that provisions for real and the first
-  with **API/network/subprocess** spend (security-reviewer mandatory).
+- **Phase 5 (default env provisioning + content-addressed cache) — ◑ CODE COMPLETE, offline.**
+  All logic built + unit/integration tested with **mocked subprocess** (no real venv/pip/network).
+  **Not yet done:** the single paid+network end-to-end run (tiny dep + cheapest model) — it
+  needs explicit user go-ahead because it spends money and hits PyPI. A security self-review
+  of the subprocess surface was done inline (see Phase-5 notes); a `security-reviewer` pass
+  before the real run is still advisable.
+- **Phase 6 — ⏳ NOT STARTED.**
 
 ### Repo state (important)
-- **Phases 1–3 are committed** on branch `feat/output-quality-phases-1-2` (Phase 3 =
-  commit `c0879dc`). **Phase 4 is uncommitted** in the working tree on that branch. The
-  user controls git; do not commit/push unless asked.
+- **Phases 1–4 are committed** on branch `feat/output-quality-phases-1-2` (Phase 3 =
+  `c0879dc`, Phase 4 = `125865f`). **Phase 5 is uncommitted** in the working tree on that
+  branch. The user controls git; do not commit/push unless asked.
 - The branch also carries **pre-existing changes that are NOT part of this project**
   (e.g. a `--brief`→`--topic` CLI rename in `forged/cli.py`, plus edits to `config/`,
   `forged/config.py`, `forged/llm.py`, template files). Don't attribute those to this
   project; don't revert them.
-- Verification baseline after Phase 4: **`pytest tests/` → 372 passed; `ruff check
-  forged tests` clean; `mypy` clean.** Use `.venv/bin/python -m pytest`, `.venv/bin/ruff`,
-  `.venv/bin/mypy`. The full suite takes ~78s (real notebook execution in some tests).
-  Phase 3's two modules and Phase 4's `content_reviser.py` are at **100% line coverage**.
+- Verification baseline after Phase 5 (offline code): **`pytest tests/` → 386 passed; `ruff
+  check forged tests` clean; `mypy` clean.** Use `.venv/bin/python -m pytest`, `.venv/bin/ruff`,
+  `.venv/bin/mypy`. The full suite takes ~93s (real notebook execution in some tests).
+  `provisioning.py` is at **99%** (only the Windows interpreter-path branch is uncovered on macOS).
 
 ### What Phase 1 shipped (files + intent)
 - `forged/pipeline/state.py` — `Degradation` frozen dataclass + `degradations` list on
@@ -153,6 +157,38 @@ This section is for the next agent/session picking up the work. The plan below
   later refinement — the current cascade already routes structure/code via BLOCKER/HIGH
   findings, and the composite drives CONTENT_QUALITY.
 
+### What Phase 5 shipped (files + intent)
+- `forged/provisioning.py` — NEW (99% covered). `provision_environment(requirement_set,
+  *, cache_root, …) -> ProvisionResult`. Builds or **reuses** a venv keyed by
+  `requirements_hash[:16] + py{major.minor}` (the content-addressed cache → heavy deps
+  download once), pip-installs the deps + ipykernel, registers a `forged-<key>` kernel,
+  and returns the kernel name to run against. **Security guards:** a package **allow-list**
+  (`DEFAULT_ALLOWED_PACKAGES`; anything else refused *before* any subprocess), **install
+  timeout**, **size cap** (post-install; oversized → fail), every external call an **argv
+  list** (never `shell=True`; flags/URLs can't be injected because `_parse_token` already
+  drops `-`-prefixed tokens), `pip --no-input`, and `shutil.rmtree` cleanup on any failure
+  so a half-built env is never reused. The **ready marker** is written only after every
+  step succeeds — it *is* the cache-validity flag. `runner`/`size_probe` are injectable, so
+  all of this is unit-tested with no real venv/pip/network.
+- `forged/pipeline/agents/executor.py` — `ExecutorAgent` gained `provision: bool=False`
+  + `cache_root`. When on, it extracts requirements from the latest plan, provisions, and
+  threads the resulting kernel into `ExecutorStage` (empty deps → base kernel, a no-op).
+  **A provisioning failure terminates the run honestly** (`with_terminal(ok=False)` + a
+  `provision_failed` Degradation + a failing execution report) — a missing runtime can't be
+  fixed by recoding or replanning, so it never loops and never ships a green-hollow notebook
+  (the exact P0/D1 failure mode). `provision` defaults **off in code** (tests/graph opt in)
+  and **on in the CLI** (D1).
+- `forged/pipeline/graph.py` — `build_pipeline_graph(..., provision=False)` +
+  `run_pipeline(..., provision=False)` thread the flag to the `ExecutorAgent`.
+- `forged/cli.py` — `forged agentic` provisions **by default**; `--no-provision` opts out
+  (fast/offline run on the base kernel). The flag is passed into `run_pipeline`.
+- **Cache key vs Phase-3 hash:** Phase 3 hashes requirements *content*; Phase 5 combines
+  that with the interpreter version for the actual cache directory (stale-env mitigation).
+- **STILL TODO (the only Phase-5 gap):** one real `forged agentic` on a tiny topic + a tiny
+  dep (not torch) + cheapest model, to confirm cells execute for real against the provisioned
+  kernel and the notebook is non-hollow. This is the first paid+network run — get user
+  consent first; consider a `security-reviewer` pass on `provisioning.py` beforehand.
+
 ### Conventions followed (keep doing these)
 - TDD: write/adjust tests first; every change kept the suite green.
 - Immutability: only mutate `PipelineState` via `with_*` builders; value objects are
@@ -162,18 +198,18 @@ This section is for the next agent/session picking up the work. The plan below
   (cost discipline). The architect pass was deliberately deferred to Phase 4/5 where the
   graph rewire and subprocess/provisioning work actually need it.
 
-### How to resume (Phase 5)
-Follow **Part III → Phase 5** below. This is the first phase with **real spend** (pip +
-network + subprocess), so `security-reviewer` is **mandatory**. Core tasks: in
-`forged/pipeline/agents/executor.py`, build/reuse a per-run venv from the run's
-`requirements.txt`, keyed by the Phase-3 `requirements_hash` (now recorded in the linear
-manifest and returned by `forged.packaging.write_package`) → a content-addressed venv/wheel
-cache so heavy deps download once; register the kernel; execute against it. Enforce install
-timeout, total-size cap, and a package allow-list. **Failure to install essential deps must
-classify non-acceptable via the Phase-2 gate — never a green-hollow notebook.** Thread
-provisioning + honest exit codes through `forged/cli.py` and surface cache hits/misses.
-Test venv+cache with a **tiny** dep (not torch); then **one** real end-to-end run on a tiny
-topic + cheapest viable model. This is where the zero-API-spend streak ends — keep it to one paid run.
+### How to resume (finish Phase 5, then Phase 6)
+Phase 5 code is done and offline-verified. Two things remain:
+1. **The one paid+network E2E (needs user consent).** Run `forged agentic --topic "<tiny
+   topic needing one tiny pure-python dep>" --run-dir runs/prov-smoke` with the cheapest
+   viable model. Confirm: a `forged-*` kernel is built + cached under `runs/.venv-cache`,
+   the cells execute for real (non-hollow), a second run is a **cache hit**, and a
+   deliberately-unprovisionable dep terminates honestly (non-acceptable, `provision_failed`
+   degradation in SUMMARY). Consider a `security-reviewer` pass on `forged/provisioning.py`
+   first (subprocess + pip + network). This ends the zero-spend streak — keep it to one run.
+2. **Phase 6 (close-out):** follow Part III → Phase 6 — update `DEVELOPMENT.md`/`TODO.md`/
+   README output contract + `07-agentic-pipeline-status.md`, then `/code-review` +
+   `/quality-gate` across the full diff and `checkpoint`. Mark this file *implemented*.
 
 ---
 
@@ -266,7 +302,7 @@ Ordering principle: **make signals honest before spending money to improve them.
 - **Validate:** offline graph tests (mocked LLM) — `CONTENT_QUALITY` produces a *new* notebook version and re-grades; budget still terminates; no infinite loop.
 - **Complexity:** **High** (control-flow change).
 
-### Phase 5 — Default environment provisioning + cache (rest of P0, D1)
+### Phase 5 — Default environment provisioning + cache (rest of P0, D1) — ◑ CODE COMPLETE (offline); one paid E2E remains
 - **[executor.py](../../forged/pipeline/agents/executor.py):** build/reuse a per-run venv from `requirements.txt`, keyed by the Phase-3 requirements hash (content-addressed cache → download heavy deps once); register the kernel; execute against it. Enforce install timeout, size cap, allow-list. Failure to install essential deps → honest non-acceptable (Phase 2 gate), never green-hollow.
 - **[cli.py](../../forged/cli.py):** thread provisioning + honest exit codes; surface cache hits/misses and install failures.
 - **Delegate:** `security-reviewer` (mandatory — running pip + arbitrary notebook code in a subprocess) → `build-error-resolver` if env wiring breaks; `verify`/`run` skills for the real E2E.
@@ -342,9 +378,11 @@ Pre: architect (graph + provisioning)
       *(Phase 1; per-dimension **routing** to different stages is Phase 4.)*
 - [x] `CONTENT_QUALITY` produces a genuinely rewritten notebook and re-grades (P1/D2). *(Phase 4)*
 - [x] Every run dir contains a learner-facing `README.md` + `requirements.txt` (P6). *(Phase 3)*
-- [ ] Provisioning runs by default, reuses a content-addressed cache, and is bounded (D1). *(Phase 5)*
+- [~] Provisioning runs by default, reuses a content-addressed cache, and is bounded (D1).
+      *(Phase 5 — code complete + offline-tested: allow-list, timeout, size cap, cache hit/miss,
+      honest failure. Pending the one real paid+network run to confirm end-to-end.)*
 - [x] Degradations are visible in `SUMMARY.md`; honest exit codes preserved (P4). *(Phase 1)*
-- [~] `pytest tests/` green (372 passed); `ruff` + `mypy` clean — **maintained per phase**;
+- [~] `pytest tests/` green (386 passed); `ruff` + `mypy` clean — **maintained per phase**;
       re-verify at each subsequent phase.
 - [ ] Docs updated; this file marked *implemented* (final close-out, Phase 6).
 

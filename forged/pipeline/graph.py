@@ -71,6 +71,7 @@ def build_pipeline_graph(
     store: ArtifactStore,
     pipeline: PipelineConfig,
     personas_dir: Path | None = None,
+    provision: bool = False,
 ) -> CompiledStateGraph:
     """Assemble and compile the LangGraph pipeline.
 
@@ -97,7 +98,7 @@ def build_pipeline_graph(
         personas_dir=personas_dir,
         llm_client=LLMClient(pipeline.resolved_model_name("code_author")),
     )
-    executor = ExecutorAgent(personas_dir=personas_dir)
+    executor = ExecutorAgent(personas_dir=personas_dir, provision=provision)
     student = StudentAgent(
         personas_dir=personas_dir,
         llm_client=LLMClient(pipeline.resolved_model_name("student")),
@@ -173,6 +174,7 @@ async def run_pipeline(
     store: ArtifactStore,
     pipeline: PipelineConfig,
     personas_dir: Path | None = None,
+    provision: bool = False,
 ) -> PipelineState:
     """Build and execute the pipeline, returning the final PipelineState.
 
@@ -188,7 +190,9 @@ async def run_pipeline(
     Returns:
         The final PipelineState after the pipeline reaches a terminal node.
     """
-    graph = build_pipeline_graph(store=store, pipeline=pipeline, personas_dir=personas_dir)
+    graph = build_pipeline_graph(
+        store=store, pipeline=pipeline, personas_dir=personas_dir, provision=provision
+    )
     result = await graph.ainvoke(initial_state)
 
     if isinstance(result, PipelineState):
