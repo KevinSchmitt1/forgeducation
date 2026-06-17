@@ -56,6 +56,8 @@ DEFAULT_ALLOWED_PACKAGES: frozenset[str] = frozenset(
         "torch", "torchvision", "torchaudio", "tensorflow", "keras", "jax", "jaxlib",
         "transformers", "datasets", "accelerate", "tokenizers", "huggingface-hub",
         "sentencepiece", "safetensors", "evaluate", "xgboost", "lightgbm",
+        # parameter-efficient / supervised fine-tuning (LoRA etc.) — first-party HF
+        "peft", "trl", "sentence-transformers",
         # notebooks / viz / utils
         "ipykernel", "ipython", "ipywidgets", "tqdm", "plotly", "altair",
         "requests", "beautifulsoup4", "lxml", "pyyaml", "rich", "tabulate",
