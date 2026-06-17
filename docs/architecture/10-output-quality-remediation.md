@@ -1,7 +1,7 @@
 # Output-Quality Remediation — Problem Analysis & Implementation Plan
 
 **As of:** 2026-06-16
-**Status:** IN PROGRESS — Phases 1–3 of 6 complete (offline, zero API spend so far). Phases 4–6 remain.
+**Status:** IN PROGRESS — Phases 1–4 of 6 complete (offline, zero API spend so far). Phases 5–6 remain.
 **Source run analysed:** `runs/localLLM/` (topic: *"setup and train local LLMs on Apple Silicon M1"*, learner: Kevin — junior DS→AI). Ended **non-acceptable**, quality score 50, reviser budget exhausted, 4 iterations, 656s.
 **Decisions locked:** D1 = provision env **on by default** (per-run venv); D2 = **separate** `ContentReviserAgent`; P2 = **rubric/dimensioned** student scoring.
 
@@ -18,21 +18,23 @@ This section is for the next agent/session picking up the work. The plan below
 - **Phase 1 (honest signals + rubric scoring) — ✅ DONE.**
 - **Phase 2 (deterministic structural / anti-hollow gate) — ✅ DONE.**
 - **Phase 3 (dependency extraction + self-contained deliverable) — ✅ DONE.**
-- **Phases 4–6 — ⏳ NOT STARTED.** Next up: **Phase 4 (real agentic prose Reviser +
-  dimensioned routing)** — the first control-flow change, and the first **High**-complexity phase.
+- **Phase 4 (real agentic prose ContentReviser + content-quality routing) — ✅ DONE.**
+- **Phases 5–6 — ⏳ NOT STARTED.** Next up: **Phase 5 (default environment provisioning
+  + content-addressed cache)** — the first phase that provisions for real and the first
+  with **API/network/subprocess** spend (security-reviewer mandatory).
 
 ### Repo state (important)
-- **Phases 1–2 are committed** on branch `feat/output-quality-phases-1-2`. **Phase 3 is
-  uncommitted** in the working tree on that branch. The user controls git; do not
-  commit/push unless asked.
+- **Phases 1–3 are committed** on branch `feat/output-quality-phases-1-2` (Phase 3 =
+  commit `c0879dc`). **Phase 4 is uncommitted** in the working tree on that branch. The
+  user controls git; do not commit/push unless asked.
 - The branch also carries **pre-existing changes that are NOT part of this project**
   (e.g. a `--brief`→`--topic` CLI rename in `forged/cli.py`, plus edits to `config/`,
   `forged/config.py`, `forged/llm.py`, template files). Don't attribute those to this
   project; don't revert them.
-- Verification baseline after Phase 3: **`pytest tests/` → 363 passed; `ruff check
+- Verification baseline after Phase 4: **`pytest tests/` → 372 passed; `ruff check
   forged tests` clean; `mypy` clean.** Use `.venv/bin/python -m pytest`, `.venv/bin/ruff`,
-  `.venv/bin/mypy`. The full suite takes ~75s (real notebook execution in some tests).
-  The two new modules are at **100% line coverage** (matching `structure.py`/`failure.py`).
+  `.venv/bin/mypy`. The full suite takes ~78s (real notebook execution in some tests).
+  Phase 3's two modules and Phase 4's `content_reviser.py` are at **100% line coverage**.
 
 ### What Phase 1 shipped (files + intent)
 - `forged/pipeline/state.py` — `Degradation` frozen dataclass + `degradations` list on
@@ -113,6 +115,44 @@ This section is for the next agent/session picking up the work. The plan below
   degraded/non-acceptable agentic run still ships a usable README + deps (the agentic run
   dir is never pruned).
 
+### What Phase 4 shipped (files + intent)
+- `forged/pipeline/state.py` — added `PipelineStage.CONTENT_REVISER` ("content_reviser").
+  REVISER stays the deterministic classifier/router node; CONTENT_REVISER is the new LLM
+  agent that actually rewrites the notebook. **They are distinct** — one routes, one regenerates.
+- `forged/pipeline/agents/content_reviser.py` — NEW (100% covered). `ContentReviserAgent`
+  consumes the latest notebook (`CODE_AUTHOR` *or* a prior `CONTENT_REVISER` output) + the
+  reviser's `revision_brief_v{N-1}` + `lesson_context`, calls the LLM on `personas/reviser.md`,
+  parses the cell list via `forged.notebook.cells_from_json`/`build_notebook` (mirrors
+  `code_author`), and emits `lesson_notebook_v{iteration}` → next stage `EXECUTOR`.
+  **Fallback differs from code_author on purpose:** on LLM failure / unparseable output it
+  **keeps the prior notebook** (re-emitted, non-destructive — a stub would *regress* a
+  gradeable lesson) and records a `Degradation(kind="llm_empty_fallback")`. Uses the
+  `reviser` stage model (gpt-5), like code_author.
+- `forged/pipeline/router.py` — `CONTENT_QUALITY` now maps to `CONTENT_REVISER` (was the
+  no-op `REVISER` self-loop = P1's dead route). Added `RoutingBudget.content_reviser` (default
+  1) + `can_route_to` entry + budget-exhausted message. The `reviser` budget field is kept
+  (vestigial) so nothing routes *to* the classifier as a failure target. Termination
+  invariants unchanged: `getattr(budget, stage.value)` still gates every route.
+- `forged/pipeline/graph.py` — new `content_reviser` node, forward edge
+  `content_reviser → executor` (so the rewrite is re-run and re-graded), and
+  `revisor_route` now maps `"content_reviser" → content_reviser`. All forward edges remain
+  conditional on `not is_terminal`.
+- `forged/pipeline/agents/executor.py` — `_latest_notebook_name` now picks the latest
+  notebook from **either** `CODE_AUTHOR` or `CONTENT_REVISER`, so a rewrite actually gets executed.
+- `forged/pipeline/agents/reviser.py` — revision-brief Action Items gained a
+  `CONTENT_REVISER` branch (rewrite weak explanations; deepen explanation_depth/learner_fit;
+  keep working code intact).
+- `forged/cli.py` — `_write_final_notebook` fallback also accepts a `CONTENT_REVISER`
+  notebook when no executed copy exists.
+- **Offline-verified** with mocked LLMs: a `CONTENT_QUALITY` grade reroutes through the
+  content reviser, the rewrite is re-executed and re-graded acceptable (P1 fixed), and when
+  content stays low the reviser runs once (budget=1) then terminates — **no infinite loop**.
+- **Note on D3 scope:** Phase 4 delivers the *content-quality* route to a real rewriter.
+  Full per-dimension routing (low `structure` → planner; low `code_clarity`/`correctness` →
+  code_author *driven by the rubric dimensions* rather than severity-scoped findings) is a
+  later refinement — the current cascade already routes structure/code via BLOCKER/HIGH
+  findings, and the composite drives CONTENT_QUALITY.
+
 ### Conventions followed (keep doing these)
 - TDD: write/adjust tests first; every change kept the suite green.
 - Immutability: only mutate `PipelineState` via `with_*` builders; value objects are
@@ -122,16 +162,18 @@ This section is for the next agent/session picking up the work. The plan below
   (cost discipline). The architect pass was deliberately deferred to Phase 4/5 where the
   graph rewire and subprocess/provisioning work actually need it.
 
-### How to resume (Phase 4)
-Follow **Part III → Phase 4** below. This is the first **control-flow** change, so the
-plan's `architect` review of the graph rewire + budget/loop invariants is warranted before
-coding. Core tasks: build `forged/pipeline/agents/content_reviser.py` (LLM agent on
-`personas/reviser.md`, mirroring `code_author`'s output/parse/fallback shape and recording
-a `Degradation` on fallback), add a `content_reviser` node + `content_reviser → executor`
-edge in `forged/pipeline/graph.py`, and route `CONTENT_QUALITY → content_reviser` in
-`forged/pipeline/router.py` while preserving the budget/termination invariants (offline
-graph tests with a mocked LLM first — assert a *new* notebook version is produced and
-re-graded, and that the loop still terminates). Still offline — no API spend through Phase 4.
+### How to resume (Phase 5)
+Follow **Part III → Phase 5** below. This is the first phase with **real spend** (pip +
+network + subprocess), so `security-reviewer` is **mandatory**. Core tasks: in
+`forged/pipeline/agents/executor.py`, build/reuse a per-run venv from the run's
+`requirements.txt`, keyed by the Phase-3 `requirements_hash` (now recorded in the linear
+manifest and returned by `forged.packaging.write_package`) → a content-addressed venv/wheel
+cache so heavy deps download once; register the kernel; execute against it. Enforce install
+timeout, total-size cap, and a package allow-list. **Failure to install essential deps must
+classify non-acceptable via the Phase-2 gate — never a green-hollow notebook.** Thread
+provisioning + honest exit codes through `forged/cli.py` and surface cache hits/misses.
+Test venv+cache with a **tiny** dep (not torch); then **one** real end-to-end run on a tiny
+topic + cheapest viable model. This is where the zero-API-spend streak ends — keep it to one paid run.
 
 ---
 
@@ -216,7 +258,7 @@ Ordering principle: **make signals honest before spending money to improve them.
 - **Validate:** `pytest tests/pipeline/test_dependencies.py`; run dir contains `README.md` + `requirements.txt`; `pip install --dry-run -r requirements.txt` parses.
 - **Complexity:** Medium.
 
-### Phase 4 — Real agentic prose Reviser + dimensioned routing (P1, D2, D3 routing)
+### Phase 4 — Real agentic prose Reviser + dimensioned routing (P1, D2, D3 routing) — ✅ DONE
 - **NEW `forged/pipeline/agents/content_reviser.py`:** LLM agent using `personas/reviser.md`; consumes notebook + student findings → rewritten notebook (mirror `code_author` output/parse/fallback shape).
 - **[graph.py:145-154](../../forged/pipeline/graph.py#L145-L154):** add `content_reviser` node + edge `content_reviser → executor`; route `CONTENT_QUALITY → content_reviser`.
 - **[router.py:104-109](../../forged/pipeline/router.py#L104-L109):** map dimensioned scores → stages; revisit reviser budget; preserve termination invariants.
@@ -298,11 +340,11 @@ Pre: architect (graph + provisioning)
 - [x] Failed student call is a distinct signal, never a content score (P2). *(Phase 1)*
 - [x] Student emits dimensioned rubric scores; composite drives the quality threshold (P2/D3).
       *(Phase 1; per-dimension **routing** to different stages is Phase 4.)*
-- [ ] `CONTENT_QUALITY` produces a genuinely rewritten notebook and re-grades (P1/D2). *(Phase 4)*
+- [x] `CONTENT_QUALITY` produces a genuinely rewritten notebook and re-grades (P1/D2). *(Phase 4)*
 - [x] Every run dir contains a learner-facing `README.md` + `requirements.txt` (P6). *(Phase 3)*
 - [ ] Provisioning runs by default, reuses a content-addressed cache, and is bounded (D1). *(Phase 5)*
 - [x] Degradations are visible in `SUMMARY.md`; honest exit codes preserved (P4). *(Phase 1)*
-- [~] `pytest tests/` green (363 passed); `ruff` + `mypy` clean — **maintained per phase**;
+- [~] `pytest tests/` green (372 passed); `ruff` + `mypy` clean — **maintained per phase**;
       re-verify at each subsequent phase.
 - [ ] Docs updated; this file marked *implemented* (final close-out, Phase 6).
 

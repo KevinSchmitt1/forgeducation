@@ -24,6 +24,7 @@ from forged.artifacts import ArtifactStore
 from forged.config import PipelineConfig
 from forged.llm import LLMClient
 from forged.pipeline.agents.code_author import CodeAuthorAgent
+from forged.pipeline.agents.content_reviser import ContentReviserAgent
 from forged.pipeline.agents.executor import ExecutorAgent
 from forged.pipeline.agents.planner import PlannerAgent
 from forged.pipeline.agents.reviser import RevisorAgent
@@ -44,7 +45,7 @@ def revisor_route(state: PipelineState) -> str:
     """Determine which node follows the Reviser based on state.
 
     Returns:
-        "planner", "code_author", "reviser", or END (LangGraph sentinel).
+        "planner", "code_author", "content_reviser", or END (LangGraph sentinel).
 
     Logic:
         1. If state is terminal → END
@@ -102,6 +103,10 @@ def build_pipeline_graph(
         llm_client=LLMClient(pipeline.resolved_model_name("student")),
     )
     revisor = RevisorAgent(personas_dir=personas_dir)
+    content_reviser = ContentReviserAgent(
+        personas_dir=personas_dir,
+        llm_client=LLMClient(pipeline.resolved_model_name("reviser")),
+    )
 
     graph = StateGraph(PipelineState)
 
@@ -120,11 +125,15 @@ def build_pipeline_graph(
     async def revisor_node(state: PipelineState) -> PipelineState:
         return await revisor.run(state, store)
 
+    async def content_reviser_node(state: PipelineState) -> PipelineState:
+        return await content_reviser.run(state, store)
+
     graph.add_node("planner", planner_node)
     graph.add_node("code_author", code_author_node)
     graph.add_node("executor", executor_node)
     graph.add_node("student", student_node)
     graph.add_node("revisor", revisor_node)
+    graph.add_node("content_reviser", content_reviser_node)
 
     graph.add_edge(START, "planner")
     # Every forward edge is conditional on the state not being terminal: an
@@ -135,6 +144,9 @@ def build_pipeline_graph(
         ("code_author", "executor"),
         ("executor", "student"),
         ("student", "revisor"),
+        # The content reviser rewrites the notebook, then re-runs it: its rewrite
+        # must be executed and re-graded for the loop to converge (or terminate).
+        ("content_reviser", "executor"),
     ):
         graph.add_conditional_edges(
             node,
@@ -148,7 +160,7 @@ def build_pipeline_graph(
         {
             "planner": "planner",
             "code_author": "code_author",
-            "reviser": "revisor",
+            "content_reviser": "content_reviser",
             END: END,
         },
     )

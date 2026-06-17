@@ -18,13 +18,20 @@ from typing import Literal
 
 
 class PipelineStage(str, Enum):
-    """Stages in the agentic pipeline, in execution order."""
+    """Stages in the agentic pipeline, in execution order.
+
+    REVISER is the deterministic classifier/router node (it grades signals and
+    decides where to go next). CONTENT_REVISER is the LLM agent that actually
+    rewrites the notebook's prose when content quality is too low — the target of
+    the CONTENT_QUALITY route. They are distinct: one routes, one regenerates.
+    """
 
     PLANNER = "planner"
     CODE_AUTHOR = "code_author"
     EXECUTOR = "executor"
     STUDENT = "student"
     REVISER = "reviser"
+    CONTENT_REVISER = "content_reviser"
 
 
 class LocationType(str, Enum):

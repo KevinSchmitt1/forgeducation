@@ -166,14 +166,16 @@ def test_route_test_failure_to_code_author(router: Router, initial_state: Pipeli
 
 
 @pytest.mark.unit
-def test_route_content_quality_to_reviser(router: Router, initial_state: PipelineState) -> None:
-    """CONTENT_QUALITY must route to REVISER when budget allows."""
+def test_route_content_quality_to_content_reviser(
+    router: Router, initial_state: PipelineState
+) -> None:
+    """CONTENT_QUALITY must route to CONTENT_REVISER (the LLM rewriter) when budget allows."""
     request = make_request(initial_state, FailureCategory.CONTENT_QUALITY)
 
     result = router.route(request)
 
     assert result.should_terminate is False
-    assert result.next_stage == PipelineStage.REVISER
+    assert result.next_stage == PipelineStage.CONTENT_REVISER
     assert result.routing_decision is not None
 
 
@@ -222,7 +224,7 @@ def test_route_respects_code_author_budget(initial_state: PipelineState) -> None
 def test_route_respects_student_budget(initial_state: PipelineState) -> None:
     """Student budget exhausted → terminate when TEST_FAILURE would re-trigger student."""
     # Student budget is 1; simulate 1 student attempt already consumed.
-    # CONTENT_QUALITY routes to REVISER — testing budget for REVISER separately;
+    # CONTENT_QUALITY routes to CONTENT_REVISER — testing budget for that separately;
     # here we use a custom budget to test STUDENT limit.
     budget = RoutingBudget(student=1)
     Router(budget=budget)
@@ -239,10 +241,10 @@ def test_route_respects_student_budget(initial_state: PipelineState) -> None:
 
 
 @pytest.mark.unit
-def test_route_respects_reviser_budget(initial_state: PipelineState) -> None:
-    """Reviser budget exhausted → terminate instead of routing to REVISER."""
-    # Default reviser budget is 1; simulate 1 reviser attempt consumed.
-    exhausted_state = initial_state.with_attempt(PipelineStage.REVISER)
+def test_route_respects_content_reviser_budget(initial_state: PipelineState) -> None:
+    """Content-reviser budget exhausted → terminate instead of routing to CONTENT_REVISER."""
+    # Default content_reviser budget is 1; simulate 1 attempt consumed.
+    exhausted_state = initial_state.with_attempt(PipelineStage.CONTENT_REVISER)
     router = Router()
     request = make_request(exhausted_state, FailureCategory.CONTENT_QUALITY)
 
@@ -269,7 +271,7 @@ def test_route_executor_has_no_budget(initial_state: PipelineState) -> None:
         (PipelineStage.PLANNER, FailureCategory.BLOCKER_STRUCTURE),
         (PipelineStage.CODE_AUTHOR, FailureCategory.CODE_QUALITY),
         (PipelineStage.CODE_AUTHOR, FailureCategory.TEST_FAILURE),
-        (PipelineStage.REVISER, FailureCategory.CONTENT_QUALITY),
+        (PipelineStage.CONTENT_REVISER, FailureCategory.CONTENT_QUALITY),
     ],
 )
 def test_route_no_budget_bypass(
@@ -284,7 +286,7 @@ def test_route_no_budget_bypass(
     budget_map = {
         PipelineStage.PLANNER: RoutingBudget(planner=2),
         PipelineStage.CODE_AUTHOR: RoutingBudget(code_author=3),
-        PipelineStage.REVISER: RoutingBudget(reviser=1),
+        PipelineStage.CONTENT_REVISER: RoutingBudget(content_reviser=1),
     }
     budget = budget_map[stage]
     limit = getattr(budget, stage.value)
@@ -576,3 +578,11 @@ def test_routing_budget_defaults() -> None:
     assert budget.code_author == 3
     assert budget.student == 1
     assert budget.reviser == 1
+    assert budget.content_reviser == 1
+
+
+@pytest.mark.unit
+def test_routing_budget_can_route_to_content_reviser() -> None:
+    """can_route_to() reflects the content_reviser budget (the CONTENT_QUALITY target)."""
+    assert RoutingBudget().can_route_to(PipelineStage.CONTENT_REVISER) is True
+    assert RoutingBudget(content_reviser=0).can_route_to(PipelineStage.CONTENT_REVISER) is False

@@ -65,8 +65,12 @@ class ExecutorAgent(Agent[AgentOutput]):
         return state.with_output(output).with_current_stage(self.next_stage())
 
     def _latest_notebook_name(self, state: PipelineState) -> str:
+        # Either notebook-producing stage may have written the latest notebook:
+        # the code author on the first/recode pass, or the content reviser on a
+        # CONTENT_QUALITY rewrite. Execute whichever ran most recently.
+        notebook_stages = (PipelineStage.CODE_AUTHOR, PipelineStage.CONTENT_REVISER)
         for output in reversed(state.outputs):
-            if output.stage == PipelineStage.CODE_AUTHOR:
+            if output.stage in notebook_stages:
                 return output.artifact_name
         return f"lesson_notebook_v{state.iteration}"
 

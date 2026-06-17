@@ -146,7 +146,8 @@ def test_graph_uses_stage_specific_models(
             store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir
         )
 
-    assert captured_models == ["gpt-5-mini", "gpt-5", "gpt-5-mini"]
+    # planner, code_author, student, then content_reviser (uses the reviser model).
+    assert captured_models == ["gpt-5-mini", "gpt-5", "gpt-5-mini", "gpt-5"]
 
 
 # ── Routing logic tests ────────────────────────────────────────────────────────
@@ -191,14 +192,14 @@ def test_revisor_routes_to_code_author_on_code_quality() -> None:
 
 
 @pytest.mark.unit
-def test_revisor_routes_to_reviser_on_content_quality() -> None:
-    """revisor_route() returns 'reviser' when last routing decision targets REVISER."""
+def test_revisor_routes_to_content_reviser_on_content_quality() -> None:
+    """revisor_route() returns 'content_reviser' when the decision targets CONTENT_REVISER."""
     from forged.pipeline.graph import revisor_route
 
     decision = RoutingDecision(
         iteration=0,
         from_stage=PipelineStage.REVISER,
-        to_stage=PipelineStage.REVISER,
+        to_stage=PipelineStage.CONTENT_REVISER,
         classification="content_quality",
         reason="Content needs revision.",
     )
@@ -206,7 +207,7 @@ def test_revisor_routes_to_reviser_on_content_quality() -> None:
     state = state.with_routing_decision(decision)
 
     result = revisor_route(state)
-    assert result == "reviser"
+    assert result == "content_reviser"
 
 
 @pytest.mark.unit
@@ -502,6 +503,140 @@ def test_full_pipeline_respects_budget(
 
     assert isinstance(final_state, PipelineState)
     assert final_state.is_terminal
+
+
+# ── Content-reviser wiring (Phase 4) ─────────────────────────────────────────────
+
+
+@pytest.mark.integration
+def test_graph_has_content_reviser_node_and_edge(
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
+) -> None:
+    """The content_reviser node exists and feeds back into the executor."""
+    from forged.pipeline.graph import build_pipeline_graph
+
+    graph = build_pipeline_graph(
+        store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir
+    )
+    nodes = set(graph.get_graph().nodes.keys())
+    assert "content_reviser" in nodes
+    pairs = {(e.source, e.target) for e in graph.get_graph().edges}
+    assert ("content_reviser", "executor") in pairs
+
+
+def _content_reroute_mocks(call_count: dict[str, int], grades: list[str]) -> dict[str, Any]:
+    """Mocks where the student returns the given grades in order, the executor always
+    runs clean, and the content reviser emits a fresh notebook then hands to executor."""
+    exec_report = json.dumps({"ok": True, "failed_cells": [], "error_summary": None})
+
+    def executor_run(state: PipelineState, store: ArtifactStore) -> PipelineState:
+        call_count["executor"] = call_count.get("executor", 0) + 1
+        store.put(
+            Artifact(name=f"execution_report_v{state.iteration}", kind="json", content=exec_report)
+        )
+        output = StageOutput(
+            stage=PipelineStage.EXECUTOR,
+            artifact_name=f"execution_report_v{state.iteration}",
+            iteration=state.iteration,
+        )
+        return state.with_output(output).with_current_stage(PipelineStage.STUDENT)
+
+    def student_run(state: PipelineState, store: ArtifactStore) -> PipelineState:
+        idx = min(call_count.get("student", 0), len(grades) - 1)
+        call_count["student"] = call_count.get("student", 0) + 1
+        store.put(
+            Artifact(
+                name=f"student_grade_report_v{state.iteration}", kind="json", content=grades[idx]
+            )
+        )
+        output = StageOutput(
+            stage=PipelineStage.STUDENT,
+            artifact_name=f"student_grade_report_v{state.iteration}",
+            iteration=state.iteration,
+        )
+        return state.with_output(output).with_current_stage(PipelineStage.REVISER)
+
+    def content_reviser_run(state: PipelineState, store: ArtifactStore) -> PipelineState:
+        call_count["content_reviser"] = call_count.get("content_reviser", 0) + 1
+        name = f"lesson_notebook_v{state.iteration}"
+        store.put(Artifact(name=name, kind="notebook", content="[]"))
+        output = StageOutput(
+            stage=PipelineStage.CONTENT_REVISER, artifact_name=name, iteration=state.iteration
+        )
+        return state.with_output(output).with_current_stage(PipelineStage.EXECUTOR)
+
+    return {
+        "executor_run": AsyncMock(side_effect=executor_run),
+        "student_run": AsyncMock(side_effect=student_run),
+        "content_reviser_run": AsyncMock(side_effect=content_reviser_run),
+    }
+
+
+def _run_content_reroute(personas_dir, artifact_store, pipeline_config, mocks, base):
+    from forged.pipeline.agents.code_author import CodeAuthorAgent
+    from forged.pipeline.agents.content_reviser import ContentReviserAgent
+    from forged.pipeline.agents.executor import ExecutorAgent
+    from forged.pipeline.agents.planner import PlannerAgent
+    from forged.pipeline.agents.student import StudentAgent
+    from forged.pipeline.graph import run_pipeline
+
+    with (
+        patch.object(PlannerAgent, "run", base["planner_run"]),
+        patch.object(CodeAuthorAgent, "run", base["code_author_run"]),
+        patch.object(ExecutorAgent, "run", mocks["executor_run"]),
+        patch.object(StudentAgent, "run", mocks["student_run"]),
+        patch.object(ContentReviserAgent, "run", mocks["content_reviser_run"]),
+    ):
+        return asyncio.run(
+            run_pipeline(
+                create_initial_state(run_id="cr-graph"),
+                artifact_store,
+                pipeline_config,
+                personas_dir,
+            )
+        )
+
+
+@pytest.mark.integration
+def test_content_quality_reroutes_through_content_reviser_then_accepts(
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
+) -> None:
+    """A low content grade routes to the content reviser, whose rewrite is re-graded
+    acceptable — proving CONTENT_QUALITY now produces a real new notebook version (P1)."""
+    low = json.dumps({"quality_score": 50.0, "blockers": [], "findings": []})
+    high = json.dumps({"quality_score": 92.0, "blockers": [], "findings": []})
+    call_count: dict[str, int] = {}
+    base = _build_acceptable_agents(personas_dir, artifact_store)
+    mocks = _content_reroute_mocks(call_count, grades=[low, high])
+
+    final_state = _run_content_reroute(
+        personas_dir, artifact_store, pipeline_config, mocks, base
+    )
+
+    assert final_state.is_terminal and final_state.terminal_ok
+    assert call_count["content_reviser"] == 1  # rewrote exactly once
+    assert call_count["executor"] == 2  # original run + re-run of the rewrite
+    assert call_count["student"] == 2  # graded before and after the rewrite
+
+
+@pytest.mark.integration
+def test_content_reviser_budget_terminates_without_infinite_loop(
+    personas_dir: Path, artifact_store: ArtifactStore, pipeline_config: PipelineConfig
+) -> None:
+    """When content stays low, the content reviser runs once (budget=1) then the loop
+    terminates — no infinite reroute. The budget invariant survives the graph rewire."""
+    low = json.dumps({"quality_score": 50.0, "blockers": [], "findings": []})
+    call_count: dict[str, int] = {}
+    base = _build_acceptable_agents(personas_dir, artifact_store)
+    mocks = _content_reroute_mocks(call_count, grades=[low])
+
+    final_state = _run_content_reroute(
+        personas_dir, artifact_store, pipeline_config, mocks, base
+    )
+
+    assert final_state.is_terminal
+    assert not final_state.terminal_ok  # never reached acceptable
+    assert call_count["content_reviser"] == 1  # bounded by the budget; no loop
 
 
 # ── State evolution tests ──────────────────────────────────────────────────────

@@ -371,7 +371,7 @@ def _write_final_notebook(run_dir: Path, store, state) -> None:
             break
 
     for output in reversed(state.outputs):
-        if output.stage == PipelineStage.CODE_AUTHOR:
+        if output.stage in (PipelineStage.CODE_AUTHOR, PipelineStage.CONTENT_REVISER):
             notebook_content = store.get(output.artifact_name).content
             (run_dir / "lesson.ipynb").write_text(notebook_content, encoding="utf-8")
             return
