@@ -55,25 +55,38 @@ The repo contains two execution paths:
 - **Deterministic failure classification** across 6 categories: `BLOCKER_STRUCTURE`,
   `CODE_QUALITY`, `TEST_FAILURE`, `CONTENT_QUALITY`, `ACCEPTABLE`, `UNCLASSIFIABLE`.
 - **Budget-aware routing** that terminates rather than looping indefinitely.
-- **Five agents**: Planner, CodeAuthor, Executor (real notebook execution), Student,
-  Reviser — all wired into a compiled LangGraph. LLM agents degrade gracefully on error;
-  a hard agent failure marks the state terminal and stops the graph immediately.
+- **Agents**: Planner, CodeAuthor, Executor (real notebook execution), Student, Reviser
+  (deterministic router), and **ContentReviser** (LLM prose rewriter) — all wired into a
+  compiled LangGraph. LLM agents degrade gracefully on error; a hard agent failure marks
+  the state terminal and stops the graph immediately.
+- **Honest signals** (output-quality remediation): a failed grader is its own signal, not
+  a fake score; rubric-dimensioned student grades; silent fallbacks are recorded as
+  `degradations` on the state and surfaced in SUMMARY.md; and a deterministic structural
+  gate (`forged/pipeline/structure.py`) refuses an executed-but-hollow notebook.
+- **Self-contained deliverable**: `forged/packaging.py` writes a learner `README.md` +
+  `requirements.txt`; `forged/provisioning.py` builds/reuses a content-addressed per-run
+  venv so cells run for real (default-on; `--no-provision` opts out).
 - **Revision briefs** (`revision_brief_v{N}.md`): structured failure feedback that
   rerouted agents read on their next pass.
-- **CLI command** (`forged agentic --brief ... --run-dir ...`) with honest exit codes:
+- **CLI command** (`forged agentic --topic ... --run-dir ...`) with honest exit codes:
   `0` only when the run ends ACCEPTABLE; errors/budget exhaustion exit `1`.
-- **292 tests passing, 89% overall coverage**; `state.py`, `failure.py`, `router.py` at 100%.
+- **Tests passing; `ruff` + `mypy` clean**; `state.py`, `failure.py`, `router.py`,
+  `structure.py`, `dependencies.py`, `packaging.py`, `content_reviser.py` at ~100%.
 - **End-to-end validated** with a real `OPENAI_API_KEY`; both linear and agentic paths
-  complete successfully, and `tests/pipeline/test_real_pipeline_integration.py` covers
-  the un-mocked CodeAuthor → executor contract.
+  complete successfully, `tests/pipeline/test_real_pipeline_integration.py` covers the
+  un-mocked CodeAuthor → executor contract, and provisioning was validated by a real run
+  (see [docs/architecture/10-output-quality-remediation.md](docs/architecture/10-output-quality-remediation.md)).
 
 ### Known limitations
 
-- `CONTENT_QUALITY` routes to the Reviser, but the agentic Reviser is deterministic and
-  does not rewrite prose — the route is a no-op that exhausts the reviser budget (1) and
-  terminates. A prose-rewriting agent is future work.
 - Budget exhaustion still writes `lesson.ipynb` (latest notebook), but the run exits
   non-zero — review `SUMMARY.md` before use.
+- Per-dimension routing is partial: a low *content* grade routes to the ContentReviser,
+  but full rubric-dimension → stage routing (e.g. low `code_clarity` → CodeAuthor) is a
+  later refinement; the cascade still routes structure/code via BLOCKER/HIGH findings.
+- Provisioning installs only from a vetted package allow-list
+  (`forged/provisioning.py`); a lesson needing a package outside it fails honestly rather
+  than installing arbitrary code — extend the allow-list intentionally.
 
 For complete details — capabilities, limitations, and the Phase 7–9 roadmap — see
 [docs/architecture/07-agentic-pipeline-status.md](docs/architecture/07-agentic-pipeline-status.md).
@@ -146,13 +159,17 @@ forged/
 │   ├── context.py              # Shared learner/topic prompt-context rendering
 │   ├── progress.py             # Spinner for live progress display
 │   ├── config.py               # Config file loading
+│   ├── packaging.py            # Writes learner README.md + requirements.txt
+│   ├── provisioning.py         # Per-run venv build/reuse (content-addressed cache)
 │
 │   └── pipeline/               # Agentic pipeline package
 │       ├── state.py            # Immutable agentic state + audit trail
-│       ├── failure.py          # Deterministic failure classification
+│       ├── failure.py          # Deterministic failure classification (+ rubric)
+│       ├── structure.py        # Deterministic anti-hollow structural gate
+│       ├── dependencies.py     # Extract requirements from the plan (+ hash)
 │       ├── router.py           # Budget-aware routing
 │       ├── graph.py            # LangGraph assembly + execution entrypoints
-│       └── agents/             # Planner/CodeAuthor/Executor/Student/Reviser
+│       └── agents/             # Planner/CodeAuthor/Executor/Student/Reviser/ContentReviser
 │
 ├── templates/                  # User-facing template files
 │   ├── README.md               # User guide: how to customize templates

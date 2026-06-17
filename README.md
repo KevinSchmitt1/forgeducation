@@ -48,11 +48,11 @@ failure, and re-routes to the right agent to fix it.
 
 ```bash
 # 1. Minimal — just a topic; sensible defaults for everything else.
-forged agentic --brief "How a Bloom filter works" --run-dir ./runs/bloom
+forged agentic --topic "How a Bloom filter works" --run-dir ./runs/bloom
 
 # 2. Full context (recommended) — tailor the lesson to a specific learner + topic.
 forged agentic \
-    --brief "Transformer attention from scratch" \
+    --topic "Transformer attention from scratch" \
     --learner-profile templates/examples/learner-ml-practitioner.yaml \
     --topic-spec      templates/examples/topic-transformers.yaml \
     --run-dir ./runs/transformers
@@ -86,15 +86,30 @@ and the allowed values for each field are documented in
 While a build runs it streams a live per-stage status line with an elapsed-time
 spinner, so a long LLM call never looks hung.
 
-Output lands in `./runs/<timestamp>_<pipeline>/`:
+Output lands in `./runs/<timestamp>_<pipeline>/` (or the `--run-dir` you pass to `agentic`):
 
 - `lesson.ipynb` — the deliverable, with **real cell outputs** baked in
-- `SUMMARY.md` — per-stage status + timing, total runtime, any execution failures,
-  the acceptance verdict, and plan + feedback inline
+- `README.md` — a learner-facing guide: what the lesson teaches, who it's for, how to set
+  up the environment, and how to run it
+- `requirements.txt` — the pip-installable dependencies the lesson actually needs, derived
+  from the plan (the same list used to provision the run's environment)
+- `SUMMARY.md` — per-stage status + timing, total runtime, any execution failures or
+  silent degradations, the acceptance verdict, and plan + feedback inline
 - `manifest.json` — provenance (what was produced and pruned) plus per-stage timings
 
 Intermediate plumbing (raw JSON reports, draft notebooks) is pruned automatically on
 success; failed runs keep everything **and still write a `SUMMARY.md`** for debugging.
+
+### Environment provisioning (agentic)
+
+By default `forged agentic` reads the lesson's dependencies from the plan, builds a
+**per-run virtualenv** (cached and reused across runs by a content hash of the
+requirements, so heavy wheels download once), registers a Jupyter kernel, and runs the
+notebook against it — so the lesson's cells execute for real instead of skipping behind
+`if HAVE_DEPS:` guards. If the required packages can't be installed, the run **fails
+honestly** (it never ships a green-but-empty notebook). Pass `--no-provision` to skip the
+venv and run on the base kernel (fast/offline when the deps are already importable).
+Provisioning only installs from a vetted package allow-list.
 
 ### Exit codes
 
@@ -130,16 +145,23 @@ failures, reroutes to the appropriate agent, and feeds structured feedback back 
 intelligent iteration:
 
 ```bash
-forged agentic --brief "..." --run-dir ./runs/my-lesson \
+forged agentic --topic "..." --run-dir ./runs/my-lesson \
     --learner-profile path/to/learner.yaml --topic-spec path/to/topic.yaml
 ```
 
-Phases 1–9 complete (300 tests, end-to-end validated with OpenAI). Features:
-  - **Phase 7**: Real executor detects code failures
-  - **Phase 8**: Revision brief provides agent feedback for smart rerouting
-  - **Phase 9**: CLI command with detailed logging and audit trail
-  - **Monitoring**: Full routing log in SUMMARY.md, execution trace in pipeline.log
-  - **Tracing**: Every LLM-backed prompt is grouped into a Langfuse trace per run when `LANGFUSE_*` keys are configured
+End-to-end validated with OpenAI. Features:
+  - **Real executor**: runs the notebook in a kernel and detects code failures
+  - **Honest signals**: a failed grader is its own signal (never a fake score), silent
+    fallbacks are recorded as *degradations* in SUMMARY.md, and a deterministic structural
+    gate refuses a notebook that executes green but demonstrates nothing (anti-hollow)
+  - **Content reviser**: a low content-quality grade routes to an LLM agent that rewrites
+    the notebook, which is then re-executed and re-graded
+  - **Environment provisioning**: builds/reuses a per-run venv from the lesson's
+    requirements so cells run for real (see above); `--no-provision` to opt out
+  - **Self-contained deliverable**: each run ships `README.md` + `requirements.txt`
+  - **Revision brief**: structured failure feedback drives smart rerouting
+  - **Monitoring**: full routing log in SUMMARY.md, execution trace in pipeline.log
+  - **Tracing**: every LLM-backed prompt is grouped into a Langfuse trace per run when `LANGFUSE_*` keys are configured
   - **Exit-code truth**: exit `0` only when the run ends ACCEPTABLE; errors, budget
     exhaustion, and unclassifiable runs exit `1` (review `SUMMARY.md` before use).
     `lesson.ipynb` is the executed notebook with real cell outputs.
@@ -181,8 +203,14 @@ what's already in hand. It only ever **keeps the best** version, never a regress
 | `forged/executor.py` | Run the notebook, capture per-cell errors (anti-bug) |
 | `forged/report.py` | Human-readable `SUMMARY.md` (timing, verdict, residuals) |
 | `forged/orchestrator.py` | Run + time stages, pass artifacts, finalize the run |
+| `forged/packaging.py` | Write the learner-facing `README.md` + `requirements.txt` |
+| `forged/provisioning.py` | Build/reuse a per-run venv from the deps; register a kernel |
 | `forged/progress.py` | TTY-only elapsed-time spinner for long stages |
-| `forged/cli.py` | `forged build` / `pipelines` / `clean` |
+| `forged/cli.py` | `forged build` / `agentic` / `pipelines` / `clean` |
+
+The agentic pipeline lives under `forged/pipeline/` (state, failure classification, router,
+graph, and the per-role agents incl. the content reviser); see
+[docs/architecture/07-agentic-pipeline-status.md](docs/architecture/07-agentic-pipeline-status.md).
 
 Pipelines live in `config/`, agent system-prompts in `personas/`, learner profile
 templates in `templates/` (ready-to-use examples in `templates/examples/`).

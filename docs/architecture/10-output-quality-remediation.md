@@ -1,7 +1,7 @@
 # Output-Quality Remediation — Problem Analysis & Implementation Plan
 
 **As of:** 2026-06-16
-**Status:** IN PROGRESS — Phases 1–5 complete (Phase 5 validated by a real paid+network E2E on the original localLLM topic). Only **Phase 6 (docs close-out)** remains.
+**Status:** ✅ IMPLEMENTED — Phases 1–6 complete. Phase 5 validated by a real paid+network E2E on the original localLLM topic; Phase 6 (docs close-out) done (README/DEVELOPMENT/TODO/07-status synced; full-diff review + quality gate run).
 **Source run analysed:** `runs/localLLM/` (topic: *"setup and train local LLMs on Apple Silicon M1"*, learner: Kevin — junior DS→AI). Ended **non-acceptable**, quality score 50, reviser budget exhausted, 4 iterations, 656s.
 **Decisions locked:** D1 = provision env **on by default** (per-run venv); D2 = **separate** `ContentReviserAgent`; P2 = **rubric/dimensioned** student scoring.
 
@@ -334,7 +334,7 @@ Ordering principle: **make signals honest before spending money to improve them.
 - **Validate:** dev/CI tests use a **tiny** dep (not torch) to exercise venv+cache; then **one** real end-to-end `forged agentic` on a tiny topic + cheapest viable model to confirm cells execute for real and the notebook is non-hollow.
 - **Complexity:** **High** (subprocess, network, security, caching).
 
-### Phase 6 — Docs, regression, close-out
+### Phase 6 — Docs, regression, close-out — ✅ DONE
 - Update this doc's status to *implemented*, refresh `DEVELOPMENT.md`, `TODO.md`, `README.md` output contract, and `07-agentic-pipeline-status.md` known-limitations. **Delegate:** `doc-updater` + `update-docs`. Then `/code-review` + `/quality-gate` across the full diff; `checkpoint`.
 - **Complexity:** Low.
 
@@ -409,7 +409,7 @@ Pre: architect (graph + provisioning)
 - [x] Degradations are visible in `SUMMARY.md`; honest exit codes preserved (P4). *(Phase 1)*
 - [~] `pytest tests/` green (386 passed); `ruff` + `mypy` clean — **maintained per phase**;
       re-verify at each subsequent phase.
-- [ ] Docs updated; this file marked *implemented* (final close-out, Phase 6).
+- [x] Docs updated (README, DEVELOPMENT, TODO, 07-status); this file marked *implemented* (Phase 6).
 
 ---
 

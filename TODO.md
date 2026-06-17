@@ -20,6 +20,14 @@
   - bundled pipeline YAML includes stage-specific defaults
   - see `docs/architecture/08-stage-specific-models.md`
 
+- **Output-quality remediation (Phases 1–6)**
+  - honest signals + rubric grading + anti-hollow structural gate
+  - self-contained deliverable: per-run `README.md` + `requirements.txt`
+  - real LLM content reviser as the `CONTENT_QUALITY` target
+  - default environment provisioning + content-addressed venv cache (`--no-provision` opts out)
+  - validated by a real run on the original "local LLMs on Apple Silicon" topic
+  - see `docs/architecture/10-output-quality-remediation.md`
+
 ### 🔄 Current Work
 
 - **Step 7: Input-specification testing**
