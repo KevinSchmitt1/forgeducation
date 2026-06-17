@@ -1,7 +1,7 @@
 # Output-Quality Remediation — Problem Analysis & Implementation Plan
 
 **As of:** 2026-06-16
-**Status:** IN PROGRESS — Phases 1–4 complete + Phase 5 **code complete (offline/mocked)**; the one paid+network E2E for Phase 5 is the only remaining step before Phase 6. Zero API/network spend so far.
+**Status:** IN PROGRESS — Phases 1–5 complete (Phase 5 validated by a real paid+network E2E on the original localLLM topic). Only **Phase 6 (docs close-out)** remains.
 **Source run analysed:** `runs/localLLM/` (topic: *"setup and train local LLMs on Apple Silicon M1"*, learner: Kevin — junior DS→AI). Ended **non-acceptable**, quality score 50, reviser budget exhausted, 4 iterations, 656s.
 **Decisions locked:** D1 = provision env **on by default** (per-run venv); D2 = **separate** `ContentReviserAgent`; P2 = **rubric/dimensioned** student scoring.
 
@@ -19,13 +19,12 @@ This section is for the next agent/session picking up the work. The plan below
 - **Phase 2 (deterministic structural / anti-hollow gate) — ✅ DONE.**
 - **Phase 3 (dependency extraction + self-contained deliverable) — ✅ DONE.**
 - **Phase 4 (real agentic prose ContentReviser + content-quality routing) — ✅ DONE.**
-- **Phase 5 (default env provisioning + content-addressed cache) — ◑ CODE COMPLETE, offline.**
-  All logic built + unit/integration tested with **mocked subprocess** (no real venv/pip/network).
-  **Not yet done:** the single paid+network end-to-end run (tiny dep + cheapest model) — it
-  needs explicit user go-ahead because it spends money and hits PyPI. A security self-review
-  of the subprocess surface was done inline (see Phase-5 notes); a `security-reviewer` pass
-  before the real run is still advisable.
-- **Phase 6 — ⏳ NOT STARTED.**
+- **Phase 5 (default env provisioning + content-addressed cache) — ✅ DONE + E2E-validated.**
+  Logic built + unit/integration tested (mocked subprocess), then **validated by a real paid
+  run** on the original topic ("setup and train local LLMs on Apple Silicon M1", Kevin
+  profile). See "Phase 5 E2E validation" below.
+- **Phase 6 — ⏳ NOT STARTED.** Final close-out: docs sync + full-diff `/code-review` +
+  `/quality-gate` + `checkpoint`, then mark this file *implemented*.
 
 ### Repo state (important)
 - **Phases 1–4 are committed** on branch `feat/output-quality-phases-1-2` (Phase 3 =
@@ -189,6 +188,32 @@ This section is for the next agent/session picking up the work. The plan below
   kernel and the notebook is non-hollow. This is the first paid+network run — get user
   consent first; consider a `security-reviewer` pass on `provisioning.py` beforehand.
 
+### Phase 5 E2E validation (real paid run, 2026-06-17)
+Ran the **original failing input** for a direct comparison (`forged agentic --topic
+"How to setup and train local LLMs on Apple Silicon M1" --learner-profile
+templates/examples/kevin_learner.yaml`). Provisioning is now on by default.
+
+- **Run A (honest-failure path):** the planner required `peft`, which was outside the
+  allow-list → provisioning **refused** it and the run **terminated honestly** (SUMMARY
+  "✗ Ended without an acceptable notebook", `provision_failed` degradation, `ok:false`
+  report, *no venv built, no green-hollow notebook*). This is exactly the P0/D1 contract.
+  Fix: added `peft`/`trl`/`sentence-transformers` to `DEFAULT_ALLOWED_PACKAGES` (commit
+  `6fea6ea`) — the refusal was correct; the allow-list was just too narrow.
+- **Run B (success path):** built a real venv (`torch`,`transformers`,`datasets`,
+  `accelerate`,`peft`,`safetensors`; ~1 GB), registered kernel `forged-<hash>-py3.11`, and
+  executed against it. **Result: ✓ Acceptable** in 668 s, 1 iteration (a structural-blocker
+  replan). The deliverable `lesson.ipynb` is **non-hollow: 7/7 code cells executed, 0
+  skipped** — the LoRA fine-tune actually ran (produced `distilgpt2-finetuned-mps-demo/`).
+  Contrast with the original run: *every substantive cell skipped, hollow notebook shipped
+  green*. README.md + requirements.txt (Phase 3) shipped alongside.
+- **Content-addressed cache:** re-provisioning the final plan's requirements returns
+  `cache_hit=True` (reuses the existing venv, no rebuild). A cache *miss* on the 2nd executor
+  pass was correct — the replan changed the requirement set, so a new content key.
+- **Usage:** Run A = 2 calls (1 gpt-5 + 1 gpt-5-mini); Run B = 6 calls (2 gpt-5 + 4
+  gpt-5-mini). gpt-5 completions capped at 16 384 tokens. Exact $ on the Langfuse dashboard
+  (tracing on). Disk: ~1.9 GB across two cached venvs under `runs/.venv-cache/` (reclaimable;
+  re-downloads on next miss).
+
 ### Conventions followed (keep doing these)
 - TDD: write/adjust tests first; every change kept the suite green.
 - Immutability: only mutate `PipelineState` via `with_*` builders; value objects are
@@ -302,7 +327,7 @@ Ordering principle: **make signals honest before spending money to improve them.
 - **Validate:** offline graph tests (mocked LLM) — `CONTENT_QUALITY` produces a *new* notebook version and re-grades; budget still terminates; no infinite loop.
 - **Complexity:** **High** (control-flow change).
 
-### Phase 5 — Default environment provisioning + cache (rest of P0, D1) — ◑ CODE COMPLETE (offline); one paid E2E remains
+### Phase 5 — Default environment provisioning + cache (rest of P0, D1) — ✅ DONE (E2E-validated)
 - **[executor.py](../../forged/pipeline/agents/executor.py):** build/reuse a per-run venv from `requirements.txt`, keyed by the Phase-3 requirements hash (content-addressed cache → download heavy deps once); register the kernel; execute against it. Enforce install timeout, size cap, allow-list. Failure to install essential deps → honest non-acceptable (Phase 2 gate), never green-hollow.
 - **[cli.py](../../forged/cli.py):** thread provisioning + honest exit codes; surface cache hits/misses and install failures.
 - **Delegate:** `security-reviewer` (mandatory — running pip + arbitrary notebook code in a subprocess) → `build-error-resolver` if env wiring breaks; `verify`/`run` skills for the real E2E.
@@ -378,9 +403,9 @@ Pre: architect (graph + provisioning)
       *(Phase 1; per-dimension **routing** to different stages is Phase 4.)*
 - [x] `CONTENT_QUALITY` produces a genuinely rewritten notebook and re-grades (P1/D2). *(Phase 4)*
 - [x] Every run dir contains a learner-facing `README.md` + `requirements.txt` (P6). *(Phase 3)*
-- [~] Provisioning runs by default, reuses a content-addressed cache, and is bounded (D1).
-      *(Phase 5 — code complete + offline-tested: allow-list, timeout, size cap, cache hit/miss,
-      honest failure. Pending the one real paid+network run to confirm end-to-end.)*
+- [x] Provisioning runs by default, reuses a content-addressed cache, and is bounded (D1).
+      *(Phase 5 — offline-tested AND validated by a real paid E2E: the original localLLM
+      lesson now runs 7/7 cells non-hollow against a provisioned venv; cache hit confirmed.)*
 - [x] Degradations are visible in `SUMMARY.md`; honest exit codes preserved (P4). *(Phase 1)*
 - [~] `pytest tests/` green (386 passed); `ruff` + `mypy` clean — **maintained per phase**;
       re-verify at each subsequent phase.
