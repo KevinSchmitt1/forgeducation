@@ -9,10 +9,15 @@ No LLM calls. No randomness. Same inputs → same output on every call.
 Routing table (from design doc §4):
     ACCEPTABLE        → terminate
     UNCLASSIFIABLE    → terminate
-    BLOCKER_STRUCTURE → PLANNER      (if budget allows, else terminate)
-    CODE_QUALITY      → CODE_AUTHOR  (if budget allows, else terminate)
-    TEST_FAILURE      → CODE_AUTHOR  (if budget allows, else terminate)
-    CONTENT_QUALITY   → REVISER      (if budget allows, else terminate)
+    BLOCKER_STRUCTURE → PLANNER         (if budget allows, else terminate)
+    CODE_QUALITY      → CODE_AUTHOR     (if budget allows, else terminate)
+    TEST_FAILURE      → CODE_AUTHOR     (if budget allows, else terminate)
+    CONTENT_QUALITY   → CONTENT_REVISER (if budget allows, else terminate)
+
+Phase 4: CONTENT_QUALITY now targets the LLM-backed CONTENT_REVISER (which rewrites
+the notebook), not the deterministic REVISER node — the old route was a no-op that
+never improved prose. REVISER stays the classifier/router node; nothing routes *to*
+it as a failure target anymore.
 
 Budget semantics:
     The budget for stage S is the maximum number of times we will ever
@@ -36,11 +41,12 @@ class RoutingBudget:
     """Maximum routing attempts allowed per stage in one pipeline run.
 
     Prevents infinite loops.  Defaults reflect practical experience:
-      planner     = 2  (replan at most twice)
-      code_author = 3  (recode at most three times)
-      student     = 1  (grade once; grading is deterministic)
-      reviser     = 1  (revise prose once)
-      executor    = unlimited (always runs after code changes; no budget needed)
+      planner         = 2  (replan at most twice)
+      code_author     = 3  (recode at most three times)
+      student         = 1  (grade once; grading is deterministic)
+      reviser         = 1  (legacy; the classifier node is never a routing target)
+      content_reviser = 1  (rewrite prose once, then re-grade)
+      executor        = unlimited (always runs after code changes; no budget needed)
 
     Adjust these via RoutingBudget(planner=3, ...) when creating a Router.
     """
@@ -49,6 +55,7 @@ class RoutingBudget:
     code_author: int = 3
     student: int = 1
     reviser: int = 1
+    content_reviser: int = 1
 
     def can_route_to(self, stage: PipelineStage) -> bool:
         """Return True when the stage has a non-zero budget configured.
@@ -63,6 +70,7 @@ class RoutingBudget:
             PipelineStage.CODE_AUTHOR: self.code_author,
             PipelineStage.STUDENT: self.student,
             PipelineStage.REVISER: self.reviser,
+            PipelineStage.CONTENT_REVISER: self.content_reviser,
         }
         return budget_map.get(stage, 0) > 0
 
@@ -105,7 +113,7 @@ _CATEGORY_TO_STAGE: dict[FailureCategory, PipelineStage] = {
     FailureCategory.BLOCKER_STRUCTURE: PipelineStage.PLANNER,
     FailureCategory.CODE_QUALITY: PipelineStage.CODE_AUTHOR,
     FailureCategory.TEST_FAILURE: PipelineStage.CODE_AUTHOR,
-    FailureCategory.CONTENT_QUALITY: PipelineStage.REVISER,
+    FailureCategory.CONTENT_QUALITY: PipelineStage.CONTENT_REVISER,
 }
 
 # Human-readable termination messages keyed by target stage.
@@ -116,8 +124,8 @@ _BUDGET_EXHAUSTED_REASON: dict[PipelineStage, str] = {
     PipelineStage.CODE_AUTHOR: (
         "Code needs fixing, but code author budget exhausted."
     ),
-    PipelineStage.REVISER: (
-        "Content needs revision, but reviser budget exhausted."
+    PipelineStage.CONTENT_REVISER: (
+        "Content needs revision, but content-reviser budget exhausted."
     ),
 }
 

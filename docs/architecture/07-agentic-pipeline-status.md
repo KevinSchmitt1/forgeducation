@@ -212,11 +212,37 @@ When a stage hits its budget, the pipeline terminates with `is_terminal=True`,
 still written to `lesson.ipynb` (latest executed or assembled notebook), but the CLI exits
 non-zero — budget exhaustion is a safety valve, and the output needs human review before use.
 
-### Content-quality routing is a no-op
+### ~~Content-quality routing is a no-op~~ — RESOLVED (2026-06-17, output-quality Phase 4)
 
-`CONTENT_QUALITY` routes to the Reviser, but the agentic Reviser is deterministic and does
-not rewrite prose. The route re-enters the reviser node, immediately exhausts the reviser
-budget (1), and terminates. A prose-rewriting agent is future work.
+`CONTENT_QUALITY` now routes to a real LLM-backed **ContentReviserAgent**
+(`agents/content_reviser.py`) that rewrites the notebook from the reviser's findings; the
+rewrite is re-executed and re-graded. The deterministic `RevisorAgent` keeps owning routing.
+See `docs/architecture/10-output-quality-remediation.md` (Phase 4).
+
+### 2026-06-17 Update — Output-Quality Remediation (Phases 1–6)
+
+A six-phase remediation hardened the pipeline against the failure mode where a notebook
+executed "green" while teaching nothing (the localLLM run). Fully documented in
+`docs/architecture/10-output-quality-remediation.md`; summary of what changed here:
+
+- **Honest signals (P1–P2):** a failed student grade is its own signal (never a neutral
+  score); rubric-dimensioned grades; silent fallbacks recorded as `degradations` and shown
+  in SUMMARY.md; new deterministic anti-hollow gate `forged/pipeline/structure.py` refuses
+  an executed-but-hollow notebook at the ACCEPTABLE gate.
+- **Self-contained deliverable (P3/P6):** `forged/pipeline/dependencies.py` extracts the
+  plan's requirements (+ a stable hash); `forged/packaging.py` writes a learner `README.md`
+  + `requirements.txt` into every run dir.
+- **Real content reviser (P1/D2):** `agents/content_reviser.py` is now the `CONTENT_QUALITY`
+  target (see resolved limitation above).
+- **Default provisioning (P0/D1):** `forged/provisioning.py` builds/reuses a content-addressed
+  per-run venv from the requirements (allow-list + install timeout + size cap, subprocess
+  argv-only), registers a kernel, and runs the notebook against it; a provisioning failure
+  terminates honestly. On by default in `forged agentic`; `--no-provision` opts out.
+  Validated by a real run on the original localLLM topic — the lesson now runs 7/7 cells
+  non-hollow (vs the original all-skipped green notebook).
+
+New agent in the Phase-5 table: **ContentReviserAgent** (`agents/content_reviser.py`, LLM,
+`personas/reviser.md`).
 
 ---
 

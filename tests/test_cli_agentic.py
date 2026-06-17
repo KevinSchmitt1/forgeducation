@@ -227,9 +227,10 @@ def test_agentic_cli_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
 
     captured = {}
 
-    async def fake_run_pipeline(state, store, pipeline, personas_dir_arg):
+    async def fake_run_pipeline(state, store, pipeline, personas_dir_arg, provision=False):
         captured["pipeline"] = pipeline
         captured["personas_dir"] = personas_dir_arg
+        captured["provision"] = provision
         return state.with_terminal("acceptable", ok=True)
 
     with patch("forged.pipeline.graph.run_pipeline", new=fake_run_pipeline):
@@ -237,4 +238,6 @@ def test_agentic_cli_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
 
     assert result == 0
     assert captured["pipeline"].name == load_pipeline(Args.config).name
+    # Provisioning is ON by default (D1) unless --no-provision is passed.
+    assert captured["provision"] is True
     assert Path(captured["personas_dir"]) == personas_dir

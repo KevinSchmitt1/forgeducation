@@ -261,6 +261,9 @@ class RevisorAgent(Agent[AgentOutput]):
         elif next_stage == PipelineStage.PLANNER:
             lines.append("- Revise the lesson structure and learning objectives\n")
             lines.append("- Address the quality gaps identified above\n")
+        elif next_stage == PipelineStage.CONTENT_REVISER:
+            lines.append("- Rewrite the weak explanations flagged above into real teaching\n")
+            lines.append("- Deepen explanation_depth and learner_fit; keep working code intact\n")
 
         return "".join(lines)
 

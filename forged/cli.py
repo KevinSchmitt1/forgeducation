@@ -265,7 +265,10 @@ def _cmd_agentic(args) -> int:
         state = create_initial_state(run_id=run_dir.name)
         logger.info("Initial state created (run_id=%s, iteration=0)", state.run_id)
 
-        final_state = asyncio.run(run_pipeline(state, store, pipeline, personas_dir))
+        provision = not getattr(args, "no_provision", False)
+        final_state = asyncio.run(
+            run_pipeline(state, store, pipeline, personas_dir, provision=provision)
+        )
 
         elapsed_sec = (datetime.now() - start_time).total_seconds()
         logger.info(
@@ -276,6 +279,7 @@ def _cmd_agentic(args) -> int:
 
         _write_agentic_summary(run_dir, final_state, elapsed_sec)
         _write_final_notebook(run_dir, store, final_state)
+        _write_learner_package(run_dir, store, final_state, topic, learner_profile)
 
         # Exit-code truth: 0 only when the pipeline ended because the notebook
         # was ACCEPTABLE. Errors, budget exhaustion, and unclassifiable runs
@@ -370,13 +374,43 @@ def _write_final_notebook(run_dir: Path, store, state) -> None:
             break
 
     for output in reversed(state.outputs):
-        if output.stage == PipelineStage.CODE_AUTHOR:
+        if output.stage in (PipelineStage.CODE_AUTHOR, PipelineStage.CONTENT_REVISER):
             notebook_content = store.get(output.artifact_name).content
             (run_dir / "lesson.ipynb").write_text(notebook_content, encoding="utf-8")
             return
 
     empty = nbformat.writes(nbformat.v4.new_notebook())
     (run_dir / "lesson.ipynb").write_text(empty, encoding="utf-8")
+
+
+def _write_learner_package(run_dir: Path, store, state, topic: str, learner_profile) -> None:
+    """Write the self-contained deliverable (README.md + requirements.txt) from the
+    latest lesson plan, so even a degraded agentic run ships something a learner can
+    set up and open — not just a notebook (P6). Best-effort: never fail the run over
+    packaging; a missing/unparseable plan still yields a usable README + empty deps."""
+    import logging
+
+    from .packaging import PackageContext, write_package
+    from .pipeline.state import PipelineStage
+
+    plan = ""
+    for output in reversed(state.outputs):
+        if output.stage == PipelineStage.PLANNER and store.has(output.artifact_name):
+            plan = store.get(output.artifact_name).content
+            break
+
+    try:
+        write_package(
+            run_dir,
+            plan,
+            PackageContext(
+                topic=topic,
+                learner_name=learner_profile.name,
+                learner_description=learner_profile.description,
+            ),
+        )
+    except OSError as exc:
+        logging.getLogger(__name__).warning("Failed to write learner package: %s", exc)
 
 
 def _cmd_pipelines(args) -> int:
@@ -473,6 +507,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to topic_specification.yaml (scope, objectives, prerequisites, "
              "depth). Copy from templates/examples/ or create your own. "
              "Uses a sensible default if omitted.",
+    )
+    agentic.add_argument(
+        "--no-provision", action="store_true",
+        help="Skip building a per-run virtualenv from the lesson's requirements and run "
+             "on the base kernel instead. Provisioning is ON by default so the lesson's "
+             "cells run for real; use this for a fast, offline run when the deps are "
+             "already importable.",
     )
     agentic.add_argument(
         "--debug", action="store_true",

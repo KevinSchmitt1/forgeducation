@@ -26,6 +26,7 @@ from .executor import ExecutorStage, executed_notebook_filename
 from .gate import CandidateResult, GateDecision, evaluate_candidates
 from .ledger import IssueLedger, parse_findings
 from .models import LearnerProfile, TopicSpecification
+from .packaging import README_FILE, REQUIREMENTS_FILE, PackageContext, write_package
 from .report import build_summary
 
 
@@ -76,10 +77,11 @@ def _render_profile_artifact(profile: LearnerProfile) -> str:
     )
 
 # Files a successful run keeps; everything else is pruned as intermediate plumbing.
+# README.md + requirements.txt make the run dir a self-contained deliverable (P6).
 DELIVERABLE_NOTEBOOK = "lesson.ipynb"
 SUMMARY_FILE = "SUMMARY.md"
 MANIFEST_FILE = "manifest.json"
-RETAINED_FILES = {DELIVERABLE_NOTEBOOK, SUMMARY_FILE, MANIFEST_FILE}
+RETAINED_FILES = {DELIVERABLE_NOTEBOOK, SUMMARY_FILE, MANIFEST_FILE, README_FILE, REQUIREMENTS_FILE}
 
 
 class Orchestrator:
@@ -218,6 +220,7 @@ class Orchestrator:
             SUMMARY_FILE,
             build_summary(pipeline, store, brief, profile_label, decision, self._timings),
         )
+        package = self._write_learner_package(store, brief, profile_label)
         removed = store.finalize(RETAINED_FILES)
         store.write_manifest(
             pipeline.name,
@@ -226,8 +229,19 @@ class Orchestrator:
                 "retained": sorted(RETAINED_FILES),
                 "pruned": sorted(removed),
                 "gate": _gate_manifest(decision),
+                "requirements_hash": package.requirement_set.requirements_hash,
                 **self._run_meta(),
             },
+        )
+
+    def _write_learner_package(self, store: ArtifactStore, brief: str, profile_label: str):
+        """Materialize the self-contained deliverable (README.md + requirements.txt) from
+        the lesson plan, so the run dir is usable by the learner — not just a notebook."""
+        plan = store.get("lesson_plan").content if store.has("lesson_plan") else ""
+        return write_package(
+            store.run_dir,
+            plan,
+            PackageContext(topic=brief, learner_name=profile_label),
         )
 
     def _run_meta(self) -> dict:

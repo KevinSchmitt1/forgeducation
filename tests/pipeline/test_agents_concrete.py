@@ -758,12 +758,13 @@ def test_revisor_agent_run_respects_budget(
     # State at REVISER with grade report showing low quality (triggers CONTENT_QUALITY)
     state = create_initial_state(run_id="test-budget-001")
     state = state.with_current_stage(PipelineStage.REVISER)
-    # Exhaust the reviser budget by setting reviser attempts to 1 (matches default budget=1)
-    state = state.with_attempt(PipelineStage.REVISER)
+    # Exhaust the content-reviser budget (CONTENT_QUALITY's target) by setting its
+    # attempts to 1 (matches default budget=1).
+    state = state.with_attempt(PipelineStage.CONTENT_REVISER)
 
     exec_report = {"ok": True, "failed_cells": [], "error_summary": None}
     grade_report = {
-        "quality_score": 40.0,  # Below 80 → CONTENT_QUALITY → routes to REVISER
+        "quality_score": 40.0,  # Below 80 → CONTENT_QUALITY → routes to CONTENT_REVISER
         "blockers": [],
         "findings": [],
     }
@@ -789,11 +790,11 @@ def test_revisor_agent_run_respects_budget(
         )
     )
 
-    agent = RevisorAgent(personas_dir=personas_dir, budget=RoutingBudget(reviser=1))
+    agent = RevisorAgent(personas_dir=personas_dir, budget=RoutingBudget(content_reviser=1))
     result = asyncio.get_event_loop().run_until_complete(
         agent.run(state, artifact_store)
     )
-    # Budget for reviser is 1, already used 1 — should terminate
+    # Budget for content_reviser is 1, already used 1 — should terminate
     assert result.is_terminal
 
 
@@ -921,11 +922,11 @@ def test_student_output_stage_matches(
 
 
 @pytest.mark.unit
-def test_revisor_low_quality_routes_to_reviser_when_budget_allows(
+def test_revisor_low_quality_routes_to_content_reviser_when_budget_allows(
     personas_dir: Path,
     artifact_store: ArtifactStore,
 ) -> None:
-    """RevisorAgent with CONTENT_QUALITY signal routes to REVISER when budget available."""
+    """RevisorAgent with a CONTENT_QUALITY signal routes to CONTENT_REVISER when budget allows."""
     from forged.pipeline.agents.reviser import RevisorAgent
     from forged.pipeline.router import RoutingBudget
 
@@ -950,15 +951,15 @@ def test_revisor_low_quality_routes_to_reviser_when_budget_allows(
         )
     )
 
-    # Budget with reviser=2 so first route still has budget
-    agent = RevisorAgent(personas_dir=personas_dir, budget=RoutingBudget(reviser=2))
+    # Budget with content_reviser=2 so the first route still has budget
+    agent = RevisorAgent(personas_dir=personas_dir, budget=RoutingBudget(content_reviser=2))
     result = asyncio.get_event_loop().run_until_complete(
         agent.run(state, artifact_store)
     )
     # Should NOT terminate — should route (routing_log grows)
     assert not result.is_terminal
     assert len(result.routing_log) > 0
-    assert result.get_stage_attempt_count(PipelineStage.REVISER) == 1
+    assert result.get_stage_attempt_count(PipelineStage.CONTENT_REVISER) == 1
 
 
 @pytest.mark.unit
