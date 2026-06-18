@@ -38,7 +38,7 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
 
     personas_dir = tmp_path / "personas"
     personas_dir.mkdir()
-    for name in ("planner", "code_author", "student", "reviser"):
+    for name in ("planner", "code_author", "student", "reviewer", "reviser"):
         (personas_dir / f"{name}.md").write_text(f"Persona for {name}.", encoding="utf-8")
 
     run_dir = tmp_path / "run"
@@ -102,11 +102,28 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
             artifact_name=f"student_grade_report_v{state.iteration}",
             iteration=state.iteration,
         )
+        return state.with_output(output).with_current_stage(PipelineStage.REVIEWER)
+
+    def mock_reviewer(state: PipelineState, store: ArtifactStore) -> PipelineState:
+        review = {"reviewed": True, "blockers": [], "findings": []}
+        store.put(
+            Artifact(
+                name=f"reviewer_report_v{state.iteration}",
+                kind="json",
+                content=json.dumps(review),
+            )
+        )
+        output = StageOutput(
+            stage=PipelineStage.REVIEWER,
+            artifact_name=f"reviewer_report_v{state.iteration}",
+            iteration=state.iteration,
+        )
         return state.with_output(output).with_current_stage(PipelineStage.REVISER)
 
     from forged.pipeline.agents.code_author import CodeAuthorAgent
     from forged.pipeline.agents.executor import ExecutorAgent
     from forged.pipeline.agents.planner import PlannerAgent
+    from forged.pipeline.agents.reviewer import ReviewerAgent
     from forged.pipeline.agents.student import StudentAgent
 
     class MockArgs:
@@ -126,6 +143,7 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
         patch.object(CodeAuthorAgent, "run", AsyncMock(side_effect=mock_code_author)),
         patch.object(ExecutorAgent, "run", AsyncMock(side_effect=mock_executor)),
         patch.object(StudentAgent, "run", AsyncMock(side_effect=mock_student)),
+        patch.object(ReviewerAgent, "run", AsyncMock(side_effect=mock_reviewer)),
     ):
         result = _cmd_agentic(args)
 
@@ -213,7 +231,7 @@ def test_agentic_cli_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
     """The agentic command loads pipeline config and passes it into run_pipeline()."""
     personas_dir = tmp_path / "personas"
     personas_dir.mkdir()
-    for name in ("planner", "code_author", "student", "reviser"):
+    for name in ("planner", "code_author", "student", "reviewer", "reviser"):
         (personas_dir / f"{name}.md").write_text(f"Persona for {name}.", encoding="utf-8")
 
     class Args:

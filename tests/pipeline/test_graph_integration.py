@@ -35,7 +35,7 @@ def personas_dir(tmp_path: Path) -> Path:
     """Temporary personas directory with all required persona files."""
     d = tmp_path / "personas"
     d.mkdir()
-    for name in ("planner", "code_author", "student", "reviser"):
+    for name in ("planner", "code_author", "student", "reviewer", "reviser"):
         (d / f"{name}.md").write_text(f"Persona for {name}.", encoding="utf-8")
     return d
 
@@ -87,7 +87,7 @@ def test_graph_has_all_nodes(
         store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir
     )
     node_names = set(graph.get_graph().nodes.keys())
-    required = {"planner", "code_author", "executor", "student", "revisor"}
+    required = {"planner", "code_author", "executor", "student", "reviewer", "revisor"}
     assert required.issubset(node_names)
 
 
@@ -122,7 +122,8 @@ def test_graph_has_linear_edges(
         ("planner", "code_author"),
         ("code_author", "executor"),
         ("executor", "student"),
-        ("student", "revisor"),
+        ("student", "reviewer"),
+        ("reviewer", "revisor"),
     ]
     for src, tgt in linear_edges:
         assert (src, tgt) in source_target_pairs, f"Missing edge: {src} → {tgt}"
@@ -146,8 +147,9 @@ def test_graph_uses_stage_specific_models(
             store=artifact_store, pipeline=pipeline_config, personas_dir=personas_dir
         )
 
-    # planner, code_author, student, then content_reviser (uses the reviser model).
-    assert captured_models == ["gpt-5-mini", "gpt-5", "gpt-5-mini", "gpt-5"]
+    # planner, code_author, student, reviewer, then content_reviser (uses reviser model).
+    # The executor and revisor take no graph-constructed LLMClient, so they don't appear.
+    assert captured_models == ["gpt-5-mini", "gpt-5", "gpt-5-mini", "gpt-5-mini", "gpt-5"]
 
 
 # ── Routing logic tests ────────────────────────────────────────────────────────

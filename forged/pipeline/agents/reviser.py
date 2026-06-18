@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from forged.artifacts import ArtifactStore
@@ -72,6 +73,7 @@ class RevisorAgent(Agent[AgentOutput]):
 
         exec_report = self._read_execution_report(state, store)
         grade_report = self._read_grade_report(state, store)
+        grade_report = self._merge_reviewer_findings(state, store, grade_report)
         structural_report = self._assess_structure(state, store)
         classification = classify(
             exec_report, grade_report, structural_report=structural_report
@@ -129,25 +131,7 @@ class RevisorAgent(Agent[AgentOutput]):
         except json.JSONDecodeError:
             _LOG.warning("RevisorAgent: invalid grade report JSON in %s", name)
             return None
-        findings = [
-            Evidence(
-                source=f["source"],
-                severity=self._coerce_severity(f["severity"]),
-                scope=self._coerce_scope(f["scope"]),
-                location=Location(
-                    type=self._coerce_location_type(f["location"].get("type")),
-                    cell_index=(
-                        f["location"].get("cell_index")
-                        if self._coerce_location_type(f["location"].get("type"))
-                        == LocationType.CELL
-                        else None
-                    ),
-                    label=f["location"].get("label"),
-                ),
-                text=f["text"],
-            )
-            for f in raw.get("findings", [])
-        ]
+        findings = self._findings_from_json(raw.get("findings", []), default_source="student")
         return GradeReport(
             quality_score=raw.get("quality_score", 0.0),
             rubric=self._coerce_rubric(raw.get("rubric")),
@@ -155,6 +139,102 @@ class RevisorAgent(Agent[AgentOutput]):
             blockers=raw.get("blockers", []),
             findings=findings,
         )
+
+    def _findings_from_json(
+        self, raw_findings: object, default_source: str
+    ) -> list[Evidence]:
+        """Coerce a JSON findings list (student or reviewer) into Evidence objects.
+
+        Tolerant of partial entries from real LLM output: an entry that is not a dict
+        or lacks a description is skipped rather than crashing the routing loop. Shared
+        by the student and reviewer readers so both critics' findings parse identically.
+        """
+        if not isinstance(raw_findings, list):
+            return []
+        findings: list[Evidence] = []
+        for f in raw_findings:
+            if not isinstance(f, dict) or not f.get("text"):
+                continue
+            location = f.get("location") or {}
+            loc_type = self._coerce_location_type(location.get("type"))
+            findings.append(
+                Evidence(
+                    source=f.get("source") or default_source,
+                    severity=self._coerce_severity(f.get("severity")),
+                    scope=self._coerce_scope(f.get("scope")),
+                    location=Location(
+                        type=loc_type,
+                        cell_index=(
+                            location.get("cell_index")
+                            if loc_type == LocationType.CELL
+                            else None
+                        ),
+                        label=location.get("label"),
+                    ),
+                    text=f["text"],
+                )
+            )
+        return findings
+
+    def _merge_reviewer_findings(
+        self,
+        state: PipelineState,
+        store: ArtifactStore,
+        grade_report: GradeReport | None,
+    ) -> GradeReport | None:
+        """Fold the Reviewer's findings into the grade report before classification.
+
+        The Reviewer is the expert/correctness critic; its findings carry the same
+        scope vocabulary as the student's, so merging them means a reviewer BLOCKER in
+        `code` scope routes to the code author (TEST_FAILURE) and one in `plan`/
+        `structure` scope triggers a replan — even when the lesson reads fine to the
+        learner-student. The student's quality_score, rubric and graded flag are kept
+        as-is: the reviewer is a findings critic, not a second scorer, so it never
+        double-counts against the quality threshold.
+        """
+        reviewer_findings, reviewer_blockers = self._read_reviewer_report(state, store)
+        if not reviewer_findings and not reviewer_blockers:
+            return grade_report
+
+        if grade_report is None:
+            # Student produced no grade (e.g. it did not run). Carry the reviewer's
+            # signal alone with a passing score, so only genuine reviewer blockers
+            # route and an empty review does not masquerade as low quality.
+            return GradeReport(
+                quality_score=100.0,
+                rubric=None,
+                graded=True,
+                blockers=list(reviewer_blockers),
+                findings=reviewer_findings,
+            )
+
+        return replace(
+            grade_report,
+            findings=[*grade_report.findings, *reviewer_findings],
+            blockers=[*grade_report.blockers, *reviewer_blockers],
+        )
+
+    def _read_reviewer_report(
+        self, state: PipelineState, store: ArtifactStore
+    ) -> tuple[list[Evidence], list[str]]:
+        """Read the latest reviewer_report artifact as (findings, blockers).
+
+        Returns empty lists when the reviewer did not run, its JSON is invalid, or it
+        degraded (reviewed=False) — an absent review simply adds no findings.
+        """
+        name = self._latest_artifact_name(state, PipelineStage.REVIEWER, "reviewer_report")
+        if not store.has(name):
+            return [], []
+        try:
+            raw = json.loads(store.get(name).content)
+        except json.JSONDecodeError:
+            _LOG.warning("RevisorAgent: invalid reviewer report JSON in %s", name)
+            return [], []
+        findings = self._findings_from_json(raw.get("findings", []), default_source="reviewer")
+        blockers = raw.get("blockers", [])
+        if not isinstance(blockers, list):
+            blockers = []
+        return findings, blockers
 
     @staticmethod
     def _coerce_rubric(raw: object) -> RubricScores | None:
@@ -251,7 +331,8 @@ class RevisorAgent(Agent[AgentOutput]):
                 lines.append("- **Key Findings**:\n")
                 for finding in grade_report.findings[:5]:
                     loc = self._format_location(finding.location)
-                    lines.append(f"  - [{finding.severity}] {loc}{finding.text}\n")
+                    src = f" ({finding.source})" if finding.source else ""
+                    lines.append(f"  - [{finding.severity}{src}] {loc}{finding.text}\n")
             lines.append("\n")
 
         lines.append("## Action Items\n")

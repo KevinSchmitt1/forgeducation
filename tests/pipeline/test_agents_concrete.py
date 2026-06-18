@@ -41,6 +41,9 @@ def personas_dir(tmp_path: Path) -> Path:
     (d / "student.md").write_text(
         "You are the Student. Review the notebook as a learner.", encoding="utf-8"
     )
+    (d / "reviewer.md").write_text(
+        "You are the Reviewer. Judge correctness and teaching quality.", encoding="utf-8"
+    )
     (d / "reviser.md").write_text(
         "You are the Reviser. Improve notebook quality.", encoding="utf-8"
     )
@@ -744,6 +747,118 @@ def test_revisor_agent_run_reads_classification(
     )
     # With quality_score=90 (above threshold=80) and ok=True, should terminate as ACCEPTABLE
     assert result.is_terminal
+
+
+def _put_reviewer_report(store: ArtifactStore, findings: list[dict], blockers=None) -> None:
+    store.put(
+        Artifact(
+            name="reviewer_report_v0",
+            kind="json",
+            content=json.dumps(
+                {"reviewed": True, "blockers": blockers or [], "findings": findings}
+            ),
+        )
+    )
+
+
+@pytest.mark.unit
+def test_reviewer_code_blocker_routes_to_code_author(
+    personas_dir: Path,
+    state_with_grade: PipelineState,
+    artifact_store: ArtifactStore,
+) -> None:
+    """A reviewer correctness BLOCKER routes back to the code author even when the
+    student's grade is clean — the whole point of the second critic."""
+    from forged.pipeline.agents.reviser import RevisorAgent
+
+    _put_reviewer_report(
+        artifact_store,
+        findings=[
+            {
+                "source": "reviewer",
+                "severity": "BLOCKER",
+                "scope": "code",
+                "location": {"type": "cell", "cell_index": 3},
+                "text": "torch.foo() is not a real API; this cell cannot be correct.",
+            }
+        ],
+    )
+    state = state_with_grade.with_output(
+        StageOutput(
+            stage=PipelineStage.REVIEWER,
+            artifact_name="reviewer_report_v0",
+            iteration=0,
+        )
+    )
+
+    agent = RevisorAgent(personas_dir=personas_dir)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(state, artifact_store))
+
+    assert not result.is_terminal, "A reviewer code blocker must reroute, not terminate"
+    assert result.current_stage == PipelineStage.CODE_AUTHOR
+    assert result.routing_log[-1].classification == "test_failure"
+
+
+@pytest.mark.unit
+def test_clean_reviewer_leaves_acceptable_grade_untouched(
+    personas_dir: Path,
+    state_with_grade: PipelineState,
+    artifact_store: ArtifactStore,
+) -> None:
+    """An empty reviewer report must not perturb an otherwise-acceptable run."""
+    from forged.pipeline.agents.reviser import RevisorAgent
+
+    _put_reviewer_report(artifact_store, findings=[])
+    state = state_with_grade.with_output(
+        StageOutput(
+            stage=PipelineStage.REVIEWER,
+            artifact_name="reviewer_report_v0",
+            iteration=0,
+        )
+    )
+
+    agent = RevisorAgent(personas_dir=personas_dir)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(state, artifact_store))
+
+    assert result.is_terminal
+    assert result.terminal_ok is True
+
+
+@pytest.mark.unit
+def test_reviewer_agent_writes_parseable_report(
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+) -> None:
+    """ReviewerAgent parses the LLM's trailing JSON block into a findings report."""
+    from forged.pipeline.agents.reviewer import ReviewerAgent
+
+    class StubLLMClient:
+        def complete(self, system_prompt: str, user_prompt: str, trace_context=None) -> str:
+            return (
+                "Prose verdict: one correctness issue.\n\n"
+                "```json\n"
+                '{"blockers": ["cell 3 uses a non-existent API"], '
+                '"findings": [{"source": "reviewer", "severity": "BLOCKER", '
+                '"scope": "code", "location": {"type": "cell", "cell_index": 3}, '
+                '"text": "Non-existent API call"}]}\n'
+                "```"
+            )
+
+    artifact_store.put(
+        Artifact(name="lesson_notebook_v0", kind="notebook", content="# notebook text")
+    )
+    artifact_store.put(
+        Artifact(name="execution_report_v0", kind="json", content='{"ok": true}')
+    )
+    state = create_initial_state(run_id="reviewer-parse")
+
+    agent = ReviewerAgent(personas_dir=personas_dir, llm_client=StubLLMClient())
+    result = asyncio.get_event_loop().run_until_complete(agent.run(state, artifact_store))
+
+    report = json.loads(artifact_store.get("reviewer_report_v0").content)
+    assert report["reviewed"] is True
+    assert report["findings"][0]["scope"] == "code"
+    assert result.current_stage == PipelineStage.REVISER
 
 
 @pytest.mark.unit

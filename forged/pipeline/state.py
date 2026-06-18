@@ -24,12 +24,19 @@ class PipelineStage(str, Enum):
     decides where to go next). CONTENT_REVISER is the LLM agent that actually
     rewrites the notebook's prose when content quality is too low — the target of
     the CONTENT_QUALITY route. They are distinct: one routes, one regenerates.
+
+    STUDENT and REVIEWER are the two critics. STUDENT inhabits the learner profile
+    (subjective "could I follow this?"); REVIEWER is an expert/SME pass on objective
+    correctness and instructional quality. Both run before the REVISER, which merges
+    their findings before classifying — so a reviewer correctness blocker can route a
+    notebook back to the code author even when it reads fine to the learner.
     """
 
     PLANNER = "planner"
     CODE_AUTHOR = "code_author"
     EXECUTOR = "executor"
     STUDENT = "student"
+    REVIEWER = "reviewer"
     REVISER = "reviser"
     CONTENT_REVISER = "content_reviser"
 
