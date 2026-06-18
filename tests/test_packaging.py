@@ -63,7 +63,18 @@ def test_requirements_file_is_pip_parseable_and_sorted(tmp_path):
         for ln in (tmp_path / REQUIREMENTS_FILE).read_text().splitlines()
         if ln and not ln.startswith("#")
     ]
-    assert lines == ["matplotlib>=3.8", "numpy>=1.26"]
+    # Lesson imports come first, sorted; ipykernel is appended so a fresh learner
+    # venv can register itself as a selectable Jupyter kernel.
+    assert lines[:2] == ["matplotlib>=3.8", "numpy>=1.26"]
+    assert "ipykernel>=6" in lines
+
+
+def test_requirements_always_include_ipykernel_even_with_no_deps(tmp_path):
+    plan = "## Prerequisites\nStandard library only.\n## Learning objectives\n- Learn.\n"
+    write_package(tmp_path, plan, _CTX)
+    req_text = (tmp_path / REQUIREMENTS_FILE).read_text()
+    # The deliverable is a notebook, so ipykernel is needed even when nothing else is.
+    assert "ipykernel" in req_text.lower()
 
 
 def test_write_package_exposes_requirement_set_for_hashing(tmp_path):
@@ -100,6 +111,18 @@ def test_readme_explains_how_to_install_and_run():
     readme = build_readme(_PLAN, _CTX, extract_requirements(_PLAN))
     assert "pip install -r requirements.txt" in readme
     assert "lesson.ipynb" in readme
+
+
+def test_readme_explains_kernel_registration_and_recovery():
+    """The README must tell the learner how to register AND select the kernel, and
+    how to recover when it doesn't show up — the exact gap a learner hits otherwise."""
+    from forged.pipeline.dependencies import extract_requirements
+
+    readme = build_readme(_PLAN, _CTX, extract_requirements(_PLAN))
+    assert "ipykernel install" in readme
+    assert "select" in readme.lower() and "kernel" in readme.lower()
+    # The reload-to-rescan recovery path is documented.
+    assert "rescan" in readme.lower() or "Reload Window" in readme
 
 
 def test_readme_carries_prerequisites_prose_but_not_the_fenced_block():
