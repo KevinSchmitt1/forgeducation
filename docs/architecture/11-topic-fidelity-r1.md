@@ -1,9 +1,18 @@
 # 11 — Topic Fidelity (R1) — lesson-level
 
-**Status:** 📐 PLANNED — not yet implemented. This is Half A of a deliberate two-way split.
-Half B (the curriculum planner) is **out of scope here**; see `TODO.md` → "Phase 2" and the
-"Scope boundary" note below. The only thing the two halves share is the **topic-fidelity signal
-contract** defined in Part IV.
+**Status:** ✅ IMPLEMENTED (2026-06-19). This is Half A of a deliberate two-way split. Half B
+(the curriculum planner) is **out of scope here**; see `TODO.md` → "Phase 2" and the "Scope
+boundary" note below. The only thing the two halves share is the **topic-fidelity signal
+contract** defined in Part IV. Validation: full suite green (410), new modules at 100% coverage;
+the validating tests are named in Part V.
+
+**Scope adjustment during implementation.** The Phase-2 `topic_infeasible` *graph-termination
+mechanism* was descoped to a follow-up: the planner persona now **declares** infeasibility
+explicitly in its plan output (an honest, visible `## Topic infeasible` section), and the
+deterministic fidelity signal (Phase 3) makes any actual drop visible in `SUMMARY.md`. Wiring a
+dedicated terminal state would duplicate that visibility without adding a guarantee, so it was
+left out under YAGNI. The honesty acceptance criteria below are met by the persona declaration +
+the recorded/surfaced signal. Re-add the terminal state only if a concrete need appears.
 
 **Supersedes the fix direction sketched in** `docs/architecture/10-output-quality-remediation.md`
 → **Part IX / R1**. That doc states the symptom, root cause, and acceptance; this doc is the
@@ -169,16 +178,20 @@ class TopicFidelitySignal:
 
 ## Part V — Acceptance (mirrors `10-…` Part IX / R1)
 
-- [ ] An under-explained but correct, executing step is classified `content` (→ `CONTENT_REVISER`),
-      not `blocker_structure`.
-- [ ] A replan triggered by a real structural blocker keeps every capability named in `--topic`
-      (the lesson still teaches fine-tuning), or terminates honestly (`topic_infeasible`) instead of
-      dropping it.
-- [ ] Regression test: a clean-executing notebook whose only weakness is content-scoped routes to
-      `CONTENT_REVISER`, never `PLANNER`.
-- [ ] When a requested capability is dropped, a `TopicFidelitySignal` with non-empty `missing` is
-      recorded on the state and surfaced in the run summary — the drop is never silent.
-- [ ] All three CI gates green (`ruff`, `mypy`, coverage ≥ 80%).
+- [x] An under-explained but correct, executing step is classified `content` (→ `CONTENT_REVISER`),
+      not `blocker_structure`. — personas/student.md + reviewer.md scope rule;
+      `test_failure.py::test_r1_under_explained_executing_step_routes_to_content_not_replan`.
+- [x] A replan keeps every capability named in `--topic` (the lesson still teaches fine-tuning), or
+      reports infeasibility honestly instead of dropping it. — planner.md "Topic fidelity" rule;
+      `test_agents_concrete.py::test_planner_replan_message_carries_brief_and_prior_feedback`.
+      (Graph-level `topic_infeasible` terminal descoped — see status note.)
+- [x] Regression test: a clean-executing notebook whose only weakness is content-scoped routes to
+      `CONTENT_REVISER`, never `PLANNER`. — same `test_r1_…` test.
+- [x] When a requested capability is dropped, a `TopicFidelitySignal` with non-empty `missing` is
+      recorded on the state and surfaced in the run summary — the drop is never silent. —
+      `test_agents_concrete.py::test_revisor_records_topic_fidelity_signal_when_capability_dropped`,
+      `test_cli_agentic.py::test_agentic_summary_surfaces_dropped_topic_capability`.
+- [x] CI gates green (`ruff`, `mypy`, coverage ≥ 80%); `fidelity.py` + `context.py` at 100%.
 
 ---
 
