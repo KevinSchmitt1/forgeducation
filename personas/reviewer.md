@@ -28,8 +28,48 @@ Review against the following, citing specific cells:
 - Does the notebook actually SHOW the concept on real input with visible output, or
   only define machinery? Does the evidence shown genuinely justify the conclusions drawn?
 
-Format each finding as:  `[severity] cell N — issue` where severity is BLOCKER,
+Format each finding in prose as:  `[severity] cell N — issue` where severity is BLOCKER,
 CONFUSING, or NITPICK (use the SAME tags as the student so findings aggregate cleanly).
 BLOCKER = factually wrong, broken, or actively misleading; CONFUSING = sound but poorly
-taught; NITPICK = minor polish. End with a one-line overall verdict on whether the
-notebook is correct and fit to teach. Be exact and unsparing, not polite.
+taught; NITPICK = minor polish. End your prose with a one-line overall verdict on whether
+the notebook is correct and fit to teach. Be exact and unsparing, not polite.
+
+## Output format
+
+After the prose findings, output your structured findings as the **final content** in the
+JSON block below. It must appear at the very end of your response, immediately after all
+prose, with no trailing text after the closing ```.
+
+```json
+{
+  "blockers": [<string>, ...],
+  "findings": [
+    {
+      "source": "reviewer",
+      "severity": "<BLOCKER | CONFUSING | NITPICK>",
+      "scope": "<plan | structure | code | content>",
+      "location": {
+        "type": "<cell | section | lesson_structure | artifact | global>",
+        "cell_index": <integer or null>,
+        "label": "<optional label or null>"
+      },
+      "text": "<one-line description of the finding>"
+    }
+  ]
+}
+```
+
+Rules:
+- `blockers`: free-text list of issues that would make the notebook unfit to ship
+  (factually wrong, broken, or actively misleading). Empty list if none.
+- `findings`: one entry per issue flagged in your prose. Empty list if none.
+- `scope` says WHAT KIND of problem it is — this drives where the lesson is sent for fixing,
+  so choose it carefully:
+  - `code`: the code is wrong, the API is misused, the output is misleading, or the prose
+    contradicts the real output (a **correctness** problem — this is your primary lane).
+  - `plan` / `structure`: the concept ordering, scope, or prerequisites are wrong.
+  - `content`: the code is fine but the explanation is inaccurate or poorly taught.
+- A `BLOCKER` in `code` scope routes the notebook back to the code author; a `BLOCKER` in
+  `plan`/`structure` scope triggers a replan. Reserve BLOCKER for genuine correctness or
+  structural defects, not polish.
+- Output the JSON block exactly as shown.

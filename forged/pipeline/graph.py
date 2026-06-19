@@ -27,6 +27,7 @@ from forged.pipeline.agents.code_author import CodeAuthorAgent
 from forged.pipeline.agents.content_reviser import ContentReviserAgent
 from forged.pipeline.agents.executor import ExecutorAgent
 from forged.pipeline.agents.planner import PlannerAgent
+from forged.pipeline.agents.reviewer import ReviewerAgent
 from forged.pipeline.agents.reviser import RevisorAgent
 from forged.pipeline.agents.student import StudentAgent
 from forged.pipeline.state import PipelineState
@@ -103,6 +104,10 @@ def build_pipeline_graph(
         personas_dir=personas_dir,
         llm_client=LLMClient(pipeline.resolved_model_name("student")),
     )
+    reviewer = ReviewerAgent(
+        personas_dir=personas_dir,
+        llm_client=LLMClient(pipeline.resolved_model_name("reviewer")),
+    )
     revisor = RevisorAgent(personas_dir=personas_dir)
     content_reviser = ContentReviserAgent(
         personas_dir=personas_dir,
@@ -123,6 +128,9 @@ def build_pipeline_graph(
     async def student_node(state: PipelineState) -> PipelineState:
         return await student.run(state, store)
 
+    async def reviewer_node(state: PipelineState) -> PipelineState:
+        return await reviewer.run(state, store)
+
     async def revisor_node(state: PipelineState) -> PipelineState:
         return await revisor.run(state, store)
 
@@ -133,6 +141,7 @@ def build_pipeline_graph(
     graph.add_node("code_author", code_author_node)
     graph.add_node("executor", executor_node)
     graph.add_node("student", student_node)
+    graph.add_node("reviewer", reviewer_node)
     graph.add_node("revisor", revisor_node)
     graph.add_node("content_reviser", content_reviser_node)
 
@@ -144,7 +153,11 @@ def build_pipeline_graph(
         ("planner", "code_author"),
         ("code_author", "executor"),
         ("executor", "student"),
-        ("student", "revisor"),
+        # Two critics run in sequence before the deterministic router: the Student
+        # (learner POV) then the Reviewer (expert correctness/quality). The Reviser
+        # merges both sets of findings before classifying.
+        ("student", "reviewer"),
+        ("reviewer", "revisor"),
         # The content reviser rewrites the notebook, then re-runs it: its rewrite
         # must be executed and re-graded for the loop to converge (or terminate).
         ("content_reviser", "executor"),
