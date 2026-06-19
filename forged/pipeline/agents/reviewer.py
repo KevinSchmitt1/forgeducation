@@ -179,7 +179,7 @@ class ReviewerAgent(Agent[AgentOutput]):
         try:
             return render_indexed(content)
         except Exception:  # noqa: BLE001 — reviewing should degrade, not crash
-            _LOG.warning("ReviewerAgent: notebook artifact is not valid nbformat; using raw content")
+            _LOG.warning("ReviewerAgent: notebook is not valid nbformat; using raw content")
             return content
 
     def _latest_notebook_name(self, state: PipelineState) -> str:
