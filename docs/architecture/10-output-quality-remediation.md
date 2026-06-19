@@ -462,6 +462,19 @@ finding's scope tag decides *scaffold vs. amputate*:
 3. Consider a **topic-fidelity check** — the student/reviewer should flag when the notebook no longer
    covers a capability named in the topic/objectives — so descoping is caught, not rewarded.
 
+**Scope boundary — R1 stays separate from the curriculum planner (Phase 2).** R1 is a *single-lesson
+pipeline* fix: it makes one lesson **detect** an over-large / under-scoped topic and **be honest**
+about it (keep the content, or fail/flag — never silently drop). It is delivered and tracked on its
+own, **not** as part of Phase 2, because the silent-drop defect would otherwise be multiplied across
+every module the curriculum planner spawns. The curriculum planner is a *separate* layer that only
+**consumes** R1's topic-fidelity signal to **resolve** an over-large topic by decomposing it into
+modules (e.g. setup-module + fine-tuning-module). Division of labour:
+- **R1 (lesson level, this doc):** detect & report descoping. *Foundation — do first.*
+- **Phase 2 (curriculum planner, `TODO.md`):** resolve by decomposition. *Builds on R1's signal.*
+
+Keep the two tracked and implemented separately; the only coupling is the topic-fidelity signal R1
+emits and Phase 2 reads.
+
 **Acceptance.**
 - [ ] An under-explained but correct, executing step is classified `content` (→ CONTENT_REVISER),
       not `blocker_structure`.
