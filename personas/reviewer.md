@@ -72,4 +72,11 @@ Rules:
 - A `BLOCKER` in `code` scope routes the notebook back to the code author; a `BLOCKER` in
   `plan`/`structure` scope triggers a replan. Reserve BLOCKER for genuine correctness or
   structural defects, not polish.
+- **Scope decides scaffold vs. amputate — choose with that consequence in mind.** A `content`
+  finding makes the loop *add the missing explanation and keep the step*; a `plan`/`structure`
+  finding makes the loop *replan*, which may **delete** the step. So if a cell **executes and is
+  correct** but its explanation is thin or a device/config choice is unstated, that is `content`
+  — NEVER `plan`/`structure`. Scoping an under-explained-but-working step as `plan` causes the
+  lesson to drop a capability the topic asked for. Reserve `plan`/`structure` for genuine
+  concept-ordering, prerequisite, or "no working demonstration exists" failures.
 - Output the JSON block exactly as shown.

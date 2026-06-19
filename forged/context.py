@@ -12,9 +12,25 @@ agentic path rendered none at all. One renderer means the two paths cannot drift
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
+
 from .models import LearnerProfile, TopicSpecification
 
 CONTEXT_HEADING = "## Lesson Context"
+
+
+def topic_spec_to_json(topic_spec: TopicSpecification) -> str:
+    """Serialize the topic specification to JSON for persistence as an artifact.
+
+    The context block renders the spec into prose for LLM prompts; the deterministic
+    topic-fidelity detector instead needs the requested capabilities as *data*
+    (objectives, title, focus_areas) so it can check coverage without re-parsing
+    markdown. This is the structured counterpart to build_context_block(), and the
+    `topic_spec.json` artifact it produces is the input to that detector (see
+    docs/architecture/11-topic-fidelity-r1.md).
+    """
+    return json.dumps(asdict(topic_spec), indent=2)
 
 
 def build_context_block(

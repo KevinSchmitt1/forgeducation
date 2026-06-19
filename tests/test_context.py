@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from forged.context import build_context_block
+from forged.context import build_context_block, topic_spec_to_json
 from forged.models import LearnerProfile, TopicSpecification
 
 
@@ -30,6 +32,32 @@ def _topic() -> TopicSpecification:
         depth="intermediate",
         focus_areas=["setup", "inference"],
     )
+
+
+@pytest.mark.unit
+def test_topic_spec_to_json_preserves_structured_capabilities():
+    # Arrange
+    topic = _topic()
+
+    # Act
+    payload = json.loads(topic_spec_to_json(topic))
+
+    # Assert — the structured capabilities the fidelity detector needs survive
+    # the round-trip as data, not prose.
+    assert payload["title"] == "Building and Running a Local LLM"
+    assert payload["learning_objectives"] == [
+        "Run a model locally",
+        "Reason about memory",
+    ]
+    assert payload["focus_areas"] == ["setup", "inference"]
+    assert payload["scope"] == "implementation"
+    assert payload["depth"] == "intermediate"
+
+
+@pytest.mark.unit
+def test_topic_spec_to_json_emits_valid_json():
+    # Arrange / Act / Assert — round-trips through the JSON parser cleanly.
+    assert json.loads(topic_spec_to_json(_topic()))
 
 
 @pytest.mark.unit

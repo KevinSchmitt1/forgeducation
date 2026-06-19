@@ -153,6 +153,12 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
     assert (run_dir / "pipeline.log").is_file(), "Should write pipeline.log"
     # Even with default profile/topic, the shared context block is stored for agents.
     assert (run_dir / "lesson_context.md").is_file(), "Should store lesson_context"
+    # Structured topic spec is persisted so the topic-fidelity detector can read
+    # the requested capabilities as data (R1, doc 11).
+    topic_spec_path = run_dir / "topic_spec.json"
+    assert topic_spec_path.is_file(), "Should store topic_spec.json"
+    spec = json.loads(topic_spec_path.read_text())
+    assert "learning_objectives" in spec and "title" in spec
 
 
 @pytest.mark.unit
