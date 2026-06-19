@@ -23,8 +23,21 @@ This section is for the next agent/session picking up the work. The plan below
   Logic built + unit/integration tested (mocked subprocess), then **validated by a real paid
   run** on the original topic ("setup and train local LLMs on Apple Silicon M1", Kevin
   profile). See "Phase 5 E2E validation" below.
-- **Phase 6 — ⏳ NOT STARTED.** Final close-out: docs sync + full-diff `/code-review` +
-  `/quality-gate` + `checkpoint`, then mark this file *implemented*.
+- **Phase 6 (docs / regression / close-out) — ✅ DONE.**
+
+> ### 🔜 NEXT TASK FOR THE NEXT AGENT — R1 (OPEN)
+>
+> **Topic fidelity: the revision loop must not amputate the requested topic.** A reviewer-critic
+> E2E (`runs/localLLM-reviewer-e2e/`, topic *"setup and **train** local LLMs"*) produced a
+> well-explained notebook that **dropped LoRA fine-tuning entirely** across v0→v2 — it no longer
+> covers the "train" half the user explicitly asked for. Root cause: a *content* gap ("MPS/Trainer
+> device config isn't explained") was mis-tagged `[BLOCKER/plan]`, hit the priority-1
+> `blocker_structure` route, and the planner cleared it by **descoping instead of scaffolding**.
+>
+> **Full spec, fix direction, and acceptance criteria: see [Part IX — R1](#part-ix--follow-up-refinements-post-phase-6-open).**
+> Start with fix #1 (sharpen the Student/Reviewer scope rubric in `personas/student.md` +
+> `personas/reviewer.md`) — it's the smallest, highest-leverage change and extends persona work
+> already on branch `feat/agentic-reviewer-and-learner-experience`.
 
 ### Repo state (important)
 - **Phases 1–4 are committed** on branch `feat/output-quality-phases-1-2` (Phase 3 =
