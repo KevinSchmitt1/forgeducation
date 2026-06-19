@@ -17,6 +17,7 @@ from forged.pipeline.state import (
     PipelineState,
     RoutingDecision,
     StageOutput,
+    TopicFidelitySignal,
     create_initial_state,
 )
 
@@ -498,3 +499,49 @@ def test_degradation_is_immutable():
     deg = Degradation(stage=PipelineStage.STUDENT, kind="grade_failed", detail="x")
     with pytest.raises((TypeError, AttributeError)):
         deg.detail = "mutated"  # type: ignore[misc]
+
+
+# ── Topic-fidelity channel (R1, doc 11) ─────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_new_state_has_no_topic_fidelity(initial_state: PipelineState):
+    """A fresh state starts with an empty topic_fidelity list."""
+    assert initial_state.topic_fidelity == []
+
+
+@pytest.mark.unit
+def test_with_topic_fidelity_appends(initial_state: PipelineState):
+    """with_topic_fidelity returns a new state carrying the appended signal."""
+    signal = TopicFidelitySignal(
+        requested_capabilities=("setup", "train"),
+        covered=("setup",),
+        missing=("train",),
+        source="deterministic",
+    )
+
+    new_state = initial_state.with_topic_fidelity(signal)
+
+    assert new_state.topic_fidelity == [signal]
+
+
+@pytest.mark.unit
+def test_with_topic_fidelity_does_not_mutate_original(initial_state: PipelineState):
+    """The original state is untouched — immutability holds."""
+    signal = TopicFidelitySignal(
+        requested_capabilities=("setup",), covered=("setup",), missing=(), source="deterministic"
+    )
+
+    initial_state.with_topic_fidelity(signal)
+
+    assert initial_state.topic_fidelity == []
+
+
+@pytest.mark.unit
+def test_topic_fidelity_signal_is_immutable():
+    """TopicFidelitySignal must be frozen — it is the contract Phase 2 consumes."""
+    signal = TopicFidelitySignal(
+        requested_capabilities=("train",), covered=(), missing=("train",), source="deterministic"
+    )
+    with pytest.raises((TypeError, AttributeError)):
+        signal.missing = ()  # type: ignore[misc]

@@ -306,6 +306,40 @@ def test_planner_agent_run_writes_artifact(
     assert artifact_store.has(artifact_name)
 
 
+@pytest.mark.unit
+def test_planner_replan_message_carries_brief_and_prior_feedback(
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+) -> None:
+    """On replan, the planner prompt carries BOTH the original brief and the prior
+    feedback — so the persona's keep-every-capability rule has the brief to anchor to
+    and the replan can scaffold the weak step instead of descoping (R1, doc 11).
+    """
+    from forged.pipeline.agents.planner import PlannerAgent
+
+    artifact_store.put(
+        Artifact(name="brief", kind="text", content="setup and train a local LLM")
+    )
+    artifact_store.put(
+        Artifact(
+            name="revision_brief_v0",
+            kind="text",
+            content="MPS device selection for the Trainer isn't explained",
+        )
+    )
+    # iteration 1 ⇒ planner reads revision_brief_v0 (state.iteration - 1).
+    state = PipelineState(
+        run_id="replan-run", current_stage=PipelineStage.PLANNER, iteration=1
+    )
+
+    agent = PlannerAgent(personas_dir=personas_dir, llm_client=None)
+    message = agent._build_user_message(state, artifact_store)
+
+    assert "setup and train a local LLM" in message
+    assert "MPS device selection" in message
+    assert "Feedback from previous attempt" in message
+
+
 # ── CodeAuthorAgent tests ─────────────────────────────────────────────────────
 
 
@@ -688,6 +722,91 @@ def test_revisor_terminates_on_hollow_executed_notebook(
     assert result.is_terminal is True
     assert result.terminal_ok is False
     assert "skipped" in (result.terminal_reason or "")
+
+
+@pytest.mark.unit
+def test_revisor_records_topic_fidelity_signal_when_capability_dropped(
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+) -> None:
+    """A clean run that dropped a requested capability records a fidelity signal.
+
+    The notebook sets up a model but never trains it; topic_spec.json asked for both.
+    The reviser must record a TopicFidelitySignal with the training capability in
+    `missing` so the drop is visible even when the run is otherwise ACCEPTABLE (R1).
+    """
+    import nbformat
+
+    from forged.executor import executed_notebook_filename
+    from forged.pipeline.agents.reviser import RevisorAgent
+
+    # Executed notebook: setup only, training removed.
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [
+        nbformat.v4.new_markdown_cell("# Set up and run a local LLM"),
+        nbformat.v4.new_code_cell("model = load_local_llm()\nprint(model.generate('hi'))"),
+    ]
+    (artifact_store.run_dir / executed_notebook_filename("execution_report_v0")).write_text(
+        nbformat.writes(nb), encoding="utf-8"
+    )
+
+    artifact_store.put(
+        Artifact(
+            name="topic_spec",
+            kind="json",
+            content=json.dumps(
+                {
+                    "title": "Setup and train a local LLM",
+                    "learning_objectives": [
+                        "Set up a local LLM",
+                        "Fine-tune the model with LoRA",
+                    ],
+                    "focus_areas": [],
+                }
+            ),
+        )
+    )
+    artifact_store.put(
+        Artifact(
+            name="execution_report_v0",
+            kind="json",
+            content=json.dumps({"ok": True, "failed_cells": [], "error_summary": None}),
+        )
+    )
+    artifact_store.put(
+        Artifact(
+            name="student_grade_report_v0",
+            kind="json",
+            content=json.dumps(
+                {"quality_score": 90.0, "graded": True, "blockers": [], "findings": []}
+            ),
+        )
+    )
+    state = (
+        create_initial_state(run_id="fidelity-run")
+        .with_output(
+            StageOutput(
+                stage=PipelineStage.EXECUTOR, artifact_name="execution_report_v0", iteration=0
+            )
+        )
+        .with_output(
+            StageOutput(
+                stage=PipelineStage.STUDENT,
+                artifact_name="student_grade_report_v0",
+                iteration=0,
+            )
+        )
+        .with_current_stage(PipelineStage.REVISER)
+    )
+
+    agent = RevisorAgent(personas_dir=personas_dir)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(state, artifact_store))
+
+    assert len(result.topic_fidelity) == 1
+    signal = result.topic_fidelity[0]
+    assert "Fine-tune the model with LoRA" in signal.missing
+    assert "Set up a local LLM" in signal.covered
+    assert signal.source == "deterministic"
 
 
 @pytest.mark.unit

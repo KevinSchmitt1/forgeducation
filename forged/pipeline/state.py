@@ -153,6 +153,34 @@ class Degradation:
     detail: str
 
 
+@dataclass(frozen=True)
+class TopicFidelitySignal:
+    """Whether the shipped notebook still covers every capability the topic named.
+
+    The R1 defect was that the revision loop could *silently* drop a capability the
+    `--topic` explicitly requested (e.g. shipping a "setup local LLMs" notebook for a
+    "setup AND train" topic). This signal makes any such drop visible: `missing`
+    non-empty ⇒ a requested capability was dropped.
+
+    This is the single, deliberate coupling between lesson-level R1 (which *detects*
+    the drop and is honest about it) and the future curriculum planner (Phase 2 /
+    Half B), which *consumes* `missing` to decide whether to decompose an over-large
+    topic into modules. Keep it stable and additive-only — see
+    docs/architecture/11-topic-fidelity-r1.md → Part IV.
+
+    Attributes:
+        requested_capabilities: capabilities named by the topic (objectives/title/focus).
+        covered: requested capabilities the notebook still demonstrates.
+        missing: requested capabilities the notebook no longer covers.
+        source: who produced the verdict — "deterministic" (the detector) or "critic".
+    """
+
+    requested_capabilities: tuple[str, ...]
+    covered: tuple[str, ...]
+    missing: tuple[str, ...]
+    source: str
+
+
 # ── Main state ─────────────────────────────────────────────────────────────────
 
 
@@ -176,6 +204,7 @@ class PipelineState:
     stage_attempts: dict[str, int] = field(default_factory=dict)
     routing_log: list[RoutingDecision] = field(default_factory=list)
     degradations: list[Degradation] = field(default_factory=list)
+    topic_fidelity: list[TopicFidelitySignal] = field(default_factory=list)
 
     is_terminal: bool = False
     terminal_reason: str | None = None
@@ -226,6 +255,15 @@ class PipelineState:
         its real output, so the degradation can be surfaced rather than buried.
         """
         return replace(self, degradations=self.degradations + [degradation])
+
+    def with_topic_fidelity(self, signal: TopicFidelitySignal) -> PipelineState:
+        """Return a new state with one topic-fidelity signal appended.
+
+        Creates a new list to preserve immutability, mirroring with_degradation().
+        Recorded by the Reviser after the deterministic detector runs, so a dropped
+        capability is surfaced in the run summary rather than lost (R1).
+        """
+        return replace(self, topic_fidelity=self.topic_fidelity + [signal])
 
     def with_attempt(self, stage: PipelineStage) -> PipelineState:
         """Return a new state with the attempt counter for a stage incremented.

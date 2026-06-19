@@ -344,6 +344,20 @@ def _write_agentic_summary(run_dir: Path, state, elapsed_sec: float) -> None:
             lines.append(f"- **{deg.stage.value}** ({deg.kind}): {deg.detail}\n")
         lines.append("\n")
 
+    # Topic fidelity: surface any capability the topic asked for but the notebook no
+    # longer covers, so a descope is reported, never silent (R1, doc 11).
+    dropped = [s for s in state.topic_fidelity if s.missing]
+    if dropped:
+        missing = sorted({cap for s in dropped for cap in s.missing})
+        lines.append("## Topic Fidelity\n\n")
+        lines.append(
+            "The notebook no longer covers every capability the topic requested. "
+            "These were dropped during the run:\n\n"
+        )
+        for cap in missing:
+            lines.append(f"- {cap}\n")
+        lines.append("\n")
+
     if state.routing_log:
         lines.append("## Routing Log\n\n")
         for decision in state.routing_log:
