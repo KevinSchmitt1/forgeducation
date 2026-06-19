@@ -106,14 +106,21 @@ Coverage: 92–96% per agent. Tests: `tests/pipeline/test_agents_concrete.py`,
 
 ### Phase 6 — LangGraph Assembly (`forged/pipeline/graph.py`)
 
-`build_pipeline_graph(store, pipeline, personas_dir)` wires five nodes into a `StateGraph`:
+`build_pipeline_graph(store, pipeline, personas_dir)` wires seven nodes into a `StateGraph`
+(planner, code_author, executor, student, reviewer, revisor, content_reviser):
 
 ```
-START → planner → code_author → executor → student → revisor
-                     ↑               ↑                   │
-                     └───────────────┴───── conditional ──┘
-                                              (or END)
+START → planner → code_author → executor → student → reviewer → revisor
+                     ↑               ↑                              │
+                     └───────────────┴────────── conditional ───────┘
+                                       (→ planner / code_author / content_reviser, or END)
 ```
+
+Two critics run before the deterministic router: the **Student** (learner POV — "could I
+follow this?") and the **Reviewer** (expert correctness/quality — wrong APIs, misleading
+output, prose that contradicts the run). The Reviser **merges both sets of findings** before
+classifying, so a reviewer correctness blocker (scope `code`) can reroute to the code author
+even when the lesson reads fine to the learner.
 
 The conditional edge function `revisor_route(state)` reads `state.routing_log[-1].to_stage`
 to determine the next node name, or returns `END` if the state is terminal or the log is
