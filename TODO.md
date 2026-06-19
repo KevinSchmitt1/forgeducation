@@ -28,22 +28,69 @@
   - validated by a real run on the original "local LLMs on Apple Silicon" topic
   - see `docs/architecture/10-output-quality-remediation.md`
 
-### 🔄 Current Work
+- **Agentic reviewer critic + learner-aligned explanations + runnable-kernel packaging** (PR #5)
+  - second critic added (expert correctness/quality): `student → reviewer → revisor`; the
+    reviser merges both critics' findings before classifying
+  - personas teach prerequisite gaps from first principles and treat explanation cells as a
+    first-class deliverable (`material_density` now drives explanation depth)
+  - learner `requirements.txt` includes `ipykernel`; README documents kernel registration
+  - **surfaced R1** (topic descoping) — now the top open task; see below
 
-- **Step 7: Input-specification testing**
-  - now unblocked
-  - should compare richer structured input against minimal input
-  - should compare linear vs. agentic quality/cost/iteration behavior
+### 🔄 Current Work — TOP PRIORITY
+
+- **R1 — topic fidelity (the cut-off mandatory topic).** The agentic revision loop silently
+  dropped the requested "train / fine-tune" half of a lesson, shipping a well-explained but
+  off-topic notebook. This is a correctness defect and is the most important thing to fix now.
+  - **Full spec + start-here:** `docs/architecture/10-output-quality-remediation.md` → **Part IX / R1**.
+  - First fix: sharpen the Student/Reviewer scope rubric so an under-explained-but-correct step
+    routes to `content_reviser`, not a `blocker_structure` replan that descopes.
+  - See **"R1 — Topic Fidelity"** below for the lesson-level-vs-curriculum-planner split.
+
+### ⏭ Postponed
+
+- **Step 7: Input-specification testing — POSTPONED behind R1** (was "now unblocked").
+  Deferred because R1 matters more right now. The linear-vs-agentic comparison is dropped — we
+  only ship the agentic pipeline. Detail retained below.
 
 ### ⏭ Next Major Phase
 
-- **Phase 2: Curriculum planner**
-  - depends on Step 7 results
-  - will orchestrate multiple module-level agentic runs into one course output
+- **Phase 2: Curriculum planner** — orchestrates multiple module-level agentic runs into one
+  course. Now gated on **R1** (not Step 7). R1's topic-fidelity signal is a natural input to
+  module decomposition — see "R1 — Topic Fidelity" below.
 
 ---
 
-## Step 7: Input Specification Testing
+## R1 — Topic Fidelity (the cut-off mandatory topic) — TOP PRIORITY
+
+**Problem.** On topic *"setup AND train local LLMs"*, the agentic loop produced a well-explained
+notebook that **silently dropped LoRA fine-tuning** across iterations: a content-scoped explanation
+gap was mis-tagged `[BLOCKER/plan]`, which triggered a replan that descoped instead of scaffolding.
+Full spec, fix direction, and acceptance: `docs/architecture/10-output-quality-remediation.md` → **Part IX / R1**.
+
+**Two layers — fix detection now, resolve via the curriculum planner later:**
+
+1. **Lesson level (do now).** The loop must never *silently* drop a capability named in the `--topic`.
+   - Sharpen the Student/Reviewer scope rubric (an under-explained-but-correct step is `content`, not a
+     `plan` BLOCKER) so explanation gaps stop triggering descoping replans.
+   - Anchor the planner to the brief on replan + add a topic-fidelity check, so any genuine descope is
+     **reported honestly** (recorded signal / non-acceptable), never hidden.
+
+2. **Curriculum planner (Phase 2 — Kevin's brainstorm).** Once descoping is *visible*, the curriculum
+   planner is the right place to *resolve* an over-large topic: decompose it into modules so the cut
+   content becomes its own lesson (setup module + fine-tuning module) or is handed to a sibling
+   notebook, rather than being lost. R1's signal is the trigger for that decomposition.
+
+**Keep R1 and the curriculum planner separate** (tracked + implemented independently). Do **not** fold
+R1 into Phase 2 — the silent-drop defect would otherwise be multiplied across every module the planner
+spawns. Fix the lesson-level detection/honesty first (it's the foundation), and design the
+topic-fidelity signal as a reusable contract Phase 2 *consumes* for module splitting. The only coupling
+is that signal. Division of labour: lesson level = **detect & be honest** (R1, here); curriculum level
+= **resolve by decomposing** (Phase 2). See the matching "Scope boundary" note in
+`docs/architecture/10-output-quality-remediation.md` → Part IX / R1.
+
+---
+
+## Step 7: Input Specification Testing — POSTPONED (behind R1)
 
 **Goal:** measure whether richer structured input improves lesson quality enough to justify the extra input burden.
 
@@ -94,7 +141,9 @@
 
 ## Phase 2: Curriculum Planner
 
-**Status:** design sketched; implementation deferred until after Step 7
+**Status:** design sketched; implementation gated on **R1** (topic-fidelity foundation). Step 7 is
+postponed, so Phase 2 no longer waits on it — but it should consume R1's topic-fidelity signal so an
+over-large topic is decomposed into modules instead of silently cut (see "R1 — Topic Fidelity").
 
 **What it does:**
 
@@ -117,9 +166,9 @@ Course output (README + modules + course-manifest.json)
 **Open design questions:**
 
 1. Sequential vs. parallel module generation?
-2. How to validate cross-module dependencies and ordering?
+2. How to validate cross-module dependencies and ordering? --> maybe the planner does it first and the both reviewers (student and expert) analyse, if all the topics taught are present in the full curriculum/covered by other notebooks
 3. What should the course-level manifest contract be?
-4. Should learner profile stay global or allow per-module overrides?
+4. Should learner profile stay global or allow per-module overrides? --> it could override, since the learner learns consecutively in the notebooks
 
 ---
 
