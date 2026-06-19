@@ -1,7 +1,7 @@
 # Output-Quality Remediation — Problem Analysis & Implementation Plan
 
 **As of:** 2026-06-16
-**Status:** ✅ IMPLEMENTED — Phases 1–6 complete. Phase 5 validated by a real paid+network E2E on the original localLLM topic; Phase 6 (docs close-out) done (README/DEVELOPMENT/TODO/07-status synced; full-diff review + quality gate run).
+**Status:** ✅ IMPLEMENTED — Phases 1–6 complete. Phase 5 validated by a real paid+network E2E on the original localLLM topic; Phase 6 (docs close-out) done (README/DEVELOPMENT/TODO/07-status synced; full-diff review + quality gate run). · **OPEN follow-up:** see **Part IX — R1** (the revision loop descopes the requested topic — surfaced 2026-06-19 by the reviewer-critic E2E).
 **Source run analysed:** `runs/localLLM/` (topic: *"setup and train local LLMs on Apple Silicon M1"*, learner: Kevin — junior DS→AI). Ended **non-acceptable**, quality score 50, reviser budget exhausted, 4 iterations, 656s.
 **Decisions locked:** D1 = provision env **on by default** (per-run venv); D2 = **separate** `ContentReviserAgent`; P2 = **rubric/dimensioned** student scoring.
 
@@ -23,8 +23,21 @@ This section is for the next agent/session picking up the work. The plan below
   Logic built + unit/integration tested (mocked subprocess), then **validated by a real paid
   run** on the original topic ("setup and train local LLMs on Apple Silicon M1", Kevin
   profile). See "Phase 5 E2E validation" below.
-- **Phase 6 — ⏳ NOT STARTED.** Final close-out: docs sync + full-diff `/code-review` +
-  `/quality-gate` + `checkpoint`, then mark this file *implemented*.
+- **Phase 6 (docs / regression / close-out) — ✅ DONE.**
+
+> ### 🔜 NEXT TASK FOR THE NEXT AGENT — R1 (OPEN)
+>
+> **Topic fidelity: the revision loop must not amputate the requested topic.** A reviewer-critic
+> E2E (`runs/localLLM-reviewer-e2e/`, topic *"setup and **train** local LLMs"*) produced a
+> well-explained notebook that **dropped LoRA fine-tuning entirely** across v0→v2 — it no longer
+> covers the "train" half the user explicitly asked for. Root cause: a *content* gap ("MPS/Trainer
+> device config isn't explained") was mis-tagged `[BLOCKER/plan]`, hit the priority-1
+> `blocker_structure` route, and the planner cleared it by **descoping instead of scaffolding**.
+>
+> **Full spec, fix direction, and acceptance criteria: see [Part IX — R1](#part-ix--follow-up-refinements-post-phase-6-open).**
+> Start with fix #1 (sharpen the Student/Reviewer scope rubric in `personas/student.md` +
+> `personas/reviewer.md`) — it's the smallest, highest-leverage change and extends persona work
+> already on branch `feat/agentic-reviewer-and-learner-experience`.
 
 ### Repo state (important)
 - **Phases 1–4 are committed** on branch `feat/output-quality-phases-1-2` (Phase 3 =
@@ -410,6 +423,52 @@ Pre: architect (graph + provisioning)
 - [~] `pytest tests/` green (386 passed); `ruff` + `mypy` clean — **maintained per phase**;
       re-verify at each subsequent phase.
 - [x] Docs updated (README, DEVELOPMENT, TODO, 07-status); this file marked *implemented* (Phase 6).
+
+---
+
+## Part IX — Follow-up refinements (post-Phase-6, OPEN)
+
+Surfaced by the reviewer-critic E2E run `runs/localLLM-reviewer-e2e/` (2026-06-19, topic
+*"setup and train local LLMs on Apple Silicon M1"*, Kevin profile). **Not yet implemented.**
+
+### R1 — Topic fidelity: the revision loop must not amputate the requested topic
+
+**Symptom.** Across iterations v0 → v2 the loop **deleted the headline capability the topic
+explicitly asked for**. The `--topic` was "setup **and train** local LLMs"; v0/v1 taught LoRA
+fine-tuning and executed cleanly (`ok=True`, score 77), but v2 dropped LoRA/`peft` entirely and
+rescoped to MPS / device-placement / safe-loading fundamentals. The output is *well-explained but
+no longer covers "train / fine-tune"* — it does not fulfil the user's request.
+
+**Root cause.** A single student finding was tagged `[BLOCKER / plan]` — *"Trainer is used without
+explicit Accelerate/device configuration; MPS device selection isn't explained."* That is really a
+**content/explanation gap**, but because it was scoped `plan` with BLOCKER severity it hit the
+classifier's priority-1 rule (`BLOCKER in plan/structure → blocker_structure → planner`), which
+beats both the score and the successful execution. The planner then cleared the blocker the cheapest
+way a replan can — by **descoping** (removing the fragile section) rather than scaffolding it. So a
+finding's scope tag decides *scaffold vs. amputate*:
+  - `content` → content_reviser **adds the missing explanation** (keeps the section).
+  - `plan` / `structure` → planner **rethinks the lesson** (may delete the section).
+
+**Fix direction (not yet implemented).**
+1. **Sharpen the critic personas' scope rubric** (`student.md`, `reviewer.md`): a *missing or weak
+   explanation* of an otherwise-correct, executing cell is `content`, not a `plan`/`structure`
+   BLOCKER. Reserve `plan`/`structure` BLOCKER for genuine concept-ordering / prerequisite /
+   "no working demo" failures — never for "this correct step is under-explained".
+2. **Anchor the planner to the brief on replan.** When `blocker_structure` routes to the planner, it
+   must keep every deliverable named in the `--topic` / objectives; it may rescope *how* but must not
+   silently drop *what was requested* (here: training/fine-tuning). If the topic genuinely cannot be
+   taught for the profile, terminate with an honest "can't fit this topic to this profile" rather than
+   quietly substituting a different, easier lesson.
+3. Consider a **topic-fidelity check** — the student/reviewer should flag when the notebook no longer
+   covers a capability named in the topic/objectives — so descoping is caught, not rewarded.
+
+**Acceptance.**
+- [ ] An under-explained but correct, executing step is classified `content` (→ CONTENT_REVISER),
+      not `blocker_structure`.
+- [ ] A replan triggered by a real structural blocker keeps every capability named in `--topic`
+      (here: the lesson still teaches fine-tuning), or terminates honestly instead of dropping it.
+- [ ] Regression test: a clean-executing notebook whose only weakness is content-scoped routes to
+      CONTENT_REVISER, never PLANNER.
 
 ---
 

@@ -4,7 +4,7 @@
 
 forgeducation turns a one-line topic into a runnable Jupyter notebook by passing it
 through a pipeline of role-specialised agents (planner → code author → executor →
-student → reviser …). Crucially, one stage **actually executes** the generated
+student → reviewer → reviser …). Crucially, one stage **actually executes** the generated
 notebook and captures what every cell really does, so the explanations are checked
 against reality instead of assumption.
 

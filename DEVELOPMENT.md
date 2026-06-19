@@ -31,7 +31,8 @@ User Input                           Pipeline Execution
 └─────────────────────────────┘     │ stage 3: executor          │
                                     │   (runs notebook)          │
                                     │   ↓                        │
-                                    │ stage 4+: student/reviser  │
+                                    │ stage 4+: student/reviewer │
+                                    │           /reviser         │
                                     │                            │
                                     └────────────────────────────┘
                                            ↓
@@ -55,9 +56,11 @@ The repo contains two execution paths:
 - **Deterministic failure classification** across 6 categories: `BLOCKER_STRUCTURE`,
   `CODE_QUALITY`, `TEST_FAILURE`, `CONTENT_QUALITY`, `ACCEPTABLE`, `UNCLASSIFIABLE`.
 - **Budget-aware routing** that terminates rather than looping indefinitely.
-- **Agents**: Planner, CodeAuthor, Executor (real notebook execution), Student, Reviser
-  (deterministic router), and **ContentReviser** (LLM prose rewriter) — all wired into a
-  compiled LangGraph. LLM agents degrade gracefully on error; a hard agent failure marks
+- **Agents**: Planner, CodeAuthor, Executor (real notebook execution), Student (learner-POV
+  critic), **Reviewer** (expert correctness/quality critic), Reviser (deterministic router),
+  and **ContentReviser** (LLM prose rewriter) — all wired into a compiled LangGraph. The two
+  critics (Student + Reviewer) run before the Reviser, which merges their findings before
+  classifying. LLM agents degrade gracefully on error; a hard agent failure marks
   the state terminal and stops the graph immediately.
 - **Honest signals** (output-quality remediation): a failed grader is its own signal, not
   a fake score; rubric-dimensioned student grades; silent fallbacks are recorded as
@@ -101,7 +104,7 @@ For tracing and observability details, see
 2. **CLI parses input** → loads YAML files, creates data models (LearnerProfile, TopicSpecification)
 3. **Orchestrator threads context** → passes learner profile + topic spec through pipeline
 4. **Each agent renders prompts** → uses context to customize explanations for learner
-5. **Pipeline stages run** → planner → code_author → executor → student → reviser (if enabled)
+5. **Pipeline stages run** → planner → code_author → executor → student → reviewer → reviser (if enabled)
 6. **Output is generated** → `lesson.ipynb` with real cell outputs, `SUMMARY.md` with feedback
 
 ## Architecture Documentation
@@ -169,7 +172,7 @@ forged/
 │       ├── dependencies.py     # Extract requirements from the plan (+ hash)
 │       ├── router.py           # Budget-aware routing
 │       ├── graph.py            # LangGraph assembly + execution entrypoints
-│       └── agents/             # Planner/CodeAuthor/Executor/Student/Reviser/ContentReviser
+│       └── agents/             # Planner/CodeAuthor/Executor/Student/Reviewer/Reviser/ContentReviser
 │
 ├── templates/                  # User-facing template files
 │   ├── README.md               # User guide: how to customize templates
@@ -218,7 +221,7 @@ Describes the learner's background, goals, and preferences. Controls explanation
 
 **Location:** `templates/examples/learner-*.yaml` (user files) or `forged/models.py` (code)
 
-**Used by:** All agents (Planner, CodeAuthor, Student, Reviser) to tailor explanations
+**Used by:** All agents (Planner, CodeAuthor, Student, Reviewer, Reviser) to tailor explanations
 
 ### Topic Specification
 Defines what should be learned: scope, objectives, prerequisites, constraints, depth.
@@ -227,7 +230,7 @@ Defines what should be learned: scope, objectives, prerequisites, constraints, d
 
 **Location:** `templates/examples/topic-*.yaml` (user files) or `forged/models.py` (code)
 
-**Used by:** Planner (structure), CodeAuthor (examples), Student (validation), Reviser (feedback)
+**Used by:** Planner (structure), CodeAuthor (examples), Student (validation), Reviewer (correctness), Reviser (feedback)
 
 ### Context
 Rendered learner-profile + topic-spec markdown block passed through the pipeline so agents can tailor explanations consistently.
