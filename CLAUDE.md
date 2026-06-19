@@ -21,7 +21,7 @@ Two execution paths share the same agents, personas, and context block:
   - Routing is deterministic (`router.py` + `failure.py`); a finding's **scope** (`plan`/`structure`/
     `code`/`content`) decides where it's sent. Scope tagging matters a lot — see R1 below.
 - **Linear** (`forged build`) — fixed single pass; still uses `reviewer.md` as a critic. We don't
-  actively develop it; don't "fix" its docs as part of agentic work.
+  actively develop it; don't "fix" its docs as part of agentic work. This is not used anymore.
 
 Agents are thin Python wrappers; their behavior lives in **`personas/*.md`** (planner, code_author,
 student, reviewer, reviser). Most quality/pedagogy changes are persona edits, not code.
@@ -34,7 +34,7 @@ skips that and runs in the base `python3` kernel.
 - `forged/pipeline/` — agents, graph, state, router, failure classification, provisioning hook
 - `personas/` — the system prompts that define each agent
 - `config/pipeline.*.yaml` — stage→model resolution (planner/student/reviewer = gpt-5-mini; code_author/reviser = gpt-5)
-- `docs/architecture/` — design of record; `10-output-quality-remediation.md` is the live tracker
+- `docs/architecture/` — design of record; last file is most of the time the most recent work, what was done.
 - `TODO.md` — roadmap and current priorities
 
 ## Running & verifying
@@ -61,11 +61,12 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   gpt-5-mini (planner/student/reviewer) is cheap. A real paid+network E2E needs user consent — keep it
   to **one run**, and prefer `--no-provision` against an already-built `runs/.venv-cache/*` venv when
   iterating offline.
-- **Git: the user controls git.** Do **not** commit or push unless explicitly asked. When asked:
+- **Git: the user controls git.** Do **not** commit or push unless explicitly asked. Suggest the user to commit/PR, when you think its usefull. When asked:
   conventional-commit messages, **no attribution trailer** (repo convention), feature branch + PR,
   never commit straight to `master`.
 - **Reviewer-on-diff per phase**, findings addressed before close-out (cost-bounded: once per phase,
   on the diff only).
+- **Documentation:** always update the documents used, especially when things change. When building new stuff, always add a .md in the docs/archtiecture/ folder with the given structure. Most of the time there will be a .md created when the ecc "plan" command is used to plan new features and integrations.
 
 ## Current state & next task
 
