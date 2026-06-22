@@ -103,6 +103,13 @@ Rules:
   - `plan` / `structure`: the lesson's concept ordering, scope, or prerequisites are wrong (needs replanning).
   - `code`: the code produces wrong or misleading output, or contradicts the prose (needs recoding).
   - `content`: code is fine but the explanation/prose is unclear or insufficient (needs rewriting).
+- **Scope decides whether the loop keeps or drops the step.** A `content` finding makes the loop
+  *add the missing explanation and keep the step*. A `plan`/`structure` finding makes the loop
+  *replan*, which may **delete** the step entirely. So when a cell **runs fine and is correct** but
+  you couldn't follow *why* it works (a step is unexplained, a setting is unmotivated), scope it
+  `content` — NEVER `plan`/`structure`. "I didn't understand this working step" is always `content`.
+  Reserve `plan`/`structure` for "the lesson is taught in the wrong order", "a prerequisite is
+  missing", or "there's no working demonstration at all".
 - `location.type` says WHERE the problem sits: `cell` (give `cell_index`), `section`,
   `lesson_structure`, `artifact`, or `global`.
 - Output the JSON block exactly as shown — no trailing text after the closing ```.

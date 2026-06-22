@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 
 from .config import load_pipeline
-from .context import build_context_block
+from .context import build_context_block, topic_spec_to_json
 from .models import LearnerProfile, TopicSpecification
 from .orchestrator import MANIFEST_FILE, Orchestrator
 from .progress import Spinner
@@ -261,6 +261,12 @@ def _cmd_agentic(args) -> int:
         context_block = build_context_block(learner_profile, topic_spec)
         if context_block:
             store.put(Artifact(name="lesson_context", kind="text", content=context_block))
+        # Structured counterpart to lesson_context: the requested capabilities as
+        # data, so the deterministic topic-fidelity detector can check coverage
+        # without re-parsing prose (see docs/architecture/11-topic-fidelity-r1.md).
+        store.put(
+            Artifact(name="topic_spec", kind="json", content=topic_spec_to_json(topic_spec))
+        )
 
         state = create_initial_state(run_id=run_dir.name)
         logger.info("Initial state created (run_id=%s, iteration=0)", state.run_id)
@@ -336,6 +342,20 @@ def _write_agentic_summary(run_dir: Path, state, elapsed_sec: float) -> None:
         )
         for deg in state.degradations:
             lines.append(f"- **{deg.stage.value}** ({deg.kind}): {deg.detail}\n")
+        lines.append("\n")
+
+    # Topic fidelity: surface any capability the topic asked for but the notebook no
+    # longer covers, so a descope is reported, never silent (R1, doc 11).
+    dropped = [s for s in state.topic_fidelity if s.missing]
+    if dropped:
+        missing = sorted({cap for s in dropped for cap in s.missing})
+        lines.append("## Topic Fidelity\n\n")
+        lines.append(
+            "The notebook no longer covers every capability the topic requested. "
+            "These were dropped during the run:\n\n"
+        )
+        for cap in missing:
+            lines.append(f"- {cap}\n")
         lines.append("\n")
 
     if state.routing_log:

@@ -41,6 +41,7 @@ from forged.pipeline.state import (
     PipelineState,
     Scope,
     Severity,
+    TopicFidelitySignal,
 )
 
 from . import Agent, AgentOutput
@@ -75,6 +76,14 @@ class RevisorAgent(Agent[AgentOutput]):
         grade_report = self._read_grade_report(state, store)
         grade_report = self._merge_reviewer_findings(state, store, grade_report)
         structural_report = self._assess_structure(state, store)
+
+        # Record any topic descope on the state up front, so every return path below
+        # (terminal or routing) carries the signal — a dropped capability is never
+        # silently lost (R1; see docs/architecture/11-topic-fidelity-r1.md).
+        fidelity_signal = self._assess_topic_fidelity(state, store)
+        if fidelity_signal is not None:
+            state = state.with_topic_fidelity(fidelity_signal)
+
         classification = classify(
             exec_report, grade_report, structural_report=structural_report
         )
@@ -275,6 +284,61 @@ class RevisorAgent(Agent[AgentOutput]):
         except Exception as exc:  # noqa: BLE001 — gating must degrade, not crash
             _LOG.warning("RevisorAgent: could not assess notebook structure: %s", exc)
             return None
+
+    def _assess_topic_fidelity(
+        self, state: PipelineState, store: ArtifactStore
+    ) -> TopicFidelitySignal | None:
+        """Detect whether the executed notebook dropped a requested capability.
+
+        Reads the structured topic spec (`topic_spec.json`) for the requested
+        capabilities and the executor's executed notebook, then runs the
+        deterministic detector. Returns a TopicFidelitySignal when capabilities were
+        requested, else None (e.g. a mocked run with no topic spec). Degrades to None
+        on any read/parse error so the routing loop never crashes on this backstop.
+        """
+        from forged.executor import executed_notebook_filename
+        from forged.pipeline.fidelity import assess_topic_fidelity
+
+        if not store.has("topic_spec"):
+            return None
+        try:
+            spec = json.loads(store.get("topic_spec").content)
+        except json.JSONDecodeError:
+            _LOG.warning("RevisorAgent: invalid topic_spec JSON; skipping fidelity check")
+            return None
+
+        capabilities = [
+            *spec.get("learning_objectives", []),
+            *spec.get("focus_areas", []),
+        ]
+        if not capabilities:
+            return None
+
+        exec_name = self._latest_artifact_name(
+            state, PipelineStage.EXECUTOR, "execution_report"
+        )
+        executed_path = store.run_dir / executed_notebook_filename(exec_name)
+        if not executed_path.exists():
+            return None
+        try:
+            report = assess_topic_fidelity(
+                executed_path.read_text(encoding="utf-8"), capabilities
+            )
+        except Exception as exc:  # noqa: BLE001 — backstop must degrade, not crash
+            _LOG.warning("RevisorAgent: could not assess topic fidelity: %s", exc)
+            return None
+
+        if report.missing:
+            _LOG.info(
+                "RevisorAgent: topic fidelity — dropped capabilities: %s",
+                ", ".join(report.missing),
+            )
+        return TopicFidelitySignal(
+            requested_capabilities=tuple(capabilities),
+            covered=report.covered,
+            missing=report.missing,
+            source="deterministic",
+        )
 
     def _latest_artifact_name(
         self, state: PipelineState, stage: PipelineStage, fallback_prefix: str

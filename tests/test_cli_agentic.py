@@ -153,6 +153,12 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
     assert (run_dir / "pipeline.log").is_file(), "Should write pipeline.log"
     # Even with default profile/topic, the shared context block is stored for agents.
     assert (run_dir / "lesson_context.md").is_file(), "Should store lesson_context"
+    # Structured topic spec is persisted so the topic-fidelity detector can read
+    # the requested capabilities as data (R1, doc 11).
+    topic_spec_path = run_dir / "topic_spec.json"
+    assert topic_spec_path.is_file(), "Should store topic_spec.json"
+    spec = json.loads(topic_spec_path.read_text())
+    assert "learning_objectives" in spec and "title" in spec
 
 
 @pytest.mark.unit
@@ -224,6 +230,34 @@ def test_agentic_summary_surfaces_degradations(tmp_path: Path) -> None:
     assert "Degradations" in summary
     assert "grade_failed" in summary
     assert "empty content" in summary
+
+
+@pytest.mark.unit
+def test_agentic_summary_surfaces_dropped_topic_capability(tmp_path: Path) -> None:
+    """SUMMARY.md names any capability the topic requested but the notebook dropped.
+
+    This is the honesty guarantee of R1: a descope must never be silent.
+    """
+    from forged.cli import _write_agentic_summary
+    from forged.pipeline.state import TopicFidelitySignal
+
+    state = create_initial_state().with_topic_fidelity(
+        TopicFidelitySignal(
+            requested_capabilities=("Set up a local LLM", "Fine-tune the model with LoRA"),
+            covered=("Set up a local LLM",),
+            missing=("Fine-tune the model with LoRA",),
+            source="deterministic",
+        )
+    ).with_terminal("Acceptable", ok=True)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    _write_agentic_summary(run_dir, state, 5.0)
+
+    summary = (run_dir / "SUMMARY.md").read_text(encoding="utf-8")
+    assert "Topic Fidelity" in summary
+    assert "Fine-tune the model with LoRA" in summary
 
 
 @pytest.mark.unit

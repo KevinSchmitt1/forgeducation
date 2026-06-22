@@ -36,15 +36,20 @@
   - learner `requirements.txt` includes `ipykernel`; README documents kernel registration
   - **surfaced R1** (topic descoping) — now the top open task; see below
 
-### 🔄 Current Work — TOP PRIORITY
+### ✅ Recently Completed
 
-- **R1 — topic fidelity (the cut-off mandatory topic).** The agentic revision loop silently
-  dropped the requested "train / fine-tune" half of a lesson, shipping a well-explained but
-  off-topic notebook. This is a correctness defect and is the most important thing to fix now.
-  - **Full spec + start-here:** `docs/architecture/10-output-quality-remediation.md` → **Part IX / R1**.
-  - First fix: sharpen the Student/Reviewer scope rubric so an under-explained-but-correct step
-    routes to `content_reviser`, not a `blocker_structure` replan that descopes.
-  - See **"R1 — Topic Fidelity"** below for the lesson-level-vs-curriculum-planner split.
+- **R1 — topic fidelity, lesson level (Half A).** The agentic revision loop could silently drop a
+  capability the `--topic` requested (it shipped "setup local LLMs" for a "setup *and train*" topic).
+  Fixed at the lesson level: **detect & be honest**. Plan + close-out:
+  `docs/architecture/11-topic-fidelity-r1.md`.
+  - Student/Reviewer scope rubric sharpened: an under-explained-but-correct, executing step is
+    `content` (scaffold), never a `plan`/`structure` BLOCKER (amputate).
+  - Planner anchored to the brief on replan: keep every requested capability, or declare
+    infeasibility honestly — never silently substitute an easier lesson.
+  - Deterministic topic-fidelity detector (`forged/pipeline/fidelity.py`) emits a
+    **`TopicFidelitySignal`** recorded on state + surfaced in `SUMMARY.md`, so a descope is never
+    silent. **This signal is the reusable contract Phase 2 consumes** (the only R1↔Phase-2 coupling).
+  - `topic_spec.json` now persisted at CLI setup as the detector's structured input.
 
 ### ⏭ Postponed
 
@@ -54,9 +59,11 @@
 
 ### ⏭ Next Major Phase
 
-- **Phase 2: Curriculum planner** — orchestrates multiple module-level agentic runs into one
-  course. Now gated on **R1** (not Step 7). R1's topic-fidelity signal is a natural input to
-  module decomposition — see "R1 — Topic Fidelity" below.
+- **Phase 2: Curriculum planner (Half B)** — orchestrates multiple module-level agentic runs into
+  one course. **R1 (Half A) is now done**, so the foundation is in place: consume the
+  `TopicFidelitySignal` (`forged/pipeline/fidelity.py`, recorded on `PipelineState.topic_fidelity`)
+  so an over-large topic is decomposed into modules instead of silently cut. See "R1 — Topic
+  Fidelity" below and `docs/architecture/11-topic-fidelity-r1.md` → Part IV for the signal contract.
 
 ---
 

@@ -116,6 +116,47 @@ def medium_content_evidence(global_location: Location) -> Evidence:
     )
 
 
+# ── R1 regression: under-explained-but-correct step must not descope ──────────
+
+
+@pytest.fixture
+def under_explained_executing_cell(cell_location: Location) -> Evidence:
+    """The R1 finding: a correct, executing cell that is merely under-explained.
+
+    This is the exact shape that was mis-tagged [BLOCKER/plan] and triggered a
+    descoping replan. Correctly scoped, it is `content` — the explanation is thin,
+    but the step itself runs and is right.
+    """
+    return Evidence(
+        source="student_feedback",
+        severity="BLOCKER",
+        scope="content",
+        location=cell_location,
+        text="Trainer runs but MPS device selection isn't explained",
+    )
+
+
+@pytest.mark.unit
+def test_r1_under_explained_executing_step_routes_to_content_not_replan(
+    under_explained_executing_cell: Evidence,
+    ok_execution: ExecutionReport,
+) -> None:
+    """R1: a green-executing notebook whose only weakness is content-scoped must
+    classify CONTENT_QUALITY (→ content_reviser), never BLOCKER_STRUCTURE (→ planner).
+
+    This guards the lesson-fidelity contract the critic personas must satisfy:
+    an under-explained but correct, executing step is `content`, so the loop
+    *adds explanation* instead of replanning and amputating the section.
+    See docs/architecture/11-topic-fidelity-r1.md → Part V.
+    """
+    grade = GradeReport(quality_score=77.0, findings=[under_explained_executing_cell])
+
+    result = classify(execution_report=ok_execution, grade_report=grade)
+
+    assert result.category == FailureCategory.CONTENT_QUALITY
+    assert result.category != FailureCategory.BLOCKER_STRUCTURE
+
+
 # ── Category: BLOCKER_STRUCTURE ───────────────────────────────────────────────
 
 
