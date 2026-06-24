@@ -69,8 +69,14 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   Standing best-practice steps (always do these, not just when asked):
   - **Name the branch for the work**, not the ticket-of-the-moment. If scope shifts so the branch
     name no longer fits, move the commits to a correctly-named branch before opening the PR.
-  - **After opening a PR, watch CI and report.** Run `gh pr checks <n> --watch`; a PR is not "done"
-    until remote CI is green. If a check goes red, fix it and push before handing back.
+  - **After opening a PR, confirm CI without blocking the turn.** A PR isn't "done" until remote CI is
+    green — but do NOT wait on it with a blocking `gh ... --watch` or an `until/sleep` loop: the harness
+    auto-backgrounds long foreground commands, which ends the turn abruptly and looks like a hang.
+    Instead: do a quick one-shot check (`gh pr checks <n>` / `gh run list`) and report; if CI is still
+    running, either hand back with "CI is running, I'll confirm when it lands," or run the watch with
+    `run_in_background: true` AND say so up front. Same rule for the full test suite (5–8 min): run it
+    `run_in_background: true` with an explicit "running, will report on completion" note — never as a
+    silent blocking call. If a check goes red, fix it and push before handing back.
   - **After a PR merges, delete its feature branch** (local + remote:
     `git branch -d <b> && git push origin --delete <b>`) so stale/merged branches don't accumulate.
   - Use the `gh` CLI for PRs/checks (installed + authenticated on this machine).
