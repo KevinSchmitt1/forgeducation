@@ -1,0 +1,74 @@
+"""Course data model: a course is an ordered set of module specs.
+
+Each `ModuleSpec` wraps a `TopicSpecification`, so a module run is an ordinary agentic
+run (maximal reuse of the single-lesson pipeline). The course adds only ordering,
+inter-module prerequisites, and course metadata. Everything is frozen — same
+immutability discipline as `PipelineState`.
+
+A module's "capabilities" are its `learning_objectives + focus_areas`, mirroring R1's
+derivation in `reviser._assess_topic_fidelity`, so the course-level fidelity check
+(`forged.curriculum.fidelity`) agrees with the per-module R1 detector.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from forged.models import TopicSpecification
+
+
+def topic_capabilities(spec: TopicSpecification) -> tuple[str, ...]:
+    """The capabilities a topic spec requests: objectives + focus areas.
+
+    Mirrors the derivation in `forged.pipeline.agents.reviser._assess_topic_fidelity`
+    so the course-level union check and the per-module R1 detector judge the same set.
+    Blank entries are dropped.
+    """
+    return tuple(
+        c for c in (*spec.learning_objectives, *spec.focus_areas) if c and c.strip()
+    )
+
+
+@dataclass(frozen=True)
+class ModuleSpec:
+    """One module of a course — an ordinary topic plus its place in the sequence.
+
+    `module_prerequisites` names earlier modules (by title) this one builds on; the
+    orchestrator folds those modules' objectives into the learner's prior knowledge so
+    a later module never re-teaches an earlier one (doc 13, Design decision 7).
+    """
+
+    spec: TopicSpecification
+    order: int
+    module_prerequisites: tuple[str, ...] = ()
+
+    @property
+    def capabilities(self) -> tuple[str, ...]:
+        """Capabilities this module covers (objectives + focus areas)."""
+        return topic_capabilities(self.spec)
+
+
+@dataclass(frozen=True)
+class CourseSpec:
+    """An ordered course of module lessons with the rationale for the split.
+
+    `rationale` records *why* this decomposition — both an audit trail and a check on
+    the planner's honesty (it must account for every requested capability).
+    """
+
+    title: str
+    modules: tuple[ModuleSpec, ...]
+    rationale: str = ""
+
+    @property
+    def all_capabilities(self) -> tuple[str, ...]:
+        """Ordered, de-duplicated union of every module's capabilities.
+
+        This union is what the honesty invariant checks against the original topic:
+        the course must, collectively, still cover everything the topic requested.
+        """
+        seen: dict[str, None] = {}
+        for module in self.modules:
+            for capability in module.capabilities:
+                seen.setdefault(capability, None)
+        return tuple(seen)

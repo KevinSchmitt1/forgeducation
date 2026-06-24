@@ -33,6 +33,9 @@ from pathlib import Path
 
 from .config import load_pipeline
 from .context import build_context_block, topic_spec_to_json
+from .curriculum.fidelity import assess_course_fidelity
+from .curriculum.model import topic_capabilities
+from .curriculum.planner import CurriculumPlanner
 from .models import LearnerProfile, TopicSpecification
 from .orchestrator import MANIFEST_FILE, Orchestrator
 from .progress import Spinner
@@ -57,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_pipelines(args)
     if args.command == "agentic":
         return _cmd_agentic(args)
+    if args.command == "course":
+        return _cmd_course(args)
     return _cmd_build(args)
 
 
@@ -462,6 +467,80 @@ def _build_header(pipeline, profile_label: str) -> str:
     return f"▶ pipeline '{pipeline.name}' — {shape}\n  learner profile: {profile_label}\n"
 
 
+def _cmd_course(args) -> int:
+    """Decompose a topic into a course plan and check the union-coverage invariant.
+
+    Phase 1 is plan-only: it produces a CourseSpec and verifies the modules collectively
+    still cover the topic — no module runs (those arrive in Phase 2). A dropped capability
+    is an honest failure (non-zero exit), never a silent success.
+    """
+    topic = (args.topic or "").strip()
+    if not topic:
+        print("✗ --topic must not be empty", file=sys.stderr)
+        return EXIT_USAGE
+    if not args.plan_only:
+        print(
+            "✗ only --plan-only is implemented in Phase 1; module orchestration arrives "
+            "in Phase 2 (see docs/architecture/13-curriculum-planner.md)",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    _load_dotenv(Path.cwd() / ".env")
+    _load_dotenv(PACKAGE_ROOT / ".env")
+
+    try:
+        learner_profile = (
+            LearnerProfile.from_yaml(args.learner_profile)
+            if args.learner_profile
+            else _default_learner_profile()
+        )
+        topic_spec = (
+            TopicSpecification.from_yaml(args.topic_spec)
+            if args.topic_spec
+            else _default_topic_spec(topic)
+        )
+    except (FileNotFoundError, ValueError, TypeError) as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    try:
+        planner = CurriculumPlanner(personas_dir=Path(args.personas))
+        course = planner.plan(
+            brief=topic, learner_profile=learner_profile, topic_spec=topic_spec
+        )
+    except Exception as exc:
+        print(f"\n✗ Curriculum planning failed: {exc}", file=sys.stderr)
+        return EXIT_RUNTIME
+
+    report = assess_course_fidelity(list(topic_capabilities(topic_spec)), course)
+    _print_course(course)
+
+    if not report.is_faithful:
+        print(
+            "\n  ⚠ course-fidelity check FAILED — the decomposition dropped: "
+            + "; ".join(report.missing),
+            file=sys.stderr,
+        )
+        return EXIT_RUNTIME
+    print("\n  ✓ course-fidelity check passed — every requested capability is covered")
+    return EXIT_OK
+
+
+def _print_course(course) -> None:
+    """Render a CourseSpec to stdout for the plan-only dry run."""
+    print(f"\nCourse: {course.title}")
+    print(f"  {len(course.modules)} module(s)")
+    if course.rationale:
+        print(f"  Rationale: {course.rationale}")
+    for module in course.modules:
+        print(f"\n  [{module.order}] {module.spec.title}  ({module.spec.depth})")
+        for objective in module.spec.learning_objectives:
+            print(f"      - {objective}")
+        if module.module_prerequisites:
+            print(f"      builds on: {', '.join(module.module_prerequisites)}")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="forged",
@@ -542,6 +621,31 @@ def _build_parser() -> argparse.ArgumentParser:
     agentic.add_argument(
         "--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS
     )
+
+    course = sub.add_parser(
+        "course",
+        help="Decompose an over-large topic into an ordered course of module lessons",
+    )
+    course.add_argument("--topic", required=True, help="The course topic or brief")
+    course.add_argument(
+        "--plan-only", action="store_true",
+        help="Produce and check the course plan without running any module (zero LLM "
+             "run cost). Required in Phase 1 — module orchestration arrives in Phase 2 "
+             "(see docs/architecture/13-curriculum-planner.md).",
+    )
+    course.add_argument(
+        "--learner-profile",
+        type=Path,
+        help="Path to learner_profile.yaml (background, learning style, material "
+             "density). Uses a sensible default if omitted.",
+    )
+    course.add_argument(
+        "--topic-spec",
+        type=Path,
+        help="Path to topic_specification.yaml (scope, objectives, prerequisites, "
+             "depth). Uses a sensible default if omitted.",
+    )
+    course.add_argument("--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS)
 
     clean = sub.add_parser("clean", help="Prune old run directories (manual, confirmed)")
     clean.add_argument(
