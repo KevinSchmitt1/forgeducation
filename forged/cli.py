@@ -39,6 +39,7 @@ from .curriculum.planner import CurriculumPlanner
 from .models import LearnerProfile, TopicSpecification
 from .orchestrator import MANIFEST_FILE, Orchestrator
 from .progress import Spinner
+from .usage import write_usage_report
 
 # Repository/package root — where the bundled config/personas live.
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -291,6 +292,8 @@ def _cmd_agentic(args) -> int:
         _write_agentic_summary(run_dir, final_state, elapsed_sec)
         _write_final_notebook(run_dir, store, final_state)
         _write_learner_package(run_dir, store, final_state, topic, learner_profile)
+        # Per-call token usage (input/output/cached split) captured during the run.
+        write_usage_report(run_dir, final_state.run_id)
 
         # Exit-code truth: 0 only when the pipeline ended because the notebook
         # was ACCEPTABLE. Errors, budget exhaustion, and unclassifiable runs

@@ -30,6 +30,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     Langfuse = None  # type: ignore[assignment, misc]
 
 from .config import ModelConfig, Provider
+from .usage import UsageRecord, record_usage
 
 # Default local Ollama endpoint (OpenAI-compatible). Overridable via env.
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
@@ -305,7 +306,9 @@ class LLMClient:
                 f"LLM returned empty content: {detail} "
                 f"(provider={self._config.provider.value}, model={self._config.model})"
             )
-        self._tracer.record_success(observation, content, _usage_details(response))
+        usage = _usage_details(response)
+        self._tracer.record_success(observation, content, usage)
+        _record_usage(self._config, trace_context, usage)
         return content
 
 
@@ -342,4 +345,52 @@ def _usage_details(response: Any) -> dict[str, int] | None:
         value = getattr(usage, source_key, None)
         if value is not None:
             usage_details[target_key] = value
+
+    # Nested detail blocks (OpenAI; absent on Ollama). cached_tokens is the
+    # caching signal — cached input reads bill at ~0.1x; reasoning_tokens is
+    # gpt-5 thinking, billed as output. Surfaced so the report can split them.
+    cached = _nested_detail(usage, "prompt_tokens_details", "cached_tokens")
+    if cached is not None:
+        usage_details["cached_input"] = cached
+    reasoning = _nested_detail(usage, "completion_tokens_details", "reasoning_tokens")
+    if reasoning is not None:
+        usage_details["reasoning"] = reasoning
+
     return usage_details or None
+
+
+def _nested_detail(usage: Any, block: str, field: str) -> int | None:
+    """Read usage.<block>.<field>, tolerating a missing block/field (e.g. Ollama)."""
+    details = getattr(usage, block, None)
+    if details is None:
+        return None
+    value = getattr(details, field, None)
+    return value if isinstance(value, int) else None
+
+
+def _record_usage(
+    config: ModelConfig,
+    trace_context: LLMTraceContext | None,
+    usage: dict[str, int] | None,
+) -> None:
+    """Append this call's token usage to the ledger (best-effort, never raises)."""
+    if trace_context is None or usage is None:
+        return
+    try:
+        record_usage(
+            UsageRecord(
+                run_id=trace_context.run_id,
+                stage_name=trace_context.stage_name,
+                pipeline_kind=trace_context.pipeline_kind,
+                provider=config.provider.value,
+                model=config.model,
+                input_tokens=usage.get("input", 0),
+                cached_input_tokens=usage.get("cached_input", 0),
+                output_tokens=usage.get("output", 0),
+                reasoning_tokens=usage.get("reasoning", 0),
+                total_tokens=usage.get("total", 0),
+                iteration=trace_context.iteration,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - observability must not break LLM calls
+        _LOG.warning("Usage ledger record failed: %s", exc)
