@@ -38,6 +38,17 @@
 
 ### ✅ Recently Completed
 
+- **Learner orientation cell ("Start Here").** The accepted notebook opened with a topic summary in
+  its own jargon, so a learner missing the prerequisites was lost at cell 0 — even though the Planner
+  already computes a per-learner `KNOWN`/`GAP` map that never reached the learner. Fix (persona-only,
+  Planner + Code Author): the first markdown cell is now a learner **orientation** — plain-language
+  goal, a jargon-free two-facet roadmap (*what it does* + *what you should understand afterward*,
+  plain-first with real terms in parentheses), and "what this assumes / your likely gap" surfaced from
+  the gap map. Gated to one line when there are no gaps. R1's input-side twin: R1 = honest about
+  *output*; this = honest about *assumed input*. Plan + close-out:
+  `docs/architecture/12-notebook-orientation-cell.md`; validated by
+  `tests/pipeline/test_orientation_persona.py`. Phase 3 deterministic backstop deferred (YAGNI).
+
 - **R1 — topic fidelity, lesson level (Half A).** The agentic revision loop could silently drop a
   capability the `--topic` requested (it shipped "setup local LLMs" for a "setup *and train*" topic).
   Fixed at the lesson level: **detect & be honest**. Plan + close-out:
