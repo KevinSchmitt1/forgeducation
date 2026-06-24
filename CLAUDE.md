@@ -86,6 +86,9 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
 
 ## Current state & next task
 
+> **Resuming? Read [`HANDOVER.md`](HANDOVER.md) first** — cold-start brief with the next task, file
+> map, and open discussion items. Next session should open with a `/plan` phase.
+
 - **Merged & on `master`:** the Reviewer second critic + learner-aligned personas (PR #5);
   **R1 — topic fidelity, Half A** (`docs/architecture/11-…`); the **learner orientation cell**
   (`docs/architecture/12-…`); and the **curriculum planner Half B, Phases 1–2**
