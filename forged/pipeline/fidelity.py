@@ -116,6 +116,44 @@ def _distinctive_terms(capabilities: list[str]) -> list[set[str]]:
 # ── Assessment ─────────────────────────────────────────────────────────────────
 
 
+def assess_capability_coverage(
+    haystack_text: str, capabilities: list[str]
+) -> TopicFidelityReport:
+    """Report which capabilities the given text covers, via distinctive-term coverage.
+
+    The reusable core shared by the per-notebook check (`assess_topic_fidelity`) and
+    the course-level union check (`forged.curriculum.fidelity`): a capability is
+    *covered* when at least `COVERAGE_THRESHOLD` of its distinctive terms appear in
+    `haystack_text`. Distinctiveness is computed among the requested capabilities, so a
+    term shared across them cannot certify the wrong one.
+
+    Args:
+        haystack_text: free text to search (notebook cell sources, or the union of a
+            course's module capabilities).
+        capabilities: the requested capabilities; empty/blank entries are ignored.
+
+    Returns:
+        A TopicFidelityReport partitioning the (non-blank) capabilities into covered
+        and missing. With no capabilities requested, both are empty and is_faithful.
+    """
+    requested = [c for c in capabilities if c and c.strip()]
+    if not requested:
+        return TopicFidelityReport(covered=(), missing=())
+
+    haystack_terms = _terms(haystack_text)
+    distinctive = _distinctive_terms(requested)
+    covered: list[str] = []
+    missing: list[str] = []
+    for capability, terms in zip(requested, distinctive, strict=True):
+        present = len(terms & haystack_terms)
+        if terms and present >= COVERAGE_THRESHOLD * len(terms):
+            covered.append(capability)
+        else:
+            missing.append(capability)
+
+    return TopicFidelityReport(covered=tuple(covered), missing=tuple(missing))
+
+
 def assess_topic_fidelity(
     notebook_content: str, capabilities: list[str]
 ) -> TopicFidelityReport:
@@ -137,18 +175,5 @@ def assess_topic_fidelity(
         return TopicFidelityReport(covered=(), missing=())
 
     notebook = nbformat.reads(notebook_content, as_version=4)
-    notebook_terms = _terms(
-        "\n".join(cell.source for cell in notebook.cells if cell.get("source"))
-    )
-
-    distinctive = _distinctive_terms(requested)
-    covered: list[str] = []
-    missing: list[str] = []
-    for capability, terms in zip(requested, distinctive, strict=True):
-        present = len(terms & notebook_terms)
-        if terms and present >= COVERAGE_THRESHOLD * len(terms):
-            covered.append(capability)
-        else:
-            missing.append(capability)
-
-    return TopicFidelityReport(covered=tuple(covered), missing=tuple(missing))
+    haystack = "\n".join(cell.source for cell in notebook.cells if cell.get("source"))
+    return assess_capability_coverage(haystack, requested)

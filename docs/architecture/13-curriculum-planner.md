@@ -1,6 +1,12 @@
 # 13 — Curriculum Planner (Phase 2 / Half B)
 
-**Status:** 📋 PROPOSED (2026-06-24). Design of record; not yet implemented. This is **Half B** of the
+**Status:** 🚧 IN PROGRESS (2026-06-24). **Phase 1 (plan-only) implemented** — course data model
+(`forged/curriculum/model.py`), course-fidelity union check (`forged/curriculum/fidelity.py`, reusing
+an extracted `assess_capability_coverage` core in `pipeline/fidelity.py`), the `curriculum_planner`
+persona + `CurriculumPlanner` agent, and `forged course --plan-only`. Validated by
+`tests/test_curriculum_model.py`, `test_curriculum_fidelity.py`, `test_curriculum_planner.py`,
+`test_cli_course.py` (full suite green; coverage ≥ 80%). Phases 2–5 (orchestration, assembly, reactive
+safety net, full CLI) remain. This is **Half B** of the
 deliberate two-way split begun in R1 (`11-topic-fidelity-r1.md`). Half A (lesson-level *detect & be
 honest*) is merged. Half B is *resolve by decomposing*: turn an over-large topic into an ordered
 **course** of module-level lessons instead of silently cutting content. The two halves are coupled by
