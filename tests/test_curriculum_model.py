@@ -11,7 +11,7 @@ import dataclasses
 
 import pytest
 
-from forged.curriculum.model import CourseSpec, ModuleSpec
+from forged.curriculum.model import CourseResult, CourseSpec, ModuleResult, ModuleSpec
 from forged.models import TopicSpecification
 
 
@@ -72,3 +72,28 @@ def test_course_all_capabilities_is_ordered_union() -> None:
         "device choice",
         "fine-tune with LoRA",
     )
+
+
+@pytest.mark.unit
+def test_module_result_is_frozen() -> None:
+    module = ModuleSpec(spec=_topic("Setup", ["install"], []), order=0)
+    result = ModuleResult(
+        module=module, run_dir="/tmp/m0", terminal_ok=True,
+        notebook_path="/tmp/m0/lesson.ipynb", topic_fidelity=(),
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        result.terminal_ok = False  # type: ignore[misc]
+
+
+@pytest.mark.unit
+def test_course_result_is_frozen_and_holds_module_results() -> None:
+    module = ModuleSpec(spec=_topic("Setup", ["install"], []), order=0)
+    mr = ModuleResult(
+        module=module, run_dir="/tmp/m0", terminal_ok=True,
+        notebook_path=None, topic_fidelity=(),
+    )
+    course = CourseSpec(title="C", modules=(module,), rationale="")
+    result = CourseResult(course=course, modules=(mr,))
+    assert result.modules[0].run_dir == "/tmp/m0"
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        result.modules = ()  # type: ignore[misc]

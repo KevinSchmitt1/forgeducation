@@ -478,18 +478,12 @@ def _cmd_course(args) -> int:
     if not topic:
         print("✗ --topic must not be empty", file=sys.stderr)
         return EXIT_USAGE
-    if not args.plan_only:
-        print(
-            "✗ only --plan-only is implemented in Phase 1; module orchestration arrives "
-            "in Phase 2 (see docs/architecture/13-curriculum-planner.md)",
-            file=sys.stderr,
-        )
-        return EXIT_USAGE
 
     _load_dotenv(Path.cwd() / ".env")
     _load_dotenv(PACKAGE_ROOT / ".env")
 
     try:
+        pipeline = load_pipeline(args.config)
         learner_profile = (
             LearnerProfile.from_yaml(args.learner_profile)
             if args.learner_profile
@@ -516,6 +510,7 @@ def _cmd_course(args) -> int:
     report = assess_course_fidelity(list(topic_capabilities(topic_spec)), course)
     _print_course(course)
 
+    # A decomposition that dropped a capability is never run — fail honestly first.
     if not report.is_faithful:
         print(
             "\n  ⚠ course-fidelity check FAILED — the decomposition dropped: "
@@ -523,8 +518,105 @@ def _cmd_course(args) -> int:
             file=sys.stderr,
         )
         return EXIT_RUNTIME
-    print("\n  ✓ course-fidelity check passed — every requested capability is covered")
+
+    if args.plan_only:
+        if args.out:
+            _persist_course(Path(args.out), course, report)
+        print("\n  ✓ course-fidelity check passed — every requested capability is covered")
+        return EXIT_OK
+
+    # Phase 2: run each module through the lesson pipeline.
+    from datetime import datetime
+
+    from .curriculum.orchestrator import run_course
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    course_dir = Path(args.runs) / f"{stamp}_course_{_dir_slug(topic)}"
+    course_dir.mkdir(parents=True, exist_ok=True)
+    _persist_course(course_dir, course, report)
+
+    total = len(course.modules)
+    n = total if args.max_modules is None else min(args.max_modules, total)
+    print(f"\n▶ Running {n} module lesson(s) into {course_dir} …")
+    result = run_course(
+        course,
+        learner_profile,
+        course_dir,
+        pipeline=pipeline,
+        personas_dir=Path(args.personas),
+        provision=not getattr(args, "no_provision", False),
+        max_modules=args.max_modules,
+    )
+    return _report_course_result(result, course_dir)
+
+
+def _dir_slug(text: str) -> str:
+    """Filesystem-safe short slug for a course directory name."""
+    return "".join(c if c.isalnum() else "_" for c in text.lower()).strip("_")[:30] or "course"
+
+
+def _report_course_result(result, course_dir: Path) -> int:
+    """Print per-module status; EXIT_OK only when every module reached an acceptable
+    notebook. Failures are reported, never hidden."""
+    ok = sum(1 for m in result.modules if m.terminal_ok)
+    total = len(result.modules)
+    print(f"\nCourse complete: {ok}/{total} module(s) acceptable — {course_dir}")
+    for m in result.modules:
+        mark = "✓" if m.terminal_ok else "✗"
+        nb = m.notebook_path or "(no notebook)"
+        print(f"  {mark} [{m.module.order}] {m.module.spec.title} → {nb}")
+        dropped = [cap for sig in m.topic_fidelity for cap in sig.missing]
+        if dropped:
+            print(f"      ⚠ still dropped: {'; '.join(dropped)}", file=sys.stderr)
+    if ok < total:
+        print(
+            f"  ⚠ {total - ok} module(s) did not reach an acceptable notebook — "
+            f"see each module's SUMMARY.md",
+            file=sys.stderr,
+        )
+        return EXIT_RUNTIME
     return EXIT_OK
+
+
+def _persist_course(out_dir: Path, course, report) -> None:
+    """Write the course plan to <out>/course_plan.json + <out>/COURSE.md."""
+    import json
+
+    from .curriculum.model import course_to_dict
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "course": course_to_dict(course),
+        "fidelity": {
+            "is_faithful": report.is_faithful,
+            "covered": list(report.covered),
+            "missing": list(report.missing),
+        },
+    }
+    (out_dir / "course_plan.json").write_text(
+        json.dumps(payload, indent=2), encoding="utf-8"
+    )
+    (out_dir / "COURSE.md").write_text(_render_course_md(course, report), encoding="utf-8")
+    print(f"\n  ↳ plan written to {out_dir / 'course_plan.json'} and {out_dir / 'COURSE.md'}")
+
+
+def _render_course_md(course, report) -> str:
+    """A human-readable course index for the plan-only dry run."""
+    lines = [f"# {course.title}", "", f"_{len(course.modules)} module(s)_", ""]
+    if course.rationale:
+        lines += [f"**Rationale:** {course.rationale}", ""]
+    for module in course.modules:
+        lines.append(f"## [{module.order}] {module.spec.title} ({module.spec.depth})")
+        for objective in module.spec.learning_objectives:
+            lines.append(f"- {objective}")
+        if module.module_prerequisites:
+            lines.append(f"\n_Builds on: {', '.join(module.module_prerequisites)}_")
+        lines.append("")
+    verdict = "✓ covers every requested capability" if report.is_faithful else (
+        "⚠ DROPPED: " + "; ".join(report.missing)
+    )
+    lines += ["---", "", f"**Course-fidelity:** {verdict}", ""]
+    return "\n".join(lines)
 
 
 def _print_course(course) -> None:
@@ -630,8 +722,24 @@ def _build_parser() -> argparse.ArgumentParser:
     course.add_argument(
         "--plan-only", action="store_true",
         help="Produce and check the course plan without running any module (zero LLM "
-             "run cost). Required in Phase 1 — module orchestration arrives in Phase 2 "
-             "(see docs/architecture/13-curriculum-planner.md).",
+             "run cost). Omit to also run each module through the lesson pipeline.",
+    )
+    course.add_argument(
+        "--config", default=str(DEFAULT_CONFIG),
+        help="Pipeline YAML used to resolve stage-specific models for each module run "
+             "(default: bundled review-loop).",
+    )
+    course.add_argument(
+        "--runs", default=str(Path.cwd() / "runs"),
+        help="Root directory for the course output (default: ./runs).",
+    )
+    course.add_argument(
+        "--max-modules", type=int, default=None,
+        help="Cap the number of module lessons actually run (cost control).",
+    )
+    course.add_argument(
+        "--no-provision", action="store_true",
+        help="Skip per-module virtualenv provisioning; run on the base kernel.",
     )
     course.add_argument(
         "--learner-profile",
@@ -644,6 +752,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path to topic_specification.yaml (scope, objectives, prerequisites, "
              "depth). Uses a sensible default if omitted.",
+    )
+    course.add_argument(
+        "--out",
+        type=Path,
+        help="Directory to persist the course plan into (course_plan.json + COURSE.md). "
+             "When omitted, the plan is only printed.",
     )
     course.add_argument("--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS)
 

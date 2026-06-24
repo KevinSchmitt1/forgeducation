@@ -77,6 +77,14 @@ def test_curriculum_planner_loads_persona() -> None:
 
 
 @pytest.mark.unit
+def test_curriculum_planner_defaults_to_gpt_5_mini() -> None:
+    """Curriculum planning is a reasoning task — default to gpt-5-mini, not the bare
+    ModelConfig gpt-4o-mini default (coarser decompositions)."""
+    planner = CurriculumPlanner(llm_client=_StubClient("{}"))
+    assert planner.model == "gpt-5-mini"
+
+
+@pytest.mark.unit
 def test_plan_parses_json_into_coursespec() -> None:
     planner = CurriculumPlanner(llm_client=_StubClient(_TWO_MODULE_JSON))
 

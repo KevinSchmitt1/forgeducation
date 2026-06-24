@@ -11,7 +11,8 @@ from __future__ import annotations
 import pytest
 
 import forged.cli as cli
-from forged.curriculum.model import CourseSpec, ModuleSpec
+import forged.curriculum.orchestrator as orch
+from forged.curriculum.model import CourseResult, CourseSpec, ModuleResult, ModuleSpec
 from forged.models import TopicSpecification
 
 
@@ -87,13 +88,136 @@ def test_course_plan_only_warns_on_dropped_capability(monkeypatch, capsys) -> No
 
 
 @pytest.mark.unit
-def test_course_requires_plan_only_flag_in_phase_1(monkeypatch) -> None:
-    _patch_planner(monkeypatch, CourseSpec(title="x", modules=(), rationale=""))
-    code = cli.main(["course", "--topic", "anything"])
-    assert code == cli.EXIT_USAGE
+def test_course_plan_only_persists_to_out_dir(monkeypatch, tmp_path) -> None:
+    import json
+
+    course = CourseSpec(
+        title="Quantum teleportation course",
+        modules=(
+            _module("Foundations", ["Understand quantum teleportation basics"], [], 0),
+            _module("Practice", ["apply quantum teleportation protocols"], [], 1),
+        ),
+        rationale="split foundations from practice",
+    )
+    _patch_planner(monkeypatch, course)
+
+    out = tmp_path / "course"
+    code = cli.main(
+        ["course", "--topic", "quantum teleportation", "--plan-only", "--out", str(out)]
+    )
+
+    assert code == cli.EXIT_OK
+    plan = json.loads((out / "course_plan.json").read_text())
+    assert plan["course"]["title"] == "Quantum teleportation course"
+    assert len(plan["course"]["modules"]) == 2
+    assert plan["fidelity"]["is_faithful"] is True
+    assert "Foundations" in (out / "COURSE.md").read_text()
 
 
 @pytest.mark.unit
 def test_course_empty_topic_is_usage_error() -> None:
     code = cli.main(["course", "--topic", "   ", "--plan-only"])
     assert code == cli.EXIT_USAGE
+
+
+# ── orchestration path (no --plan-only) ───────────────────────────────────────
+
+
+def _faithful_course() -> CourseSpec:
+    return CourseSpec(
+        title="Quantum teleportation course",
+        modules=(
+            _module("Foundations", ["Understand quantum teleportation basics"], [], 0),
+            _module("Practice", ["apply quantum teleportation protocols"], [], 1),
+        ),
+        rationale="split",
+    )
+
+
+def _patch_run_course(monkeypatch, result: CourseResult) -> dict:
+    """Patch the orchestrator's run_course; capture the kwargs it was called with."""
+    captured: dict = {}
+
+    def _fake(course, learner_profile, course_dir, **kwargs):
+        captured["course"] = course
+        captured["kwargs"] = kwargs
+        return result
+    monkeypatch.setattr(orch, "run_course", _fake)
+    return captured
+
+
+def _module_result(course: CourseSpec, terminal_ok: bool) -> CourseResult:
+    return CourseResult(
+        course=course,
+        modules=tuple(
+            ModuleResult(
+                module=m, run_dir=f"/tmp/m{m.order}", terminal_ok=terminal_ok,
+                notebook_path=f"/tmp/m{m.order}/lesson.ipynb" if terminal_ok else None,
+                topic_fidelity=(),
+            )
+            for m in course.modules
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_course_without_plan_only_invokes_orchestrator(monkeypatch, tmp_path) -> None:
+    course = _faithful_course()
+    _patch_planner(monkeypatch, course)
+    captured = _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
+
+    code = cli.main(
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+    )
+
+    assert code == cli.EXIT_OK
+    assert captured["course"] is course  # orchestration actually ran
+
+
+@pytest.mark.unit
+def test_course_threads_max_modules_and_no_provision(monkeypatch, tmp_path) -> None:
+    course = _faithful_course()
+    _patch_planner(monkeypatch, course)
+    captured = _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
+
+    cli.main(
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path),
+         "--max-modules", "1", "--no-provision"]
+    )
+
+    assert captured["kwargs"]["max_modules"] == 1
+    assert captured["kwargs"]["provision"] is False
+
+
+@pytest.mark.unit
+def test_course_with_failed_module_exits_runtime(monkeypatch, tmp_path) -> None:
+    course = _faithful_course()
+    _patch_planner(monkeypatch, course)
+    _patch_run_course(monkeypatch, _module_result(course, terminal_ok=False))
+
+    code = cli.main(
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+    )
+    assert code == cli.EXIT_RUNTIME
+
+
+@pytest.mark.unit
+def test_course_fidelity_failure_blocks_orchestration(monkeypatch, tmp_path) -> None:
+    # Course covers nothing about the topic → never orchestrate.
+    dropped = CourseSpec(
+        title="Unrelated", modules=(_module("Apples", ["learn about apples"], [], 0),),
+        rationale="",
+    )
+    _patch_planner(monkeypatch, dropped)
+    ran = {"called": False}
+
+    def _fake(*a, **k):
+        ran["called"] = True
+        return _module_result(dropped, True)
+    monkeypatch.setattr(orch, "run_course", _fake)
+
+    code = cli.main(
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+    )
+    assert code == cli.EXIT_RUNTIME
+    assert ran["called"] is False
