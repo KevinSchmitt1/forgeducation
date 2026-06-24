@@ -67,6 +67,13 @@ forged build \
 forged build --topic "How a Bloom filter works" --config config/pipeline.skeleton.yaml
 forged pipelines
 # (start `ollama serve`, set provider: ollama in the YAML — nothing leaves your machine)
+
+# 3. Course — decompose an over-large topic into an ordered set of module notebooks.
+#    --plan-only just prints/saves the decomposition (cheap: one planner call, no module runs);
+#    omit it to run one lesson pipeline per module (each module's learner profile gains the
+#    earlier modules' objectives as prior knowledge, so later modules aren't re-taught).
+forged course --topic "Local LLM engineering on Apple Silicon" --plan-only --out ./runs/course-plan
+forged course --topic "Local LLM engineering on Apple Silicon" --max-modules 1   # run modules
 ```
 
 ### Writing the two context files
