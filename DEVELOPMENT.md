@@ -43,11 +43,12 @@ User Input                           Pipeline Execution
 
 ## Agentic Pipeline Status
 
-The repo contains two execution paths:
+The repo contains two execution paths, plus a course layer above them:
 
 1. **Linear CLI** (`forged build`): the primary, stable, user-facing path in
    [forged/cli.py](forged/cli.py). Use this for real lesson generation.
 2. **Agentic CLI/API** (`forged agentic` or `await forged.pipeline.run_pipeline(...)`): a LangGraph-based pipeline in [forged/pipeline/](forged/pipeline) that classifies failures and reroutes to the appropriate agent. Phases 1–9 are complete, stage-specific model defaults are configured through pipeline YAML, and every LLM-backed prompt is traced to Langfuse when credentials are present; see [docs/architecture/08-stage-specific-models.md](docs/architecture/08-stage-specific-models.md) and [docs/architecture/09-langfuse-tracing.md](docs/architecture/09-langfuse-tracing.md).
+3. **Curriculum layer** (`forged course`): a composition layer *above* the unchanged lesson loop in [forged/curriculum/](forged/curriculum). It decomposes an over-large topic into an ordered course of modules (`--plan-only` to just plan) and runs each module through the agentic `run_pipeline`, folding earlier modules' objectives into later modules' prior knowledge. Phases 1–2 done; see [docs/architecture/13-curriculum-planner.md](docs/architecture/13-curriculum-planner.md).
 
 ### What is implemented (Phases 1–9)
 

@@ -69,8 +69,14 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   Standing best-practice steps (always do these, not just when asked):
   - **Name the branch for the work**, not the ticket-of-the-moment. If scope shifts so the branch
     name no longer fits, move the commits to a correctly-named branch before opening the PR.
-  - **After opening a PR, watch CI and report.** Run `gh pr checks <n> --watch`; a PR is not "done"
-    until remote CI is green. If a check goes red, fix it and push before handing back.
+  - **After opening a PR, confirm CI without blocking the turn.** A PR isn't "done" until remote CI is
+    green — but do NOT wait on it with a blocking `gh ... --watch` or an `until/sleep` loop: the harness
+    auto-backgrounds long foreground commands, which ends the turn abruptly and looks like a hang.
+    Instead: do a quick one-shot check (`gh pr checks <n>` / `gh run list`) and report; if CI is still
+    running, either hand back with "CI is running, I'll confirm when it lands," or run the watch with
+    `run_in_background: true` AND say so up front. Same rule for the full test suite (5–8 min): run it
+    `run_in_background: true` with an explicit "running, will report on completion" note — never as a
+    silent blocking call. If a check goes red, fix it and push before handing back.
   - **After a PR merges, delete its feature branch** (local + remote:
     `git branch -d <b> && git push origin --delete <b>`) so stale/merged branches don't accumulate.
   - Use the `gh` CLI for PRs/checks (installed + authenticated on this machine).
@@ -80,15 +86,20 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
 
 ## Current state & next task
 
-- **Merged (PR #5):** the Reviewer second critic, learner-aligned explanation personas, and
-  runnable-kernel packaging. `master` reflects this; pipeline docs are synced.
-- **🔜 Top open task — R1 (topic fidelity).** The agentic loop can **silently drop a capability the
-  `--topic` explicitly requested** (it shipped a "setup local LLMs" notebook for a "setup *and train*"
-  topic). Full spec + start-here pointer: **`docs/architecture/10-output-quality-remediation.md` →
-  Part IX / R1** (also promoted into that doc's "read this first" hand-off). Start with the
-  Student/Reviewer scope rubric in `personas/student.md` + `personas/reviewer.md`.
-- **Roadmap & priorities:** `TODO.md` (Step 7 input-spec testing is postponed behind R1; Phase 2 =
-  curriculum planner).
+- **Merged & on `master`:** the Reviewer second critic + learner-aligned personas (PR #5);
+  **R1 — topic fidelity, Half A** (`docs/architecture/11-…`); the **learner orientation cell**
+  (`docs/architecture/12-…`); and the **curriculum planner Half B, Phases 1–2**
+  (`docs/architecture/13-…`) — plan a course (`forged course --plan-only`) and run it
+  (`forged course`, orchestrating one lesson pipeline per module with the prior-knowledge context
+  hand-down). The three honesty features compound: R1 (don't drop in a lesson) → orientation (don't
+  silently assume a prereq) → curriculum (don't drop across a course; don't re-teach across modules).
+- **🔜 Next — curriculum planner Phases 3–5.** Phase 3 (course assembly: index + cross-links), Phase 4
+  (reactive `R1 → planner → R1` re-decomposition when a module is still over-large), Phase 5 (close-out).
+  Plus a **cleanup**: extract `cli`'s per-run deliverable writers into a shared module (the orchestrator
+  currently reaches into them via a deferred import). A **live full course run** is unspent (paid; do a
+  `--max-modules 1` smoke test first). Start-here: `docs/architecture/13-curriculum-planner.md`.
+- **Roadmap & priorities:** `TODO.md` (Step 7 input-spec testing remains postponed; curriculum Phases
+  3–5 are the active track).
 
 ## Gotchas learned the hard way
 

@@ -38,6 +38,24 @@
 
 ### ✅ Recently Completed
 
+- **Curriculum planner (Half B) — Phases 1–2.** A new orchestration layer *above* the unchanged
+  lesson loop that decomposes an over-large topic into an ordered course of module lessons and runs
+  each module. Plan + status: `docs/architecture/13-curriculum-planner.md`.
+  - **Phase 1 (plan-only):** `forged/curriculum/` — frozen `CourseSpec`/`ModuleSpec`; `CurriculumPlanner`
+    (persona `personas/curriculum_planner.md`, defaults to **gpt-5-mini**) decomposes a brief into an
+    ordered course; `assess_course_fidelity` enforces the union-coverage honesty invariant (the union of
+    module capabilities must cover every requested capability — distribute, never drop), reusing R1's
+    term logic. `forged course --plan-only [--out DIR]` (persists `course_plan.json` + `COURSE.md`).
+  - **Phase 2 (orchestration):** `run_course` runs each module through the **unchanged** `run_pipeline`
+    with the **context hand-down** — `_augment_profile` folds earlier modules' objectives into a later
+    module's `prior_knowledge` (immutable), seeded via the same `build_context_block` the single-run path
+    uses, so module N is never re-taught modules 1…N-1. Frozen `ModuleResult`/`CourseResult`; failing
+    modules recorded never skipped; sequential (parallel deferred). `forged course` (no `--plan-only`)
+    runs the course under `runs/<stamp>_course_<slug>/` with `--max-modules`/`--no-provision`.
+  - **Validated:** real plan-only runs on the local-LLM topic (2-module split) and an overarching course
+    (6-module DAG); full suite green. **Known gap:** per-module deliverable writers reused from `cli` via
+    a deferred import, patched out in unit tests — real writing runs only live (extraction is a follow-up).
+
 - **Learner orientation cell ("Start Here").** The accepted notebook opened with a topic summary in
   its own jargon, so a learner missing the prerequisites was lost at cell 0 — even though the Planner
   already computes a per-learner `KNOWN`/`GAP` map that never reached the learner. Fix (persona-only,
@@ -68,43 +86,40 @@
   Deferred because R1 matters more right now. The linear-vs-agentic comparison is dropped — we
   only ship the agentic pipeline. Detail retained below.
 
-### ⏭ Next Major Phase
+### ⏭ Next Up — Curriculum planner Phases 3–5 + cleanup
 
-- **Phase 2: Curriculum planner (Half B)** — orchestrates multiple module-level agentic runs into
-  one course. **R1 (Half A) is now done**, so the foundation is in place: consume the
-  `TopicFidelitySignal` (`forged/pipeline/fidelity.py`, recorded on `PipelineState.topic_fidelity`)
-  so an over-large topic is decomposed into modules instead of silently cut. See "R1 — Topic
-  Fidelity" below and `docs/architecture/11-topic-fidelity-r1.md` → Part IV for the signal contract.
+The curriculum planner can now plan and run a course. What remains (see
+`docs/architecture/13-curriculum-planner.md` Phases 3–5):
+
+- **Phase 3 — course assembly.** Stitch the per-module outputs into one course: an index `README.md`
+  (ordered modules, prerequisite cross-links) + aggregate `COURSE.md` surfacing each module's
+  degradations / fidelity signals.
+- **Phase 4 — reactive safety net (the R1 → planner → R1 loop).** When a module run still drops a
+  capability (`ModuleResult.topic_fidelity.missing`), hand the overflow back to the curriculum planner
+  as a new module and run it; bounded by `--max-modules`. (Kevin's framing.)
+- **Phase 5 — close-out.** Flip doc 13 to IMPLEMENTED; full CLI polish.
+- **Cleanup (known gap):** extract `forged.cli`'s per-run deliverable writers
+  (`_write_agentic_summary`/`_write_final_notebook`/`_write_learner_package`) into a shared module so
+  the orchestrator needn't reach into `cli` via a deferred import.
+- **Live validation (paid):** a real full course run (N module pipelines) — needs consent + cost
+  (~$10–25, 1–3h for the 6-module course). Suggested first step: a single-module smoke test
+  (`forged course … --max-modules 1 --no-provision`).
 
 ---
 
-## R1 — Topic Fidelity (the cut-off mandatory topic) — TOP PRIORITY
+## ✅ R1 — Topic Fidelity (the cut-off mandatory topic) — DONE
 
-**Problem.** On topic *"setup AND train local LLMs"*, the agentic loop produced a well-explained
-notebook that **silently dropped LoRA fine-tuning** across iterations: a content-scoped explanation
-gap was mis-tagged `[BLOCKER/plan]`, which triggered a replan that descoped instead of scaffolding.
-Full spec, fix direction, and acceptance: `docs/architecture/10-output-quality-remediation.md` → **Part IX / R1**.
+**Shipped** (lesson-level "detect & be honest"; see Recently Completed above and
+`docs/architecture/11-topic-fidelity-r1.md`). Its `TopicFidelitySignal` is the reusable contract the
+curriculum planner (Half B) now consumes. Historical context retained below.
 
-**Two layers — fix detection now, resolve via the curriculum planner later:**
+**Problem (now fixed).** On topic *"setup AND train local LLMs"*, the agentic loop produced a
+well-explained notebook that **silently dropped LoRA fine-tuning** across iterations: a content-scoped
+explanation gap was mis-tagged `[BLOCKER/plan]`, which triggered a replan that descoped instead of
+scaffolding. Full spec: `docs/architecture/10-output-quality-remediation.md` → **Part IX / R1**.
 
-1. **Lesson level (do now).** The loop must never *silently* drop a capability named in the `--topic`.
-   - Sharpen the Student/Reviewer scope rubric (an under-explained-but-correct step is `content`, not a
-     `plan` BLOCKER) so explanation gaps stop triggering descoping replans.
-   - Anchor the planner to the brief on replan + add a topic-fidelity check, so any genuine descope is
-     **reported honestly** (recorded signal / non-acceptable), never hidden.
-
-2. **Curriculum planner (Phase 2 — Kevin's brainstorm).** Once descoping is *visible*, the curriculum
-   planner is the right place to *resolve* an over-large topic: decompose it into modules so the cut
-   content becomes its own lesson (setup module + fine-tuning module) or is handed to a sibling
-   notebook, rather than being lost. R1's signal is the trigger for that decomposition.
-
-**Keep R1 and the curriculum planner separate** (tracked + implemented independently). Do **not** fold
-R1 into Phase 2 — the silent-drop defect would otherwise be multiplied across every module the planner
-spawns. Fix the lesson-level detection/honesty first (it's the foundation), and design the
-topic-fidelity signal as a reusable contract Phase 2 *consumes* for module splitting. The only coupling
-is that signal. Division of labour: lesson level = **detect & be honest** (R1, here); curriculum level
-= **resolve by decomposing** (Phase 2). See the matching "Scope boundary" note in
-`docs/architecture/10-output-quality-remediation.md` → Part IX / R1.
+Division of labour (both halves now done): lesson level = **detect & be honest** (R1); curriculum
+level = **resolve by decomposing** (curriculum planner, above).
 
 ---
 
@@ -157,44 +172,38 @@ is that signal. Division of labour: lesson level = **detect & be honest** (R1, h
 
 ---
 
-## Phase 2: Curriculum Planner
+## Curriculum Planner (Half B) — design questions still open for Phases 3–5
 
-**Status:** design sketched; implementation gated on **R1** (topic-fidelity foundation). Step 7 is
-postponed, so Phase 2 no longer waits on it — but it should consume R1's topic-fidelity signal so an
-over-large topic is decomposed into modules instead of silently cut (see "R1 — Topic Fidelity").
+**Status:** Phases 1–2 **implemented** (plan + orchestrate; see Recently Completed and
+`docs/architecture/13-curriculum-planner.md`). The decisions below were resolved during build; the
+remaining open questions belong to Phases 3–5.
 
-**What it does:**
+**Resolved during Phases 1–2:**
 
-- Input: broad topic area (for example, `LLM & Agentic AI`)
-- Output: module breakdown plus one agentic lesson pipeline per module
-- Final output: course-level README/manifest plus module artifacts
+1. **Sequential vs. parallel?** Sequential now; dependency-aware parallel deferred (the modules form a
+   DAG, and because only *objectives* are folded into prior knowledge there is no hard data dependency
+   forcing strict order — so parallel is feasible later). See doc 13 Part I.b.
+2. **Learner profile global or per-module?** Per-module **augmentation** — each later module's profile
+   gains earlier modules' objectives as prior knowledge (the context hand-down), so the learner "learns
+   consecutively." Base profile never mutated.
+3. **Cross-module coverage validation.** Deterministic `assess_course_fidelity` (union-coverage) checks
+   the plan covers every requested capability before any run.
 
-**Design sketch:**
+**Still open (Phases 3–5):**
 
-```text
-CurriculumPlanner Agent
-  ↓ outputs
-Module 1 spec → agentic pipeline → Module 1 output
-Module 2 spec → agentic pipeline → Module 2 output
-Module 3 spec → agentic pipeline → Module 3 output
-  ↓ collects
-Course output (README + modules + course-manifest.json)
-```
-
-**Open design questions:**
-
-1. Sequential vs. parallel module generation?
-2. How to validate cross-module dependencies and ordering? --> maybe the planner does it first and the both reviewers (student and expert) analyse, if all the topics taught are present in the full curriculum/covered by other notebooks
-3. What should the course-level manifest contract be?
-4. Should learner profile stay global or allow per-module overrides? --> it could override, since the learner learns consecutively in the notebooks
+1. Course-level manifest/index contract (Phase 3 assembly).
+2. Reactive re-decomposition policy + bounds when a module is still over-large (Phase 4).
+3. When (if ever) to turn on parallel module execution.
 
 ---
 
 ## Dependencies
 
-- **Step 7** depends on the completed agentic pipeline and benefits from the new stage-specific model configuration.
-- **Further observability follow-up** depends on the current Langfuse wiring and should focus next on linking run artifacts back to traces.
-- **Phase 2** depends on Step 7 establishing a quality/cost baseline.
+- **Curriculum planner Phases 3–5** build on the merged Phases 1–2 (no external gate).
+- **Step 7 (postponed)** depends on the completed agentic pipeline; lower priority than the curriculum
+  planner follow-ups.
+- **Observability follow-up** depends on the current Langfuse wiring; next focus is linking run
+  artifacts back to traces.
 
 ---
 
@@ -203,5 +212,8 @@ Course output (README + modules + course-manifest.json)
 - `docs/architecture/07-agentic-pipeline-status.md` — current implemented agentic pipeline
 - `docs/architecture/08-stage-specific-models.md` — current model-resolution design and defaults
 - `docs/architecture/09-langfuse-tracing.md` — current tracing implementation and caveats
+- `docs/architecture/11-topic-fidelity-r1.md` — R1 (topic fidelity, Half A) — DONE
+- `docs/architecture/12-notebook-orientation-cell.md` — learner orientation cell — DONE
+- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1–2 done
 - `DEVELOPMENT.md` — contributor-oriented map of the codebase
 - `templates/README.md` — user-facing structured input guide
