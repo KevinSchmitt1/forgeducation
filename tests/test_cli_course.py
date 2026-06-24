@@ -87,6 +87,33 @@ def test_course_plan_only_warns_on_dropped_capability(monkeypatch, capsys) -> No
 
 
 @pytest.mark.unit
+def test_course_plan_only_persists_to_out_dir(monkeypatch, tmp_path) -> None:
+    import json
+
+    course = CourseSpec(
+        title="Quantum teleportation course",
+        modules=(
+            _module("Foundations", ["Understand quantum teleportation basics"], [], 0),
+            _module("Practice", ["apply quantum teleportation protocols"], [], 1),
+        ),
+        rationale="split foundations from practice",
+    )
+    _patch_planner(monkeypatch, course)
+
+    out = tmp_path / "course"
+    code = cli.main(
+        ["course", "--topic", "quantum teleportation", "--plan-only", "--out", str(out)]
+    )
+
+    assert code == cli.EXIT_OK
+    plan = json.loads((out / "course_plan.json").read_text())
+    assert plan["course"]["title"] == "Quantum teleportation course"
+    assert len(plan["course"]["modules"]) == 2
+    assert plan["fidelity"]["is_faithful"] is True
+    assert "Foundations" in (out / "COURSE.md").read_text()
+
+
+@pytest.mark.unit
 def test_course_requires_plan_only_flag_in_phase_1(monkeypatch) -> None:
     _patch_planner(monkeypatch, CourseSpec(title="x", modules=(), rationale=""))
     code = cli.main(["course", "--topic", "anything"])

@@ -515,6 +515,8 @@ def _cmd_course(args) -> int:
 
     report = assess_course_fidelity(list(topic_capabilities(topic_spec)), course)
     _print_course(course)
+    if args.out:
+        _persist_course(Path(args.out), course, report)
 
     if not report.is_faithful:
         print(
@@ -525,6 +527,47 @@ def _cmd_course(args) -> int:
         return EXIT_RUNTIME
     print("\n  ✓ course-fidelity check passed — every requested capability is covered")
     return EXIT_OK
+
+
+def _persist_course(out_dir: Path, course, report) -> None:
+    """Write the course plan to <out>/course_plan.json + <out>/COURSE.md."""
+    import json
+
+    from .curriculum.model import course_to_dict
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "course": course_to_dict(course),
+        "fidelity": {
+            "is_faithful": report.is_faithful,
+            "covered": list(report.covered),
+            "missing": list(report.missing),
+        },
+    }
+    (out_dir / "course_plan.json").write_text(
+        json.dumps(payload, indent=2), encoding="utf-8"
+    )
+    (out_dir / "COURSE.md").write_text(_render_course_md(course, report), encoding="utf-8")
+    print(f"\n  ↳ plan written to {out_dir / 'course_plan.json'} and {out_dir / 'COURSE.md'}")
+
+
+def _render_course_md(course, report) -> str:
+    """A human-readable course index for the plan-only dry run."""
+    lines = [f"# {course.title}", "", f"_{len(course.modules)} module(s)_", ""]
+    if course.rationale:
+        lines += [f"**Rationale:** {course.rationale}", ""]
+    for module in course.modules:
+        lines.append(f"## [{module.order}] {module.spec.title} ({module.spec.depth})")
+        for objective in module.spec.learning_objectives:
+            lines.append(f"- {objective}")
+        if module.module_prerequisites:
+            lines.append(f"\n_Builds on: {', '.join(module.module_prerequisites)}_")
+        lines.append("")
+    verdict = "✓ covers every requested capability" if report.is_faithful else (
+        "⚠ DROPPED: " + "; ".join(report.missing)
+    )
+    lines += ["---", "", f"**Course-fidelity:** {verdict}", ""]
+    return "\n".join(lines)
 
 
 def _print_course(course) -> None:
@@ -644,6 +687,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path to topic_specification.yaml (scope, objectives, prerequisites, "
              "depth). Uses a sensible default if omitted.",
+    )
+    course.add_argument(
+        "--out",
+        type=Path,
+        help="Directory to persist the course plan into (course_plan.json + COURSE.md). "
+             "When omitted, the plan is only printed.",
     )
     course.add_argument("--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS)
 

@@ -27,22 +27,33 @@ _LOG = logging.getLogger(__name__)
 _VALID_SCOPES = {"fundamentals", "implementation", "optimization", "usage"}
 _VALID_DEPTHS = {"beginner", "intermediate", "advanced"}
 
+# Curriculum planning is a reasoning task, not a code-generation one. Default to the
+# same cheap reasoning model the lesson planner/critics use (gpt-5-mini) rather than the
+# bare ModelConfig default — decompositions on gpt-4o-mini were noticeably coarser.
+DEFAULT_MODEL = "gpt-5-mini"
+
 
 class CurriculumPlanner:
     """Turns a course brief + learner profile into a CourseSpec via the LLM."""
 
-    def __init__(self, personas_dir: Path | None = None, llm_client: Any = None) -> None:
+    def __init__(
+        self,
+        personas_dir: Path | None = None,
+        llm_client: Any = None,
+        model: str = DEFAULT_MODEL,
+    ) -> None:
         self.personas_dir: Path = Path("personas") if personas_dir is None else Path(personas_dir)
         self.persona: str = (self.personas_dir / "curriculum_planner.md").read_text(
             encoding="utf-8"
         )
+        self.model: str = model
         if llm_client is not None:
             self._llm_client = llm_client
         else:  # pragma: no cover - exercised only in real runs, not unit tests
             from forged.config import ModelConfig
             from forged.llm import LLMClient
 
-            self._llm_client = LLMClient(ModelConfig())
+            self._llm_client = LLMClient(ModelConfig(model=model))
 
     def plan(
         self,

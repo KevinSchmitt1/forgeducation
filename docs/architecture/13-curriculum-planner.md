@@ -3,7 +3,8 @@
 **Status:** 🚧 IN PROGRESS (2026-06-24). **Phase 1 (plan-only) implemented** — course data model
 (`forged/curriculum/model.py`), course-fidelity union check (`forged/curriculum/fidelity.py`, reusing
 an extracted `assess_capability_coverage` core in `pipeline/fidelity.py`), the `curriculum_planner`
-persona + `CurriculumPlanner` agent, and `forged course --plan-only`. Validated by
+persona + `CurriculumPlanner` agent (defaults to **gpt-5-mini** — gpt-4o-mini gave coarser splits),
+and `forged course --plan-only [--out DIR]` (persists `course_plan.json` + `COURSE.md`). Validated by
 `tests/test_curriculum_model.py`, `test_curriculum_fidelity.py`, `test_curriculum_planner.py`,
 `test_cli_course.py` (full suite green; coverage ≥ 80%). Phases 2–5 (orchestration, assembly, reactive
 safety net, full CLI) remain. This is **Half B** of the
@@ -92,6 +93,25 @@ course-level analogue of the planner's topic-fidelity rule, enforced at two leve
 
 ---
 
+## Part I.b — Execution model: sequential now, dependency-aware parallel later
+
+Empirically (gpt-5-mini decomposition of the overarching local-LLM brief), the modules form a
+**DAG, not a chain** — e.g. "serving" depends on both "RAG" and "quantization". So the execution
+model is a real choice:
+
+- **Start sequential (Phase 2).** Simplest; bounds cost (one paid run at a time vs. an N× concurrent
+  spike); and it keeps the reactive re-decomposition loop (Phase 4) tractable, since that loop mutates
+  the course graph mid-flight and naive parallelism would race it.
+- **Parallelism is feasible later, by DAG level.** Key insight: the context hand-down folds earlier
+  modules' **objectives** (known at *plan* time) into prior knowledge — **not** their generated
+  notebooks. So there is no hard *data* dependency forcing strict order; the prerequisite edges are
+  *pedagogical ordering*. Modules whose prerequisites are all satisfied can therefore run concurrently.
+- **Why not parallel first:** (1) cost — N concurrent gpt-5 runs is an unbounded spike and provisioning
+  N venvs contends on disk/network; (2) the Phase-4 reactive loop changes the graph as it runs.
+- **Decision:** sequential in Phase 2; add **dependency-aware parallel execution** (run each DAG level
+  concurrently, capped by a concurrency limit + `--max-modules`) as a later optimization once the DAG
+  and re-decomposition semantics are settled. Not now (YAGNI).
+
 ## Part II — Patterns to mirror
 
 | Concern | Source | Pattern |
@@ -153,12 +173,24 @@ independently shippable — stop after any one and the repo is coherent.
 - Tests: assembler produces an index with correct ordering + links; aggregate surfaces a module's
   degradations.
 
-### Phase 4 — Reactive safety net (wire R1's signal as feedback)
-- After each module run, read `ModuleResult.topic_fidelity`. If `missing` is non-empty, the module is
-  *still* over-large: record it in `COURSE.md` as a honest course-level warning, and (config-gated)
-  re-decompose just that module into sub-modules, bounded by `--max-modules`.
-- Tests: a module that drops a capability surfaces a course-level warning; bounded re-decomposition
-  terminates.
+### Phase 4 — Reactive safety net (the R1 → planner → R1 feedback loop)
+This is the loop that makes the whole design self-correcting (Kevin's framing): **if a module run is
+still too dense, R1 hands the overflow back to the curriculum planner, which plans a new module topic
+and feeds it to a fresh R1 run.** Concretely:
+- After each module run, read `ModuleResult.topic_fidelity`. **The trigger is the R1 fidelity signal:**
+  `missing` non-empty ⇒ the module run *dropped* a requested capability ⇒ the module was over-large for
+  one notebook (exactly the R1 symptom, now at module scope).
+- Hand the dropped capability(ies) back to the `CurriculumPlanner` as the brief for a **new module**,
+  insert it into the course after its prerequisites, and run it through a fresh `run_pipeline`. The
+  course grows by exactly the overflow — nothing is lost.
+- **Bounded:** re-decomposition is capped by `--max-modules` and a max-depth so the loop always
+  terminates; off by default (opt-in), and every re-split is recorded in `COURSE.md`.
+- **Trigger nuance:** the *implementable* trigger today is the deterministic fidelity drop. A softer
+  "too dense but nothing dropped" signal (low `learner_fit` / high gap-count from the student critic)
+  is a *possible future* second trigger — noted, not built (YAGNI) until the drop-based loop proves it
+  needs help.
+- Tests: a module that drops a capability hands that capability back and yields a new module; bounded
+  re-decomposition terminates; the overflow capability ends up covered by the grown course.
 
 ### Phase 5 — CLI surface + docs close-out
 - `forged course --topic … [--learner-profile …] [--plan-only] [--max-modules N] [--no-provision]`.

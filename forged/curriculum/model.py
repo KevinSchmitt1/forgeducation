@@ -12,7 +12,8 @@ derivation in `reviser._assess_topic_fidelity`, so the course-level fidelity che
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any
 
 from forged.models import TopicSpecification
 
@@ -72,3 +73,13 @@ class CourseSpec:
             for capability in module.capabilities:
                 seen.setdefault(capability, None)
         return tuple(seen)
+
+
+def course_to_dict(course: CourseSpec) -> dict[str, Any]:
+    """Serialize a CourseSpec to a plain JSON-able dict (for `--plan-only` persistence).
+
+    Recurses through the frozen dataclasses, so each module carries its full
+    TopicSpecification. Read-only properties (capabilities) are not fields and are
+    intentionally omitted — they are derivable from the spec.
+    """
+    return asdict(course)
