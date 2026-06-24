@@ -66,6 +66,14 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   still hold: conventional-commit messages, **no attribution trailer** (repo convention), always work
   on a feature branch + PR, **never commit straight to `master`**, and never push until the three CI
   gates are green locally. Force-push or history rewrites on shared branches still need a heads-up.
+  Standing best-practice steps (always do these, not just when asked):
+  - **Name the branch for the work**, not the ticket-of-the-moment. If scope shifts so the branch
+    name no longer fits, move the commits to a correctly-named branch before opening the PR.
+  - **After opening a PR, watch CI and report.** Run `gh pr checks <n> --watch`; a PR is not "done"
+    until remote CI is green. If a check goes red, fix it and push before handing back.
+  - **After a PR merges, delete its feature branch** (local + remote:
+    `git branch -d <b> && git push origin --delete <b>`) so stale/merged branches don't accumulate.
+  - Use the `gh` CLI for PRs/checks (installed + authenticated on this machine).
 - **Reviewer-on-diff per phase**, findings addressed before close-out (cost-bounded: once per phase,
   on the diff only).
 - **Documentation:** always update the documents used, especially when things change. When building new stuff, always add a .md in the docs/archtiecture/ folder with the given structure. Most of the time there will be a .md created when the ecc "plan" command is used to plan new features and integrations.
