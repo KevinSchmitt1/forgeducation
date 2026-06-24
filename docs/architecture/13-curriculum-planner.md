@@ -4,10 +4,22 @@
 (`forged/curriculum/model.py`), course-fidelity union check (`forged/curriculum/fidelity.py`, reusing
 an extracted `assess_capability_coverage` core in `pipeline/fidelity.py`), the `curriculum_planner`
 persona + `CurriculumPlanner` agent (defaults to **gpt-5-mini** — gpt-4o-mini gave coarser splits),
-and `forged course --plan-only [--out DIR]` (persists `course_plan.json` + `COURSE.md`). Validated by
-`tests/test_curriculum_model.py`, `test_curriculum_fidelity.py`, `test_curriculum_planner.py`,
-`test_cli_course.py` (full suite green; coverage ≥ 80%). Phases 2–5 (orchestration, assembly, reactive
-safety net, full CLI) remain. This is **Half B** of the
+and `forged course --plan-only [--out DIR]` (persists `course_plan.json` + `COURSE.md`).
+
+**Phase 2 (orchestration) implemented** — `forged/curriculum/orchestrator.py::run_course` runs each
+module through the **unchanged** `run_pipeline`, with the context hand-down (Design decision 7):
+`_augment_profile` folds earlier modules' objectives into a later module's `prior_knowledge` (immutable
+`dataclasses.replace`), then seeds `brief`/`lesson_context`/`topic_spec` via the **same**
+`build_context_block` the single-run path uses. Frozen `ModuleResult`/`CourseResult`; failing modules
+recorded never skipped; sequential (parallel deferred); `forged course` (no `--plan-only`) runs the
+course under `runs/<stamp>_course_<slug>/` with `--max-modules`/`--no-provision`. Validated by
+`tests/test_curriculum_*.py` + `test_cli_course.py` (full suite green; coverage ≥ 80%).
+
+> **Known gap:** `_write_module_deliverables` reaches into `forged.cli` private writers via a deferred
+> import (avoids a load cycle) and is patched out in unit tests — the real per-module SUMMARY/notebook/
+> package writing is only exercised in a live run. Follow-up: extract those writers to a shared module.
+
+Phases 3–5 (course assembly, reactive safety net, close-out) remain. This is **Half B** of the
 deliberate two-way split begun in R1 (`11-topic-fidelity-r1.md`). Half A (lesson-level *detect & be
 honest*) is merged. Half B is *resolve by decomposing*: turn an over-large topic into an ordered
 **course** of module-level lessons instead of silently cutting content. The two halves are coupled by

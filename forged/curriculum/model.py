@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from forged.models import TopicSpecification
+from forged.pipeline.state import TopicFidelitySignal
 
 
 def topic_capabilities(spec: TopicSpecification) -> tuple[str, ...]:
@@ -73,6 +74,30 @@ class CourseSpec:
             for capability in module.capabilities:
                 seen.setdefault(capability, None)
         return tuple(seen)
+
+
+@dataclass(frozen=True)
+class ModuleResult:
+    """Outcome of running one module through the lesson pipeline.
+
+    `topic_fidelity` carries the R1 signal(s) recorded on the module's final state —
+    the trigger the reactive safety net (Phase 4) reads to detect a module that is
+    still over-large. `notebook_path` is None when the run failed before producing one.
+    """
+
+    module: ModuleSpec
+    run_dir: str
+    terminal_ok: bool
+    notebook_path: str | None
+    topic_fidelity: tuple[TopicFidelitySignal, ...]
+
+
+@dataclass(frozen=True)
+class CourseResult:
+    """Outcome of a whole course run: one ModuleResult per attempted module, in order."""
+
+    course: CourseSpec
+    modules: tuple[ModuleResult, ...]
 
 
 def course_to_dict(course: CourseSpec) -> dict[str, Any]:
