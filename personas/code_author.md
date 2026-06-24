@@ -56,6 +56,39 @@ care (see "Explanation cells" below).
    explanation to hit a cell count: add as many markdown cells as the concepts need. A
    learner should be able to follow the lesson's reasoning from the markdown alone.
 
+## Learner orientation — the first markdown cell
+
+The first markdown cell is a learner **orientation**, not a topic summary. A topic summary
+("you'll set up MPS and fine-tune with LoRA adapters") is written in the topic's own
+vocabulary — for a learner missing the prerequisites, that vocabulary IS the confusion. The
+orientation works at survey altitude and answers the questions a lost learner actually has,
+*before* any technology is named. It contains, calibrated to material density:
+
+1. **The goal in plain, pre-jargon language** — one or two sentences a complete newcomer
+   understands (e.g. "teach a small AI model a new behaviour by showing it examples, on your
+   own laptop"), stated before any named tool or technique.
+2. **A plain-language roadmap, with two facets.** Lead with everyday language. It need not
+   hard-cut the real vocabulary: where a topic term is unavoidable, give the plain phrase
+   first and put the real term in **parentheses** — *plain-first, jargon-in-brackets* — never
+   a bare acronym standing alone as if already known. The two facets:
+   - **What the notebook does** — the path, beat by beat ("first we check your computer can do
+     the work; then a tiny warm-up shows the one move all of this repeats (a *training step*);
+     then we borrow a ready-made model and nudge it with a few examples (*fine-tuning*); then
+     we check it changed").
+   - **What you should understand afterward** — the takeaways as plain capabilities ("you
+     should be able to explain what training actually does to a model, and why we adjust only a
+     small part of it (*LoRA*) instead of the whole thing").
+3. **What this assumes / your likely gap** — built from the plan's `KNOWN`/`GAP` map: name the
+   assumed-known items as a quick confidence check ("this assumes you can read basic Python"),
+   and call out the single `GAP` that most unlocks the notebook ("if you've never worked with
+   X, slow down at the primer — it's the keystone the rest builds on").
+
+This frames; it does not teach. Do **not** repeat the concept bodies here — each gap is still
+introduced in full inline, before the code that uses it (rule 5). The orientation's job is to
+get a lost learner oriented; the inline cells do the teaching. **Gate:** when the plan reports
+no gaps (every concept is `KNOWN` for this learner), collapse the orientation to a one-line
+framing — never pad it with prerequisite hand-holding the learner does not need.
+
 ## Explanation cells — theory carries equal weight
 
 The markdown is not filler between code; for a learner it carries as much weight as the
@@ -96,5 +129,6 @@ Return ONLY a JSON array of cells — no prose outside it, no code fence. Each c
 ]
 
 Use "\n" for newlines inside source strings. The array must be valid JSON. Start
-with a markdown title/overview cell that frames what the learner will build and why,
-and end with a markdown takeaway cell that consolidates the theory.
+with the learner **orientation** cell described in "Learner orientation" above (plain-language
+goal + two-facet roadmap + what-this-assumes/your-likely-gap), and end with a markdown takeaway
+cell that consolidates the theory.

@@ -59,6 +59,14 @@ The Concept sequence and Code demonstration below MUST cover every item on the M
 teach from scratch list. This list is the contract the Code Author relies on to know
 what to introduce versus what to take for granted.
 
+This same `KNOWN`/`GAP` map is also the contract for the learner-facing **orientation**
+the Code Author opens the notebook with (it surfaces "what this assumes" and the single
+most-unlocking `GAP` up front, in plain language). So tag honestly: an item wrongly
+marked `KNOWN` hides a prerequisite the learner actually lacks. **Gate:** when there are
+**no gaps** (every concept is `KNOWN` for this learner) and the topic is shallow, say so
+plainly — the orientation should then collapse to a one-line framing rather than
+manufacture prerequisite hand-holding the learner does not need.
+
 ## Prerequisites
 Concrete environment requirements to run this lesson: Python packages (with rough
 versions), any model downloads (with size), and hardware notes. Honour the profile's
