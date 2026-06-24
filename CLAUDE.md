@@ -61,9 +61,11 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   gpt-5-mini (planner/student/reviewer) is cheap. A real paid+network E2E needs user consent — keep it
   to **one run**, and prefer `--no-provision` against an already-built `runs/.venv-cache/*` venv when
   iterating offline.
-- **Git: the user controls git.** Do **not** commit or push unless explicitly asked. Suggest the user to commit/PR, when you think its usefull. When asked:
-  conventional-commit messages, **no attribution trailer** (repo convention), feature branch + PR,
-  never commit straight to `master`.
+- **Git: agent may commit, push, and open PRs autonomously.** When a unit of work is complete and
+  green, go ahead and commit, push, and open a PR without waiting for an explicit ask. Guardrails
+  still hold: conventional-commit messages, **no attribution trailer** (repo convention), always work
+  on a feature branch + PR, **never commit straight to `master`**, and never push until the three CI
+  gates are green locally. Force-push or history rewrites on shared branches still need a heads-up.
 - **Reviewer-on-diff per phase**, findings addressed before close-out (cost-bounded: once per phase,
   on the diff only).
 - **Documentation:** always update the documents used, especially when things change. When building new stuff, always add a .md in the docs/archtiecture/ folder with the given structure. Most of the time there will be a .md created when the ecc "plan" command is used to plan new features and integrations.
