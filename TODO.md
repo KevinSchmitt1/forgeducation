@@ -1,5 +1,8 @@
 # TODO — forgeducation Roadmap
 
+> **▶ Resuming work? Read [`HANDOVER.md`](HANDOVER.md) first** — it's the cold-start brief: current
+> state, the next task (cleanup → curriculum Phases 3–5), files needed, and open discussion items.
+
 ## Current Status
 
 ### ✅ Complete
