@@ -5,6 +5,9 @@
 
 ## Current Status
 
+
+## Add a real section to work with all the .md files in the agentic workflow (e.g. update all documents after work and so on)
+
 ### ✅ Complete
 
 - **Phase 1: Input specification**
@@ -168,10 +171,33 @@ level = **resolve by decomposing** (curriculum planner, above).
 
 - [x] Add Langfuse instrumentation for every LLM-backed agent prompt
 - [x] Record resolved `provider` + `model` at the tracing layer for each generation
+- [x] **Per-call token usage → `usage.json` + `USAGE.md` per run** (PR #13). Captures input / output /
+  **cached-input** / **reasoning** tokens per stage via a ledger inside `LLMClient.complete`. Offline,
+  provider-agnostic; replaces guesswork about run cost. See `forged/usage.py`.
 - [ ] Surface trace ids / trace URLs in run summaries or manifests
 - [ ] Compare outcome quality across model mixes
+- [ ] (gap) Meter empty/length-truncated calls too — they raise before usage records, so failed-but-billed
+  calls aren't counted.
 
-**References:** `docs/architecture/08-stage-specific-models.md`, `docs/architecture/09-langfuse-tracing.md`
+### Cost findings (live R1 run `localLLM_tokens_last`, 11 calls / 102K tokens)
+
+The bill is **output/reasoning-dominated**, not input-dominated (this reverses the earlier
+"caching is #1" assumption). Levers, highest-impact first:
+
+- **Cut gpt-5 reasoning** — reasoning ≈ 30% of a run (31K tokens; 17K on `code_author` alone).
+  `forged/llm.py` doesn't set OpenAI `reasoning_effort`; a low setting on `code_author`/`reviser` is the
+  biggest controllable lever.
+- **Restructure critic prompts for caching** — `code_author` already caches **47.5%** of input; the
+  critic stages cache **0%**. Put the stable prefix (persona + context) first, volatile notebook last.
+- **API-drift hardening** — the run produced a *real* LoRA adapter on `distilgpt2` but failed on
+  `TrainingArguments(evaluation_strategy=…)` (renamed to `eval_strategy` in recent `transformers`);
+  code_author exhausted its fix budget. Pin `transformers` in the planner's `requirements` and/or teach
+  code_author the rename.
+- **Parked:** subscription/Claude-Pro path (no programmatic access; worse fit for an output-heavy bill)
+  and local Ollama routing (8 GB M1 can't run it; can't do the expensive stage anyway).
+
+**References:** `docs/architecture/08-stage-specific-models.md`, `docs/architecture/09-langfuse-tracing.md`,
+`forged/usage.py`
 
 ---
 
