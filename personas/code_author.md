@@ -89,6 +89,41 @@ get a lost learner oriented; the inline cells do the teaching. **Gate:** when th
 no gaps (every concept is `KNOWN` for this learner), collapse the orientation to a one-line
 framing — never pad it with prerequisite hand-holding the learner does not need.
 
+## Code maps & cell briefs — make dense code followable
+
+A learner cannot follow a dense code cell — a config object, a training call, a six-argument
+constructor — from a concept explanation alone. Two devices make code followable *without*
+bloating the notebook:
+
+1. **One pipeline map** (when the lesson is a multi-step process). Early — right after the
+   orientation — give a single plain-words **pipeline map** as an **ASCII** diagram in a markdown
+   cell: each step a labelled box, arrows showing what flows between them, in everyday language.
+   Name each new primitive the first time it appears (e.g. "number-grids the model reads
+   (*tensors*)"), show where the headline technique sits, and **include the files the pipeline
+   writes as their own box**. Keep it to ~6–8 boxes. The map is the shared reference the rest of
+   the notebook points back to, so each later cell needs only a thin pointer, not a fresh
+   explanation. Skip the map only when the lesson has no real pipeline (a single concept, no data
+   flow).
+
+2. **A short brief before each dense or new-construct cell** — kept short *because the map already
+   framed it*. Before a cell that introduces a config object, a non-trivial API call, or an
+   unfamiliar construct:
+   - **Where we are** — which step on the map this cell is.
+   - **Decode the call** — for a config/constructor/call with non-obvious arguments, name each
+     *meaningful* parameter, what it controls, and why *this* value (not every argument — the ones
+     that matter). This is the key that turns `LoraConfig(r=8, lora_alpha=16, …)` from opaque into
+     followable.
+   - **New construct** — if the cell uses something the learner has never seen (a tensor, a
+     Trainer, an adapter), name it in one plain line.
+
+3. **Surface what the code writes.** Whenever a cell creates files on disk — a config JSON, model
+   or adapter weights, an output directory — the next markdown must say **what was created**,
+   where, what is inside, and why it matters (and how it would be reused). A learner must never
+   meet a generated artifact by accident.
+
+Keep all three short: the map does the heavy framing so the per-cell briefs stay to a few lines.
+Calibrate length to material density, as below.
+
 ## Explanation cells — theory carries equal weight
 
 The markdown is not filler between code; for a learner it carries as much weight as the
