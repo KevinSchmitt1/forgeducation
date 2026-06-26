@@ -63,8 +63,10 @@ the earlier "caching is the #1 lever" assumption. The curriculum-planner Phases 
 # has `evaluation_strategy` — that was the only thing that broke the last run. --no-provision uses the
 # base env's newer transformers and will hit the eval_strategy TypeError again.
 ```
-Paid (gpt-5). One run ≈ 100K tokens, ~85 min wall-clock at 3 revision iterations. After it lands, read
-`runs/<new-name>/USAGE.md` (cost shape) + `SUMMARY.md` (fidelity + outcome).
+Paid (gpt-5). One run ≈ 100K tokens, **~10–12 min** typical. (The `localLLM_tokens_last` run took ~85 min
+only because it re-executed real `distilgpt2` LoRA *training* on every executor pass — that training cell
+is the slow part, not the pipeline.) After it lands, read `runs/<new-name>/USAGE.md` (cost shape) +
+`SUMMARY.md` (fidelity + outcome).
 
 ## Files this session touched
 - `forged/usage.py` — **new**: `UsageRecord`, thread-safe `UsageLedger` (keyed by run_id), `build_report`,
