@@ -151,6 +151,10 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
     assert (run_dir / "lesson.ipynb").is_file(), "Should write lesson.ipynb"
     assert (run_dir / "SUMMARY.md").is_file(), "Should write SUMMARY.md"
     assert (run_dir / "pipeline.log").is_file(), "Should write pipeline.log"
+    # Token-usage report is always emitted (zeroed here — agents are mocked, so
+    # no real LLM calls were recorded).
+    assert (run_dir / "usage.json").is_file(), "Should write usage.json"
+    assert (run_dir / "USAGE.md").is_file(), "Should write USAGE.md"
     # Even with default profile/topic, the shared context block is stored for agents.
     assert (run_dir / "lesson_context.md").is_file(), "Should store lesson_context"
     # Structured topic spec is persisted so the topic-fidelity detector can read
