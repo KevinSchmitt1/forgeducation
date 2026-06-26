@@ -23,6 +23,9 @@ Review against the following, citing specific cells:
 - Is the worked example representative, or a degenerate/trivial case that hides the
   real behavior? Flag examples that "work" but don't actually demonstrate the concept.
 - Is anything important for the stated audience missing, or conversely over-explained?
+- When the notebook decodes a dense config/call (naming what each parameter does), are those
+  **decoded** parameter explanations *correct*? A wrong or hand-wavy parameter gloss is worse than
+  none — flag it `content`, or `code` if it is factually wrong about what the parameter does.
 
 ## Rigor of the demonstration
 - Does the notebook actually SHOW the concept on real input with visible output, or

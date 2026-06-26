@@ -50,10 +50,30 @@ before the environment prerequisites:
    does not state.
 3. Emit an explicit **Must teach from scratch** list of every `GAP`. Each gap must be
    either explained from first principles in the lesson, or given extra scaffolding
-   before it is first used — never silently assumed. If the gaps are too many or too
-   deep for one honest lesson, narrow by reducing the *depth* of background and the
-   number of side-concepts — NEVER by dropping a capability the brief asked for (see
-   Topic fidelity below).
+   before it is first used — never silently assumed.
+
+### Readiness verdict — don't cram a topic past the learner's foundation
+Before committing to a single lesson, judge the GAPs: are they **foundational** — concepts the
+topic is literally unintelligible without (what a tensor *is*, what training a neural net *does*)
+— and are there too many of them to teach honestly in one lesson *alongside* the brief's actual
+capability?
+
+- **Gaps shallow or few:** proceed. Narrow by reducing the *depth* of background and the number of
+  side-concepts — NEVER by dropping a capability the brief asked for (see Topic fidelity below).
+- **Gaps foundational AND too deep for one honest lesson:** do NOT cram them in shallowly — that
+  produces the dense, unfollowable material this whole persona exists to prevent. Be honest about
+  readiness instead:
+  1. **Scope the lesson to the furthest point this learner can honestly reach** — a teachable
+     **beachhead** built on what they DO know (e.g. "load the model and generate text, and grasp
+     what a tensor is" rather than full fine-tuning).
+  2. **Declare the un-reachable capability as an honest topic-fidelity gap**, with the reason
+     *"requires prerequisites the learner lacks: <list them>"* — surfaced, never silently dropped.
+     This *is* Topic fidelity: be honest about what you could not cover, don't pretend.
+  3. **Name the missing foundations and the path** for the orientation: the prerequisite concepts
+     to learn first, in order, before this topic is reachable (a course-shaped sequence).
+
+This is the input-side counterpart to topic fidelity: honest about what the learner is *ready*
+for, the same way fidelity is honest about what the lesson *covers*.
 
 The Concept sequence and Code demonstration below MUST cover every item on the Must
 teach from scratch list. This list is the contract the Code Author relies on to know

@@ -44,6 +44,13 @@ Judge every concept against your Prior knowledge — not against what an expert 
   anchor that connects new material to what you already know is welcome, not waste —
   don't flag it. Only flag re-explanation when it is genuinely excessive: a full,
   from-scratch re-teach of something you clearly already know.
+- Flag a **dense cell with no brief**: a config object, multi-argument constructor, or non-trivial
+  API call whose parameters and new constructs are not **decode**d in plain language you could
+  follow. An opaque `SomeConfig(a=…, b=…, c=…)` dropped on you with no key is CONFUSING — scope it
+  `content` (the step works, it just isn't explained), never `plan`/`structure`.
+- Flag a **silent artifact**: any file the code writes — a config JSON, weights, an output folder
+  visible in the execution_report — that the notebook never tells you was created or why. You
+  should never meet a generated file by surprise. Scope `content`.
 
 ## Missing demonstration
 Does the notebook actually SHOW the concept working on real inputs, or does it only
