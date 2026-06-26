@@ -227,6 +227,9 @@ cat ./run/execution_report_v0.json | jq .
 
 # View grade report (JSON)
 cat ./run/student_grade_report_v0.json | jq .
+
+# View reviewer report (JSON, when the reviewer critic ran)
+cat ./run/reviewer_report_v0.json | jq .
 ```
 
 ### Parse Routing Log
@@ -421,6 +424,9 @@ echo "OPENAI_API_KEY=sk-..." > .env
 - Try more specific brief (e.g., "teach X to Y audience")
 - Check if quality_threshold is too high (default 80)
 - Review `student_grade_report_v*.json` for specific findings
+- On OpenAI-backed runs, Student/Reviewer reports are schema-constrained JSON. If a report
+  is marked `graded=false` or `reviewed=false`, check the `error` field and `pipeline.log`;
+  on Ollama/local-compatible providers the same lenient parser fallback is still used.
 
 ---
 

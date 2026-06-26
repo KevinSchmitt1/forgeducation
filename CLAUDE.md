@@ -61,6 +61,11 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   gpt-5-mini (planner/student/reviewer) is cheap. A real paid+network E2E needs user consent — keep it
   to **one run**, and prefer `--no-provision` against an already-built `runs/.venv-cache/*` venv when
   iterating offline.
+- **Grader outputs are schema-constrained.** Student and Reviewer must request OpenAI
+  `response_format={"type": "json_schema", ...}` via `LLMClient.complete(...)`; keep
+  the parsers lenient only as a fallback for non-structured providers (Ollama omits the
+  parameter). Do not go back to "prose plus final fenced JSON" as the primary contract —
+  malformed critic JSON burns paid runs.
 - **Git: agent may commit, push, and open PRs autonomously.** When a unit of work is complete and
   green, go ahead and commit, push, and open a PR without waiting for an explicit ask. Guardrails
   still hold: conventional-commit messages, **no attribution trailer** (repo convention), always work

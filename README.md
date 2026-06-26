@@ -186,6 +186,9 @@ End-to-end validated with OpenAI. Features:
   - **Honest signals**: a failed grader is its own signal (never a fake score), silent
     fallbacks are recorded as *degradations* in SUMMARY.md, and a deterministic structural
     gate refuses a notebook that executes green but demonstrates nothing (anti-hollow)
+  - **Schema-locked critics**: Student and Reviewer use OpenAI JSON Schema structured
+    outputs for `quality_score`/`rubric`/`blockers`/`findings`, with lenient parsing kept
+    only as a fallback for local/non-structured providers
   - **Content reviser**: a low content-quality grade routes to an LLM agent that rewrites
     the notebook, which is then re-executed and re-graded
   - **Environment provisioning**: builds/reuses a per-run venv from the lesson's

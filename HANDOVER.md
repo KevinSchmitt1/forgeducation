@@ -32,6 +32,10 @@ the earlier "caching is the #1 lever" assumption. The curriculum-planner Phases 
    - **Caching headroom.** `code_author` already hits **47.5% input caching**; the critic stages cache
      **0%**. Reordering critic prompts so the stable prefix (persona + context) comes first, volatile
      notebook content last, should unlock auto-caching there too.
+   - **Structured-output hardening shipped.** Student/Reviewer now request strict OpenAI JSON Schema
+     outputs through `LLMClient.complete(response_format=...)`; Ollama skips the parameter and keeps
+     the lenient parser fallback. This closes the "missing quality_score/blockers/findings" grader
+     format failure that could waste a paid run after planner/code_author/executor work.
 
 ## 📊 What the token meter showed (one R1 run = `localLLM_tokens_last`)
 `USAGE.md` per run now reports input/output/**cached**/**reasoning** per stage. The R1 run (11 calls,

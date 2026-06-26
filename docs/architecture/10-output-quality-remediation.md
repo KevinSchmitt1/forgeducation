@@ -64,7 +64,14 @@ This section is for the next agent/session picking up the work. The plan below
 - `forged/pipeline/agents/student.py` — on LLM failure/unparseable output writes a
   `graded=False` report + records a `Degradation` (no more neutral-50). Derives
   `quality_score` from the rubric composite (the 5 dims are the source of truth, not a
-  separate LLM scalar). Rejects bool/out-of-range rubric values.
+  separate LLM scalar). Rejects bool/out-of-range rubric values. Current hardening also
+  requests OpenAI JSON Schema structured output for the student report, with the old
+  fenced/bare JSON parser retained only as a fallback.
+- `forged/pipeline/agents/reviewer.py` — requests OpenAI JSON Schema structured output for
+  `blockers` and scoped `findings`; parse failures become `reviewed=False` instead of
+  fabricated "no findings" reviews.
+- `forged/llm.py` — `LLMClient.complete(..., response_format=...)` forwards JSON Schema
+  response formats to OpenAI and omits them for Ollama/local-compatible providers.
 - `forged/pipeline/agents/code_author.py` — records a `Degradation` when it falls back to
   stub cells.
 - `forged/pipeline/agents/reviser.py` — reads `graded`+`rubric` from the grade JSON;
@@ -274,6 +281,10 @@ The success signal is `execution_report.ok` plus a student score ([failure.py:20
 **P2 — The only content-quality signal is a single fragile student score.**
 Content quality reduces to one 0–100 number from one LLM call, with no rubric. When the student call fails it falls back to a **neutral 50** ([student.py:23](../../forged/pipeline/agents/student.py#L23), [student.py:48-50](../../forged/pipeline/agents/student.py#L48-L50)). In this run the final student call returned empty → neutral 50 → `CONTENT_QUALITY` → no-op reviser → terminate. So the final verdict was an **infrastructure failure misclassified as mediocre content**, scored by a value never actually computed.
 
+**Current state:** this historical failure mode is fixed. Student reports now carry
+`graded`, rubric dimensions, and schema-constrained JSON on OpenAI-backed calls; an
+unparseable grade becomes a degradation/`UNCLASSIFIABLE`, not a neutral content score.
+
 **P3 — Revision briefs are too thin to steer regeneration.**
 On reroute, the brief is generic — "Fix the code failures" / "Revise the lesson structure" ([reviser.py:187-193](../../forged/pipeline/agents/reviser.py#L187-L193)). When the student report is the neutral fallback, `findings` is empty, so the rerouted agent gets no specifics and re-rolls. Iterations wander instead of converging.
 
@@ -298,6 +309,12 @@ The deterministic router (`RevisorAgent`) stays as-is and keeps owning routing. 
 
 **D3 — Rubric/dimensioned student scoring (P2 expanded).**
 The student emits **named dimensions** (e.g. `structure`, `explanation_depth`, `code_clarity`, `correctness`, `learner_fit`), each 0–100, plus a composite. Dimensions feed routing: low `structure` → `BLOCKER_STRUCTURE` (planner); low `code_clarity`/`correctness` → code_author; low `explanation_depth`/`learner_fit` → `ContentReviserAgent`. A **failed** student call is its own signal — never a content score.
+
+**D4 — Schema-constrained critic reports.**
+Student and Reviewer use OpenAI JSON Schema `response_format` so required fields
+(`quality_score`/`rubric`/`blockers`/`findings` for Student; `blockers`/`findings` for
+Reviewer) are constrained before parsing. Local/Ollama providers omit `response_format`
+and continue through the lenient parser fallback.
 
 ---
 
