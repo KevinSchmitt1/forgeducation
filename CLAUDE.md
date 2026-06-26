@@ -82,7 +82,7 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   - Use the `gh` CLI for PRs/checks (installed + authenticated on this machine).
 - **Reviewer-on-diff per phase**, findings addressed before close-out (cost-bounded: once per phase,
   on the diff only).
-- **Documentation:** always update the documents used, especially when things change. When building new stuff, always add a .md in the docs/archtiecture/ folder with the given structure. Most of the time there will be a .md created when the ecc "plan" command is used to plan new features and integrations.
+- **Documentation:** always update the documents used, especially when things change. When building new stuff, always add a .md in the docs/archtiecture/ folder with the given structure. Most of the time there will be a .md created when the ecc "plan" command is used to plan new features and integrations. **Keep the top-level `README.md` current too** — when a user-facing capability changes (a new command, a new run output, a new honesty guarantee), update the README in the same change; it drifts fastest because it's the one doc nobody is forced to touch. The `docs/architecture/*.md` files are dated design snapshots — add a new one, don't rewrite old ones.
 
 ## Current state & next task
 

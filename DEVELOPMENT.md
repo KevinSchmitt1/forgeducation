@@ -15,9 +15,12 @@ Welcome! This guide helps you understand the codebase and contribute effectively
 | Modify how learner profiles work | `docs/architecture/01-input-specification.md` + `templates/README.md` |
 | Change the CLI | Check `forged/cli.py` + `docs/architecture/03-implementation-plan.md` |
 | Understand model selection | `docs/architecture/08-stage-specific-models.md` |
-| Understand tracing / observability | `docs/architecture/09-langfuse-tracing.md` |
+| Understand tracing / token usage | `docs/architecture/09-langfuse-tracing.md` + `forged/usage.py` (`usage.json`/`USAGE.md`) |
 | Add a new data model | `forged/models.py` + `docs/architecture/01-input-specification.md` |
 | Understand the template system | `templates/README.md` (user guide) + `docs/architecture/01-input-specification.md` (design) |
+| Understand the honesty guarantees | topic fidelity `docs/architecture/11-topic-fidelity-r1.md`; orientation `…/12-…`; readiness + code maps `…/14-…` |
+| Work on the curriculum planner (`forged course`) | `docs/architecture/13-curriculum-planner.md` + `forged/curriculum/` |
+| Change agent behaviour / pedagogy | edit `personas/*.md` (most quality changes are persona edits, not code) |
 
 ## How It Fits Together
 
