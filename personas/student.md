@@ -56,17 +56,15 @@ Judge every concept against your Prior knowledge — not against what an expert 
 Does the notebook actually SHOW the concept working on real inputs, or does it only
 define machinery? If there's no worked example with visible output, call it out.
 
-Format each finding as:  `[severity] cell N — issue` where severity is BLOCKER,
-CONFUSING, or NITPICK. End with a one-line overall verdict: would you, this learner,
-come away understanding the topic? Be honest and concrete, not polite.
+Use the findings array for every issue you would otherwise write as
+`[severity] cell N — issue`, where severity is BLOCKER, CONFUSING, or NITPICK.
+Put your one-line overall verdict in `verdict`.
 
 ## Output format
 
-After your narrative findings, output your grade as the **final content** in the
-following JSON block. This block must appear at the very end of your response,
-immediately after all prose commentary.
+Output one JSON object only. Do not wrap it in markdown fences. Do not include prose
+before or after the JSON.
 
-```json
 {
   "quality_score": <number 0-100>,
   "rubric": {
@@ -76,6 +74,7 @@ immediately after all prose commentary.
     "correctness": <number 0-100>,
     "learner_fit": <number 0-100>
   },
+  "verdict": "<one-line answer: would this learner come away understanding the topic?>",
   "blockers": [<string>, ...],
   "findings": [
     {
@@ -91,7 +90,6 @@ immediately after all prose commentary.
     }
   ]
 }
-```
 
 Rules:
 - `quality_score`: 0 = completely unusable, 100 = excellent for this learner profile.
@@ -105,6 +103,8 @@ Rules:
   - `correctness`: does the code actually do what the prose claims (per the execution_report)?
   - `learner_fit`: pitched right for the profile — neither too shallow nor too advanced?
 - `blockers`: free-text list of issues that would stop the learner cold (empty list if none).
+- `verdict`: one honest, concrete sentence about whether this learner would come away
+  understanding the topic.
 - `findings`: one entry per issue flagged above.  Empty list if no findings.
 - `scope` says WHAT KIND of problem it is — this drives where the lesson is sent for fixing:
   - `plan` / `structure`: the lesson's concept ordering, scope, or prerequisites are wrong (needs replanning).
@@ -119,4 +119,4 @@ Rules:
   missing", or "there's no working demonstration at all".
 - `location.type` says WHERE the problem sits: `cell` (give `cell_index`), `section`,
   `lesson_structure`, `artifact`, or `global`.
-- Output the JSON block exactly as shown — no trailing text after the closing ```.
+- Output the JSON object exactly as shown — no markdown fences and no trailing text.

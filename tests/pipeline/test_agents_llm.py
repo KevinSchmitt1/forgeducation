@@ -473,6 +473,33 @@ def test_student_calls_llm_with_persona_as_system_prompt(
 
 
 @pytest.mark.unit
+def test_student_requests_structured_grade_report_schema(
+    personas_dir: Path,
+    initial_state: PipelineState,
+    artifact_store: ArtifactStore,
+    mock_llm_client: MagicMock,
+) -> None:
+    """StudentAgent asks capable providers for a strict JSON-schema grade report."""
+    from forged.pipeline.agents.student import StudentAgent
+
+    report = {"quality_score": 80.0, "blockers": [], "findings": []}
+    mock_llm_client.complete.return_value = json.dumps(report)
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=mock_llm_client)
+    asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
+
+    response_format = mock_llm_client.complete.call_args.kwargs["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["name"] == "student_grade_report"
+    assert response_format["json_schema"]["strict"] is True
+    assert {
+        "quality_score",
+        "rubric",
+        "blockers",
+        "findings",
+    } <= set(response_format["json_schema"]["schema"]["required"])
+
+
+@pytest.mark.unit
 def test_student_grade_report_missing_keys_degrades(
     personas_dir: Path,
     initial_state: PipelineState,

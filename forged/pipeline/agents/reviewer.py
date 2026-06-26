@@ -34,6 +34,51 @@ _LOG = logging.getLogger(__name__)
 # (an empty review is valid — the notebook may simply be correct).
 _REQUIRED_KEYS = {"findings"}
 
+_LOCATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "type": {
+            "type": "string",
+            "enum": ["cell", "section", "lesson_structure", "artifact", "global"],
+        },
+        "cell_index": {"type": ["integer", "null"]},
+        "label": {"type": ["string", "null"]},
+    },
+    "required": ["type", "cell_index", "label"],
+    "additionalProperties": False,
+}
+
+_FINDING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "source": {"type": "string", "enum": ["reviewer"]},
+        "severity": {"type": "string", "enum": ["BLOCKER", "CONFUSING", "NITPICK"]},
+        "scope": {"type": "string", "enum": ["plan", "structure", "code", "content"]},
+        "location": _LOCATION_SCHEMA,
+        "text": {"type": "string"},
+    },
+    "required": ["source", "severity", "scope", "location", "text"],
+    "additionalProperties": False,
+}
+
+REVIEWER_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "reviewer_findings_report",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "verdict": {"type": "string"},
+                "blockers": {"type": "array", "items": {"type": "string"}},
+                "findings": {"type": "array", "items": _FINDING_SCHEMA},
+            },
+            "required": ["verdict", "blockers", "findings"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 def _failed_report(reason: str) -> str:
     """A reviewer report that records the *absence* of a review.
@@ -119,6 +164,7 @@ class ReviewerAgent(Agent[AgentOutput]):
                 self._latest_execution_name(state),
             ),
             output_artifact=output_artifact,
+            response_format=REVIEWER_RESPONSE_FORMAT,
         )
         return self._parse_review(raw)
 

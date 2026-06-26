@@ -952,7 +952,13 @@ def test_reviewer_agent_writes_parseable_report(
     from forged.pipeline.agents.reviewer import ReviewerAgent
 
     class StubLLMClient:
-        def complete(self, system_prompt: str, user_prompt: str, trace_context=None) -> str:
+        def complete(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            trace_context=None,
+            response_format=None,
+        ) -> str:
             return (
                 "Prose verdict: one correctness issue.\n\n"
                 "```json\n"
@@ -978,6 +984,48 @@ def test_reviewer_agent_writes_parseable_report(
     assert report["reviewed"] is True
     assert report["findings"][0]["scope"] == "code"
     assert result.current_stage == PipelineStage.REVISER
+
+
+@pytest.mark.unit
+def test_reviewer_agent_requests_structured_findings_schema(
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+) -> None:
+    """ReviewerAgent asks capable providers for a strict JSON-schema findings report."""
+    from forged.pipeline.agents.reviewer import ReviewerAgent
+
+    class StubLLMClient:
+        def __init__(self) -> None:
+            self.response_format = None
+
+        def complete(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            trace_context=None,
+            response_format=None,
+        ) -> str:
+            self.response_format = response_format
+            return '{"blockers": [], "findings": []}'
+
+    artifact_store.put(
+        Artifact(name="lesson_notebook_v0", kind="notebook", content="# notebook text")
+    )
+    artifact_store.put(
+        Artifact(name="execution_report_v0", kind="json", content='{"ok": true}')
+    )
+    state = create_initial_state(run_id="reviewer-schema")
+    llm_client = StubLLMClient()
+
+    agent = ReviewerAgent(personas_dir=personas_dir, llm_client=llm_client)
+    asyncio.get_event_loop().run_until_complete(agent.run(state, artifact_store))
+
+    assert llm_client.response_format["type"] == "json_schema"
+    assert llm_client.response_format["json_schema"]["name"] == "reviewer_findings_report"
+    assert llm_client.response_format["json_schema"]["strict"] is True
+    assert {"blockers", "findings"} <= set(
+        llm_client.response_format["json_schema"]["schema"]["required"]
+    )
 
 
 @pytest.mark.unit

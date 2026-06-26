@@ -1137,6 +1137,56 @@ def test_llm_complete_rejects_empty_content():
         client.complete("sys", "user")
 
 
+def test_llm_complete_passes_response_format_to_openai_provider():
+    from types import SimpleNamespace
+
+    from forged.config import ModelConfig, Provider
+    from forged.llm import LLMClient
+
+    captured = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return _completion('{"ok": true}')
+
+    client = LLMClient(ModelConfig(provider=Provider.OPENAI))
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "demo",
+            "strict": True,
+            "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    }
+
+    assert client.complete("sys", "user", response_format=response_format) == '{"ok": true}'
+    assert captured["response_format"] == response_format
+
+
+def test_llm_complete_omits_response_format_for_ollama_provider():
+    captured = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return _completion('{"ok": true}')
+
+    client = _llm_client_with_fake(create)
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "demo",
+            "strict": True,
+            "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    }
+
+    assert client.complete("sys", "user", response_format=response_format) == '{"ok": true}'
+    assert "response_format" not in captured
+
+
 def test_llm_complete_records_trace_context_and_usage():
     from types import SimpleNamespace
 

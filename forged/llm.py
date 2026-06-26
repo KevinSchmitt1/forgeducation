@@ -247,6 +247,7 @@ class LLMClient:
         system_prompt: str,
         user_prompt: str,
         trace_context: LLMTraceContext | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> str:
         """Run a single system+user chat completion and return the text.
 
@@ -264,9 +265,9 @@ class LLMClient:
         # endpoint still expects `max_tokens`, so pick per provider.
         # _OmitSentinel tells the OpenAI SDK to omit the parameter entirely — required
         # for models like gpt-5/gpt-5-mini that reject any non-default temperature.
-        temperature = (
-            self._config.temperature if self._config.temperature is not None else _OmitSentinel()
-        )
+        temperature = self._config.temperature if self._config.temperature is not None else None
+        if temperature is None and _OmitSentinel is not None:
+            temperature = _OmitSentinel()
         try:
             if self._config.provider is Provider.OLLAMA:
                 response = client.chat.completions.create(
@@ -276,12 +277,15 @@ class LLMClient:
                     temperature=temperature,
                 )
             else:
-                response = client.chat.completions.create(
-                    model=self._config.model,
-                    max_completion_tokens=self._config.max_tokens,
-                    messages=messages,
-                    temperature=temperature,
-                )
+                kwargs: dict[str, Any] = {
+                    "model": self._config.model,
+                    "max_completion_tokens": self._config.max_tokens,
+                    "messages": messages,
+                    "temperature": temperature,
+                }
+                if response_format is not None:
+                    kwargs["response_format"] = response_format
+                response = client.chat.completions.create(**kwargs)
         except Exception as exc:  # noqa: BLE001 — re-raise with actionable context
             self._tracer.record_error(observation, str(exc))
             raise RuntimeError(

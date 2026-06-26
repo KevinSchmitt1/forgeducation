@@ -26,6 +26,68 @@ _LOG = logging.getLogger(__name__)
 # these is treated as a failed assessment, not silently coerced to a score.
 _REQUIRED_KEYS = {"quality_score", "blockers", "findings"}
 
+_LOCATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "type": {
+            "type": "string",
+            "enum": ["cell", "section", "lesson_structure", "artifact", "global"],
+        },
+        "cell_index": {"type": ["integer", "null"]},
+        "label": {"type": ["string", "null"]},
+    },
+    "required": ["type", "cell_index", "label"],
+    "additionalProperties": False,
+}
+
+_FINDING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "source": {"type": "string"},
+        "severity": {"type": "string", "enum": ["BLOCKER", "CONFUSING", "NITPICK"]},
+        "scope": {"type": "string", "enum": ["plan", "structure", "code", "content"]},
+        "location": _LOCATION_SCHEMA,
+        "text": {"type": "string"},
+    },
+    "required": ["source", "severity", "scope", "location", "text"],
+    "additionalProperties": False,
+}
+
+STUDENT_GRADE_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "student_grade_report",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "quality_score": {"type": "number", "minimum": 0, "maximum": 100},
+                "rubric": {
+                    "type": ["object", "null"],
+                    "properties": {
+                        "structure": {"type": "number", "minimum": 0, "maximum": 100},
+                        "explanation_depth": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100,
+                        },
+                        "code_clarity": {"type": "number", "minimum": 0, "maximum": 100},
+                        "correctness": {"type": "number", "minimum": 0, "maximum": 100},
+                        "learner_fit": {"type": "number", "minimum": 0, "maximum": 100},
+                    },
+                    "required": list(RUBRIC_DIMENSIONS),
+                    "additionalProperties": False,
+                },
+                "verdict": {"type": "string"},
+                "blockers": {"type": "array", "items": {"type": "string"}},
+                "findings": {"type": "array", "items": _FINDING_SCHEMA},
+            },
+            "required": ["quality_score", "rubric", "verdict", "blockers", "findings"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 def _failed_report(reason: str) -> str:
     """A grade report that records the *absence* of an assessment.
@@ -121,6 +183,7 @@ class StudentAgent(Agent[AgentOutput]):
                 self._latest_execution_name(state),
             ),
             output_artifact=output_artifact,
+            response_format=STUDENT_GRADE_RESPONSE_FORMAT,
         )
         return self._parse_grade_report(raw)
 

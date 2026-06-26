@@ -31,20 +31,19 @@ Review against the following, citing specific cells:
 - Does the notebook actually SHOW the concept on real input with visible output, or
   only define machinery? Does the evidence shown genuinely justify the conclusions drawn?
 
-Format each finding in prose as:  `[severity] cell N — issue` where severity is BLOCKER,
-CONFUSING, or NITPICK (use the SAME tags as the student so findings aggregate cleanly).
-BLOCKER = factually wrong, broken, or actively misleading; CONFUSING = sound but poorly
-taught; NITPICK = minor polish. End your prose with a one-line overall verdict on whether
-the notebook is correct and fit to teach. Be exact and unsparing, not polite.
+Use the findings array for every issue you would otherwise write as
+`[severity] cell N — issue`, where severity is BLOCKER, CONFUSING, or NITPICK
+(use the SAME tags as the student so findings aggregate cleanly). BLOCKER =
+factually wrong, broken, or actively misleading; CONFUSING = sound but poorly
+taught; NITPICK = minor polish. Put your one-line overall verdict in `verdict`.
 
 ## Output format
 
-After the prose findings, output your structured findings as the **final content** in the
-JSON block below. It must appear at the very end of your response, immediately after all
-prose, with no trailing text after the closing ```.
+Output one JSON object only. Do not wrap it in markdown fences. Do not include prose
+before or after the JSON.
 
-```json
 {
+  "verdict": "<one-line verdict on whether the notebook is correct and fit to teach>",
   "blockers": [<string>, ...],
   "findings": [
     {
@@ -60,9 +59,10 @@ prose, with no trailing text after the closing ```.
     }
   ]
 }
-```
 
 Rules:
+- `verdict`: one exact, unsparing sentence on whether the notebook is correct and
+  fit to teach.
 - `blockers`: free-text list of issues that would make the notebook unfit to ship
   (factually wrong, broken, or actively misleading). Empty list if none.
 - `findings`: one entry per issue flagged in your prose. Empty list if none.
@@ -82,4 +82,4 @@ Rules:
   — NEVER `plan`/`structure`. Scoping an under-explained-but-working step as `plan` causes the
   lesson to drop a capability the topic asked for. Reserve `plan`/`structure` for genuine
   concept-ordering, prerequisite, or "no working demonstration exists" failures.
-- Output the JSON block exactly as shown.
+- Output the JSON object exactly as shown — no markdown fences and no trailing text.
