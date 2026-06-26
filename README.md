@@ -26,6 +26,29 @@ things the code doesn't actually do.
 - **Local or cloud** — the same code talks to OpenAI or a local Ollama server; only
   the `base_url` differs. Point at Ollama and nothing leaves your machine.
 
+## Honest by design
+
+The pipeline refuses to fake teaching value. Four guarantees, each enforced by the agents and
+surfaced in the run's `SUMMARY.md`:
+
+- **Never silently drop a requested capability** (topic fidelity, "R1"). If the topic asks to set
+  up *and train* a model, a run that only sets up **records** the dropped capability — it never
+  quietly ships the easier lesson. (`docs/architecture/11-topic-fidelity-r1.md`)
+- **Never silently assume a prerequisite.** The first notebook cell is a learner *orientation*
+  that surfaces, in plain language, what the lesson assumes and the gap most likely to trip this
+  learner — from the planner's per-learner KNOWN/GAP map.
+  (`docs/architecture/12-notebook-orientation-cell.md`)
+- **Never cram a topic past the learner's foundation.** When the prerequisite gaps are
+  foundational and too deep for one honest lesson, the planner scopes down to a teachable
+  beachhead and declares the rest as an honest fidelity gap — instead of dumping dense,
+  unfollowable code. (`docs/architecture/14-code-explanation-and-readiness.md`)
+- **Never drop or re-teach across a course.** `forged course` decomposes an over-large topic into
+  ordered modules whose union must cover every requested capability, folding earlier modules'
+  objectives into later modules' prior knowledge. (`docs/architecture/13-curriculum-planner.md`)
+
+Dense code is made *followable*, not just present: a plain-words ASCII pipeline map plus a short
+per-cell brief that decodes each meaningful parameter and surfaces every file the code writes.
+
 ## Install
 
 ```bash
@@ -103,6 +126,8 @@ Output lands in `./runs/<timestamp>_<pipeline>/` (or the `--run-dir` you pass to
 - `SUMMARY.md` — per-stage status + timing, total runtime, any execution failures or
   silent degradations, the acceptance verdict, and plan + feedback inline
 - `manifest.json` — provenance (what was produced and pruned) plus per-stage timings
+- `usage.json` / `USAGE.md` — per-call token usage for the run (input / output / cached /
+  reasoning tokens) broken down by stage, so you can see exactly where the cost went
 
 Intermediate plumbing (raw JSON reports, draft notebooks) is pruned automatically on
 success; failed runs keep everything **and still write a `SUMMARY.md`** for debugging.
@@ -169,6 +194,10 @@ End-to-end validated with OpenAI. Features:
   - **Revision brief**: structured failure feedback drives smart rerouting
   - **Monitoring**: full routing log in SUMMARY.md, execution trace in pipeline.log
   - **Tracing**: every LLM-backed prompt is grouped into a Langfuse trace per run when `LANGFUSE_*` keys are configured
+  - **Token accounting**: each run writes `usage.json` + `USAGE.md` — input/output/cached/reasoning
+    tokens per stage, captured locally (no dashboard required)
+  - **Followable dense code**: an ASCII pipeline map + per-cell briefs decode parameters and surface
+    files the code writes; the planner refuses to cram a topic past the learner's foundation
   - **Exit-code truth**: exit `0` only when the run ends ACCEPTABLE; errors, budget
     exhaustion, and unclassifiable runs exit `1` (review `SUMMARY.md` before use).
     `lesson.ipynb` is the executed notebook with real cell outputs.
@@ -213,10 +242,14 @@ what's already in hand. It only ever **keeps the best** version, never a regress
 | `forged/packaging.py` | Write the learner-facing `README.md` + `requirements.txt` |
 | `forged/provisioning.py` | Build/reuse a per-run venv from the deps; register a kernel |
 | `forged/progress.py` | TTY-only elapsed-time spinner for long stages |
-| `forged/cli.py` | `forged build` / `agentic` / `pipelines` / `clean` |
+| `forged/context.py` | Build the shared learner+topic context block threaded to every stage |
+| `forged/models.py` | Typed, validated learner profile + topic specification |
+| `forged/usage.py` | Per-call token ledger → `usage.json` + `USAGE.md` |
+| `forged/curriculum/` | Decompose an over-large topic into an ordered course of modules (`forged course`) |
+| `forged/cli.py` | `forged build` / `agentic` / `course` / `pipelines` / `clean` |
 
 The agentic pipeline lives under `forged/pipeline/` (state, failure classification, router,
-graph, and the per-role agents incl. the content reviser); see
+graph, the topic-fidelity detector, and the per-role agents incl. the content reviser); see
 [docs/architecture/07-agentic-pipeline-status.md](docs/architecture/07-agentic-pipeline-status.md).
 
 Pipelines live in `config/`, agent system-prompts in `personas/`, learner profile

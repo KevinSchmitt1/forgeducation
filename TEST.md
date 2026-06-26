@@ -1,6 +1,8 @@
 # Testing the Agentic Pipeline
 
-**Status**: Phases 1-9 complete, 292 tests passing, production-ready for personal testing.
+**Status**: agentic pipeline + curriculum planner shipped; the honesty guarantees (topic
+fidelity, orientation, readiness verdict, course-level coverage) are in place; ~459 tests passing
+at ~92% coverage. Production-ready for personal testing.
 
 This guide shows how to test the agentic pipeline with real OpenAI integration, monitor execution, and verify agent iteration and failure recovery.
 
