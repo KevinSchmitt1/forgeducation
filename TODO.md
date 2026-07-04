@@ -1,7 +1,8 @@
 # TODO — forgeducation Roadmap
 
 > **▶ Resuming work? Read [`HANDOVER.md`](HANDOVER.md) first** — it's the cold-start brief: current
-> state, the next task (cleanup → curriculum Phases 3–5), files needed, and open discussion items.
+> state, the open next-task fork (curriculum Phases 3–5 vs. doc 14 Part III), files needed, and open
+> discussion items.
 
 ## Current Status
 
@@ -43,6 +44,27 @@
   - **surfaced R1** (topic descoping) — now the top open task; see below
 
 ### ✅ Recently Completed
+
+- **Structured (JSON-schema) grader outputs.** Student and Reviewer now request OpenAI
+  `response_format={"type": "json_schema", ...}` via `LLMClient.complete(...)` instead of relying on
+  prompt discipline ("prose, then a trailing JSON block"). Closes the failure mode where a paid run
+  completed planner → code_author → executor → provisioning and then lost the quality judgment to an
+  unparseable critic response. Ollama/local providers omit `response_format` and keep the existing
+  lenient parser as a fallback. See `docs/architecture/15-structured-grader-output.md`.
+
+- **Code maps, cell briefs, and the planner readiness verdict (doc 14, Parts I–II).** A real run on a
+  dense ML topic surfaced two gaps the existing honesty machinery didn't catch: (1) a "concept→code
+  cliff" — LoRA was explained conceptually, then the learner was dropped into an unexplained
+  `LoraConfig(...)` call; (2) silent artifacts — a real trained adapter was written to disk with no
+  notice. Fixed via persona-only changes: `code_author` now emits an ASCII pipeline map plus per-cell
+  "decode-the-call" briefs for dense/new-construct cells, and must surface what any file-writing cell
+  produced; `student`/`reviewer` enforce it as a `content`-scope fix (never an amputating
+  `plan`/`structure` BLOCKER). The planner also gained a **readiness verdict**: when prerequisite gaps
+  are foundational and too deep for one honest lesson, it scopes to a teachable beachhead and declares
+  the rest a `TopicFidelitySignal` gap rather than cramming. This is the fourth honesty rule (after R1,
+  orientation, curriculum): **don't silently cram a topic past the learner's foundation.**
+  **Part III (escalation workflow) is designed but not built** — see
+  `docs/architecture/14-code-explanation-and-readiness.md`.
 
 - **Curriculum planner (Half B) — Phases 1–2.** A new orchestration layer *above* the unchanged
   lesson loop that decomposes an over-large topic into an ordered course of module lessons and runs
@@ -92,10 +114,13 @@
   Deferred because R1 matters more right now. The linear-vs-agentic comparison is dropped — we
   only ship the agentic pipeline. Detail retained below.
 
-### ⏭ Next Up — Curriculum planner Phases 3–5 + cleanup
+### ⏭ Next Up — open fork: curriculum Phases 3–5 vs. doc 14 Part III (pick one)
 
-The curriculum planner can now plan and run a course. What remains (see
-`docs/architecture/13-curriculum-planner.md` Phases 3–5):
+Two tracks are now unblocked and neither has been prioritized over the other yet — this needs a call
+before coding starts.
+
+**Option A — Curriculum planner Phases 3–5.** The curriculum planner can now plan and run a course.
+What remains (see `docs/architecture/13-curriculum-planner.md` Phases 3–5):
 
 - **Phase 3 — course assembly.** Stitch the per-module outputs into one course: an index `README.md`
   (ordered modules, prerequisite cross-links) + aggregate `COURSE.md` surfacing each module's
@@ -104,6 +129,19 @@ The curriculum planner can now plan and run a course. What remains (see
   capability (`ModuleResult.topic_fidelity.missing`), hand the overflow back to the curriculum planner
   as a new module and run it; bounded by `--max-modules`. (Kevin's framing.)
 - **Phase 5 — close-out.** Flip doc 13 to IMPLEMENTED; full CLI polish.
+
+**Option B — Doc 14 Part III: escalation workflow.** See
+`docs/architecture/14-code-explanation-and-readiness.md` Part III. Wires the planner's readiness
+verdict into an automatic route: `forged agentic` runs the planner → if the verdict is "gap too deep,"
+it does not build a single lesson — it calls the curriculum planner for a course plan, shows the
+learner the preview (`COURSE.md` + rough cost/time), and **stops**, asking for explicit confirmation
+before any paid build (a `--yes` flag skips the prompt for automation). Reuses everything already
+merged (readiness verdict + `forged course --plan-only` + curriculum decomposition); the new pieces
+are only the auto-route on the verdict and the confirmation gate. This is also the natural home for
+Option A's Phase 4 (reactive re-decomposition shares the same machinery), so building B first doesn't
+strand A's later work.
+
+**Regardless of which is picked:**
 - **Cleanup (known gap):** extract `forged.cli`'s per-run deliverable writers
   (`_write_agentic_summary`/`_write_final_notebook`/`_write_learner_package`) into a shared module so
   the orchestrator needn't reach into `cli` via a deferred import.
@@ -244,5 +282,8 @@ remaining open questions belong to Phases 3–5.
 - `docs/architecture/11-topic-fidelity-r1.md` — R1 (topic fidelity, Half A) — DONE
 - `docs/architecture/12-notebook-orientation-cell.md` — learner orientation cell — DONE
 - `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1–2 done
+- `docs/architecture/14-code-explanation-and-readiness.md` — code maps, cell briefs, readiness
+  verdict — Parts I–II done, Part III (escalation workflow) designed, not built
+- `docs/architecture/15-structured-grader-output.md` — structured (JSON-schema) grader outputs — done
 - `DEVELOPMENT.md` — contributor-oriented map of the codebase
 - `templates/README.md` — user-facing structured input guide
