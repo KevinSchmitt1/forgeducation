@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from langfuse.types import TraceContext
+    from openai._types import Omit as _OmitType
 
 try:
     from openai import OpenAI
@@ -265,7 +266,9 @@ class LLMClient:
         # endpoint still expects `max_tokens`, so pick per provider.
         # _OmitSentinel tells the OpenAI SDK to omit the parameter entirely — required
         # for models like gpt-5/gpt-5-mini that reject any non-default temperature.
-        temperature = self._config.temperature if self._config.temperature is not None else None
+        temperature: float | _OmitType | None = (
+            self._config.temperature if self._config.temperature is not None else None
+        )
         if temperature is None and _OmitSentinel is not None:
             temperature = _OmitSentinel()
         try:
