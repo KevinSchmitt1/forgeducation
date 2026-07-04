@@ -94,8 +94,10 @@ Coverage: 100%. Tests: `tests/pipeline/test_agents.py`.
 
 Agents with LLM calls degrade gracefully on errors: they log the failure and return a
 terminal state rather than raising. CodeAuthor strips ` ```json ` fences and validates that
-the response is a JSON array before writing a notebook artifact. Student parses a structured
-grade report JSON and falls back to a zero-score report on parse failure.
+the response is a JSON array before writing a notebook artifact. Student and Reviewer request
+strict OpenAI JSON Schema structured outputs for their reports; the parsers still accept fenced
+or bare JSON as a fallback for non-structured providers. Student writes `graded=false` on parse
+failure rather than fabricating a score.
 
 `RevisorAgent` calls `classify()` and `Router.route()` with no LLM — routing is purely
 deterministic. Its `_coerce_location_type()` method accepts loose labels from real LLM
@@ -236,6 +238,9 @@ executed "green" while teaching nothing (the localLLM run). Fully documented in
   score); rubric-dimensioned grades; silent fallbacks recorded as `degradations` and shown
   in SUMMARY.md; new deterministic anti-hollow gate `forged/pipeline/structure.py` refuses
   an executed-but-hollow notebook at the ACCEPTABLE gate.
+- **Structured critics:** OpenAI-backed Student/Reviewer calls use JSON Schema
+  `response_format`, preventing malformed critic reports from burning a paid run; Ollama
+  remains on the lenient fallback parser.
 - **Self-contained deliverable (P3/P6):** `forged/pipeline/dependencies.py` extracts the
   plan's requirements (+ a stable hash); `forged/packaging.py` writes a learner `README.md`
   + `requirements.txt` into every run dir.

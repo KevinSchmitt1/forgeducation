@@ -61,6 +61,11 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   gpt-5-mini (planner/student/reviewer) is cheap. A real paid+network E2E needs user consent — keep it
   to **one run**, and prefer `--no-provision` against an already-built `runs/.venv-cache/*` venv when
   iterating offline.
+- **Grader outputs are schema-constrained.** Student and Reviewer must request OpenAI
+  `response_format={"type": "json_schema", ...}` via `LLMClient.complete(...)`; keep
+  the parsers lenient only as a fallback for non-structured providers (Ollama omits the
+  parameter). Do not go back to "prose plus final fenced JSON" as the primary contract —
+  malformed critic JSON burns paid runs.
 - **Git: agent may commit, push, and open PRs autonomously.** When a unit of work is complete and
   green, go ahead and commit, push, and open a PR without waiting for an explicit ask. Guardrails
   still hold: conventional-commit messages, **no attribution trailer** (repo convention), always work
@@ -91,18 +96,28 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
 
 - **Merged & on `master`:** the Reviewer second critic + learner-aligned personas (PR #5);
   **R1 — topic fidelity, Half A** (`docs/architecture/11-…`); the **learner orientation cell**
-  (`docs/architecture/12-…`); and the **curriculum planner Half B, Phases 1–2**
-  (`docs/architecture/13-…`) — plan a course (`forged course --plan-only`) and run it
-  (`forged course`, orchestrating one lesson pipeline per module with the prior-knowledge context
-  hand-down). The three honesty features compound: R1 (don't drop in a lesson) → orientation (don't
-  silently assume a prereq) → curriculum (don't drop across a course; don't re-teach across modules).
-- **🔜 Next — curriculum planner Phases 3–5.** Phase 3 (course assembly: index + cross-links), Phase 4
-  (reactive `R1 → planner → R1` re-decomposition when a module is still over-large), Phase 5 (close-out).
-  Plus a **cleanup**: extract `cli`'s per-run deliverable writers into a shared module (the orchestrator
-  currently reaches into them via a deferred import). A **live full course run** is unspent (paid; do a
-  `--max-modules 1` smoke test first). Start-here: `docs/architecture/13-curriculum-planner.md`.
-- **Roadmap & priorities:** `TODO.md` (Step 7 input-spec testing remains postponed; curriculum Phases
-  3–5 are the active track).
+  (`docs/architecture/12-…`); the **curriculum planner Half B, Phases 1–2** (`docs/architecture/13-…`)
+  — plan a course (`forged course --plan-only`) and run it (`forged course`, orchestrating one lesson
+  pipeline per module with the prior-knowledge context hand-down); **per-call token observability**
+  (`usage.json`/`USAGE.md`, PR #13); **code maps, cell briefs, and the planner readiness verdict**
+  (`docs/architecture/14-…`, Parts I–II, PR #14); and **structured (JSON-schema) grader outputs** for
+  Student/Reviewer (`docs/architecture/15-…`, PR #15 + follow-up hardening). The four honesty features
+  compound: R1 (don't drop in a lesson) → orientation (don't silently assume a prereq) → curriculum
+  (don't drop/re-teach across a course) → readiness (don't cram a topic past the learner's foundation).
+- **🔜 Next — an open fork, pick one before starting:**
+  1. **Curriculum planner Phases 3–5** — course assembly (index + cross-links), reactive
+     `R1 → planner → R1` re-decomposition, close-out. Start: `docs/architecture/13-curriculum-planner.md`.
+  2. **Doc 14 Part III — escalation workflow.** Wire the readiness verdict into: planner detects
+     "gap too deep" → auto-calls the curriculum planner for a course plan → shows the learner
+     `COURSE.md` + a cost/time preview → stops for explicit confirmation before any paid course build.
+     Buildable now — only needs machinery already merged (readiness verdict + curriculum Phases 1–2).
+     Start: `docs/architecture/14-code-explanation-and-readiness.md` Part III.
+
+  Both are unblocked; neither is inherently more urgent — this needs a call before coding starts.
+  Regardless of pick, still owed: the **cli deliverable-writer cleanup** (extract
+  `_write_agentic_summary`/`_write_final_notebook`/`_write_learner_package` out of `cli` into a shared
+  module) and a **paid live full-course run** (`--max-modules 1` smoke test first).
+- **Roadmap & priorities:** `TODO.md`.
 
 ## Gotchas learned the hard way
 
@@ -116,3 +131,6 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   against an existing `runs/.venv-cache/*` venv. (Making the timeout configurable is a known nice-to-have.)
 - **The planner's `requirements` block is LLM-non-deterministic**, so its content hash changes between
   runs and the venv cache rarely hits across "the same" topic. pip's wheel cache still helps if warm.
+- **Git push over SSH has no key in the agent shell.** Push via `gh auth setup-git` + an explicit
+  HTTPS remote URL (`git push https://github.com/<org>/<repo>.git <branch>`) rather than assuming the
+  SSH remote works.

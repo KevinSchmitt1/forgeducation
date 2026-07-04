@@ -70,6 +70,11 @@ The repo contains two execution paths, plus a course layer above them:
   a fake score; rubric-dimensioned student grades; silent fallbacks are recorded as
   `degradations` on the state and surfaced in SUMMARY.md; and a deterministic structural
   gate (`forged/pipeline/structure.py`) refuses an executed-but-hollow notebook.
+- **Structured grader outputs**: Student and Reviewer pass strict OpenAI JSON Schema
+  response formats through `LLMClient.complete(...)` so the cheap critic stages return
+  machine-parseable `blockers`/`findings` (and student `quality_score`/`rubric`). Ollama
+  omits `response_format`, so the existing lenient parsers remain the local-provider
+  fallback rather than the primary contract.
 - **Self-contained deliverable**: `forged/packaging.py` writes a learner `README.md` +
   `requirements.txt`; `forged/provisioning.py` builds/reuses a content-addressed per-run
   venv so cells run for real (default-on; `--no-provision` opts out).
