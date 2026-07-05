@@ -18,13 +18,14 @@ doc 14's Part III (escalation workflow). Both are unblocked. Pick one before wri
 
 ## ▶ Do this first
 
-1. **Decide the fork** (curriculum Phases 3–5 vs. doc 14 Part III) — see `TODO.md` for both options
-   spelled out. Doc 14 Part III is arguably the higher-leverage pick: it's the consumer of both R1 and
-   curriculum Phases 1–2, and doc 14 explicitly calls it "the next feature."
-2. Whichever is picked, open with a `/plan` phase before coding.
-3. Regardless of pick: the **cli deliverable-writer cleanup** (extract `_write_agentic_summary` /
-   `_write_final_notebook` / `_write_learner_package` out of `cli` into a shared module) is still owed,
-   and a **paid live full-course run** is still unspent (smoke-test with `--max-modules 1` first).
+1. **The fork is decided (2026-07-05): build the Smart Front Door.** Design + granular task list:
+   `docs/architecture/16-smart-front-door.md` (one `forged learn` command; unconditional confirmation
+   gate; natural-language plan adjustments → deterministic CourseSpec ops; Tier-2 guided re-plan).
+   Branch: `feat/smart-front-door`. Tasks are sized for cheaper models — implement them in order
+   (Phase 1: pure operations first), TDD, suite green after every task.
+2. Still owed regardless: the **cli deliverable-writer cleanup** (extract `_write_agentic_summary` /
+   `_write_final_notebook` / `_write_learner_package` out of `cli` into a shared module) and a
+   **paid live full-course run** (smoke-test with `--max-modules 1` first).
 
 ## Process note from this session
 

@@ -114,10 +114,15 @@
   Deferred because R1 matters more right now. The linear-vs-agentic comparison is dropped — we
   only ship the agentic pipeline. Detail retained below.
 
-### ⏭ Next Up — open fork: curriculum Phases 3–5 vs. doc 14 Part III (pick one)
+### ⏭ Next Up — ✅ DECIDED (2026-07-05): the Smart Front Door (doc 16)
 
-Two tracks are now unblocked and neither has been prioritized over the other yet — this needs a call
-before coding starts.
+The fork below was resolved: **Option B won, extended** into the "smart front door" — one
+`forged learn` command, planner decides single-lesson vs. course, an **unconditional interactive
+confirmation gate** before any paid run, and natural-language plan adjustments classified by a small
+model into deterministic `CourseSpec` operations (merge/drop/force_single/reorder), with a guided
+gpt-5-mini re-plan as the only escalation. Full design + granular task list:
+`docs/architecture/16-smart-front-door.md`. Work happens on `feat/smart-front-door`.
+Option A (curriculum Phases 3–5) remains queued after it; historical context below.
 
 **Option A — Curriculum planner Phases 3–5.** The curriculum planner can now plan and run a course.
 What remains (see `docs/architecture/13-curriculum-planner.md` Phases 3–5):
