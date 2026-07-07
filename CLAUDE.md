@@ -7,6 +7,9 @@ captures what every cell really does, so explanations are checked against realit
 This file is repo-specific orientation + the conventions that aren't obvious from the code. General
 coding/testing/git style is assumed (see your global rules); this covers what's particular to here.
 
+#EDIT:
+This section above is outdated. We want to get to something where there are no differences in the cli calls anymore. So there is only on cli call of the forgeducation program, the workflow decides what flow to use, depending on the complexity and coverage of the topic.
+
 ## Architecture at a glance
 
 Two execution paths share the same agents, personas, and context block:
@@ -89,6 +92,10 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   on the diff only).
 - **Documentation:** always update the documents used, especially when things change. When building new stuff, always add a .md in the docs/archtiecture/ folder with the given structure. Most of the time there will be a .md created when the ecc "plan" command is used to plan new features and integrations. **Keep the top-level `README.md` current too** — when a user-facing capability changes (a new command, a new run output, a new honesty guarantee), update the README in the same change; it drifts fastest because it's the one doc nobody is forced to touch. The `docs/architecture/*.md` files are dated design snapshots — add a new one, don't rewrite old ones.
 
+#EDIT:
+In the section above there are the workflows for the handover.md, todo.md and development.md missing (are they even necessary when there are the docs/... files?). Please make sure these are needed and if yes, updated. Otherwise we should get somehow rid of them. There also might be static files, which just should be kept and not updated, but i think handover and todo are dynamic in nature, so we really should think about them twice if we wanna keep them and how.
+
+
 ## Current state & next task
 
 > **Resuming? Read [`HANDOVER.md`](HANDOVER.md) first** — cold-start brief with the next task, file
@@ -104,19 +111,23 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   Student/Reviewer (`docs/architecture/15-…`, PR #15 + follow-up hardening). The four honesty features
   compound: R1 (don't drop in a lesson) → orientation (don't silently assume a prereq) → curriculum
   (don't drop/re-teach across a course) → readiness (don't cram a topic past the learner's foundation).
-- **🔜 Next — an open fork, pick one before starting:**
+- **On `feat/smart-front-door` (2026-07-07):** the **Smart Front Door** (`docs/architecture/16-…`,
+  Phases 1–5) — one `forged learn` command that sizes single-lesson vs. course, shows the plan + a
+  rough cost/time estimate, and runs nothing paid until the learner confirms; plan tweaks classified
+  into deterministic `CourseSpec` ops (merge/drop/force_single/reorder) with a guided gpt-5-mini
+  re-plan as the only escalation. Adds a fifth honesty feature: **don't spend before you agree.**
+- **🔜 Next:**
   1. **Curriculum planner Phases 3–5** — course assembly (index + cross-links), reactive
      `R1 → planner → R1` re-decomposition, close-out. Start: `docs/architecture/13-curriculum-planner.md`.
-  2. **Doc 14 Part III — escalation workflow.** Wire the readiness verdict into: planner detects
-     "gap too deep" → auto-calls the curriculum planner for a course plan → shows the learner
-     `COURSE.md` + a cost/time preview → stops for explicit confirmation before any paid course build.
-     Buildable now — only needs machinery already merged (readiness verdict + curriculum Phases 1–2).
-     Start: `docs/architecture/14-code-explanation-and-readiness.md` Part III.
+  2. **Doc 14 Part III — escalation workflow.** Wire the readiness verdict so the planner detecting
+     "gap too deep" auto-routes into the front door's course path. The front door supersedes Part III's
+     gate sketch; what remains is the auto-route on the verdict. Start:
+     `docs/architecture/14-code-explanation-and-readiness.md` Part III.
 
-  Both are unblocked; neither is inherently more urgent — this needs a call before coding starts.
-  Regardless of pick, still owed: the **cli deliverable-writer cleanup** (extract
+  Still owed regardless: the **cli deliverable-writer cleanup** (extract
   `_write_agentic_summary`/`_write_final_notebook`/`_write_learner_package` out of `cli` into a shared
-  module) and a **paid live full-course run** (`--max-modules 1` smoke test first).
+  module — `_run_agentic_lesson` was already extracted) and a **paid live `forged learn` run**
+  (1-module smoke test first).
 - **Roadmap & priorities:** `TODO.md`.
 
 ## Gotchas learned the hard way

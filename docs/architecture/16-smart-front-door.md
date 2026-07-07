@@ -1,8 +1,11 @@
 # 16 — Smart Front Door (interactive plan gate)
 
-**Status:** 🚧 PLANNED (2026-07-05). Nothing implemented yet. This doc is the design of record
-and the executable task list — each task is deliberately small enough for an inexpensive model
-to implement in one sitting, TDD, with the suite green after every task.
+**Status:** ✅ IMPLEMENTED (2026-07-07). Phases 1–5 shipped on `feat/smart-front-door`; this doc
+remains the design of record. Phase 6 close-out (this update, README, TODO/HANDOVER) done in the
+same branch. Validating tests per phase are listed in the [Implementation record](#implementation-record).
+
+> Original plan header (2026-07-05): each task was sized small enough for an inexpensive model
+> to implement in one sitting, TDD, suite green after every task.
 
 Builds directly on three merged features and changes none of them:
 - **Doc 13** — curriculum planner (`forged/curriculum/`): decomposition, union-coverage fidelity
@@ -305,6 +308,27 @@ only the initial decomposition.
 - [ ] `CurriculumPlanner` requests strict structured output on OpenAI (doc-15 parity), lenient
       fallback preserved.
 - [ ] All state frozen; ops pure; CI gates green (ruff, mypy, coverage ≥ 80%).
+
+## Implementation record
+
+Shipped 2026-07-07 on `feat/smart-front-door`, one commit per phase, all TDD.
+
+| Phase | Code | Validating tests |
+|---|---|---|
+| 1 — plan operations | `forged/curriculum/operations.py` (`merge_modules`/`drop_module`/`force_single`/`reorder_modules`) | `tests/test_curriculum_operations.py` (23) |
+| 2 — intent classifier | `personas/plan_adjuster.md`, `forged/curriculum/adjuster.py` (`PlanAdjuster`, `AdjustmentIntent`, `ADJUSTER_RESPONSE_FORMAT`) | `tests/test_curriculum_adjuster.py` (20) |
+| 3 — planner hardening | `forged/curriculum/planner.py` (`COURSE_PLAN_RESPONSE_FORMAT`, `plan(..., guidance=…)`), `personas/curriculum_planner.md` | `tests/test_curriculum_planner.py` (structured-format + guidance + persona-contract) |
+| 4 — the gate loop | `forged/curriculum/gate.py` (`render_plan`, `run_gate`, `GateOutcome`, `MAX_ADJUSTMENT_ROUNDS`) | `tests/test_curriculum_gate.py` (15) |
+| 5 — CLI wiring | `forged/cli.py` (`_cmd_learn`, `_run_plan_gate`, `_build_confirmed`, `_run_agentic_lesson` extraction, `learn` subparser) | `tests/test_cli_learn.py` (7) |
+
+Notes for the next reader:
+- The single-lesson branch reuses `_run_agentic_lesson` (extracted from `_cmd_agentic`), so a
+  1-module `forged learn` produces exactly the `forged agentic` deliverables. This is a partial
+  down-payment on the still-owed deliverable-writer extraction — `_write_agentic_summary` /
+  `_write_final_notebook` / `_write_learner_package` remain in `cli.py`.
+- Still owed (unchanged by this work): a **paid live `forged learn`** smoke run (1-module topic to
+  exercise the real gate → single-lesson path; then a small course), and the deliverable-writer
+  module extraction.
 
 ## References
 

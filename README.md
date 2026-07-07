@@ -45,6 +45,10 @@ surfaced in the run's `SUMMARY.md`:
 - **Never drop or re-teach across a course.** `forged course` decomposes an over-large topic into
   ordered modules whose union must cover every requested capability, folding earlier modules'
   objectives into later modules' prior knowledge. (`docs/architecture/13-curriculum-planner.md`)
+- **Never spend before you agree.** `forged learn` (the front door) always shows the proposed
+  plan and a rough cost/time estimate and runs nothing paid until you confirm; plan tweaks are
+  applied deterministically, so an interactive round never costs an expensive re-plan.
+  (`docs/architecture/16-smart-front-door.md`)
 
 Dense code is made *followable*, not just present: a plain-words ASCII pipeline map plus a short
 per-cell brief that decodes each meaningful parameter and surfaces every file the code writes.
@@ -69,8 +73,22 @@ spec). Two engines can build it — see [Execution paths](#execution-paths). The
 agentic engine is the recommended one: it runs the notebook, classifies any
 failure, and re-routes to the right agent to fix it.
 
+**Start with `forged learn`** — the one front door. It sizes the topic (one notebook or a
+short course), **shows you the plan plus a rough cost/time estimate, and runs nothing paid
+until you confirm**. Adjust the plan in plain language ("just make it one notebook", "combine
+1 and 2", "drop module 3"); a small model turns that into a structural edit applied
+deterministically — no expensive re-plan for a tweak. `forged agentic` and `forged course`
+remain as direct/advanced commands for scripts and power users.
+
 ```bash
-# 1. Minimal — just a topic; sensible defaults for everything else.
+# 0. The front door (recommended) — plan first, confirm, then build a lesson or a course.
+forged learn --topic "How to set up and train local LLMs on Apple Silicon"
+#   → shows the proposed plan + estimate; you type yes / no / a change at the prompt.
+#   --yes builds the proposed plan non-interactively (scripts must pass it; a non-TTY
+#   stdin without --yes is a usage error, so money is never spent silently).
+forged learn --topic "How a Bloom filter works" --yes
+
+# 1. Direct engine — just a topic; sensible defaults for everything else.
 forged agentic --topic "How a Bloom filter works" --run-dir ./runs/bloom
 
 # 2. Full context (recommended) — tailor the lesson to a specific learner + topic.
@@ -249,7 +267,7 @@ what's already in hand. It only ever **keeps the best** version, never a regress
 | `forged/models.py` | Typed, validated learner profile + topic specification |
 | `forged/usage.py` | Per-call token ledger → `usage.json` + `USAGE.md` |
 | `forged/curriculum/` | Decompose an over-large topic into an ordered course of modules (`forged course`) |
-| `forged/cli.py` | `forged build` / `agentic` / `course` / `pipelines` / `clean` |
+| `forged/cli.py` | `forged learn` (front door) / `build` / `agentic` / `course` / `pipelines` / `clean` |
 
 The agentic pipeline lives under `forged/pipeline/` (state, failure classification, router,
 graph, the topic-fidelity detector, and the per-role agents incl. the content reviser); see

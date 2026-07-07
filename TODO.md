@@ -114,15 +114,24 @@
   Deferred because R1 matters more right now. The linear-vs-agentic comparison is dropped — we
   only ship the agentic pipeline. Detail retained below.
 
-### ⏭ Next Up — ✅ DECIDED (2026-07-05): the Smart Front Door (doc 16)
+### ✅ DONE (2026-07-07): the Smart Front Door (doc 16)
 
-The fork below was resolved: **Option B won, extended** into the "smart front door" — one
-`forged learn` command, planner decides single-lesson vs. course, an **unconditional interactive
-confirmation gate** before any paid run, and natural-language plan adjustments classified by a small
-model into deterministic `CourseSpec` operations (merge/drop/force_single/reorder), with a guided
-gpt-5-mini re-plan as the only escalation. Full design + granular task list:
-`docs/architecture/16-smart-front-door.md`. Work happens on `feat/smart-front-door`.
-Option A (curriculum Phases 3–5) remains queued after it; historical context below.
+**Shipped on `feat/smart-front-door`** (Phases 1–5, one commit per phase, TDD): one `forged learn`
+command; the CurriculumPlanner sizes single-lesson vs. course; an **unconditional interactive
+confirmation gate** runs nothing paid until the learner confirms; natural-language plan adjustments
+are classified by a small model (`PlanAdjuster`) into deterministic `CourseSpec` operations
+(`merge`/`drop`/`force_single`/`reorder`), with a guided gpt-5-mini re-plan as the only escalation.
+`--yes` skips the gate; a non-TTY stdin without `--yes` is a usage error. Doc 16 flipped to
+IMPLEMENTED with the validating test names; README updated to lead with `forged learn`.
+
+**Still owed for this feature** (carried below, unchanged): the deliverable-writer extraction and a
+**paid live `forged learn` smoke run** (1-module topic → single-lesson path; then a small course).
+
+---
+
+### ⏭ Next Up — the queued fork (Option A remains)
+
+The 2026-07-05 fork resolved to the smart front door (now done). What remains queued:
 
 **Option A — Curriculum planner Phases 3–5.** The curriculum planner can now plan and run a course.
 What remains (see `docs/architecture/13-curriculum-planner.md` Phases 3–5):
