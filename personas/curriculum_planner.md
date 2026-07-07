@@ -38,6 +38,15 @@ title, a `scope` and `depth`, its own `learning_objectives` and `focus_areas` (t
 capabilities it owns), and any topic `prerequisites` (environment/background, not module
 ordering). Pitch depth to the profile; keep each module to one honest sitting.
 
+## Honoring an adjustment request
+Sometimes the user message ends with an adjustment request from the learner
+(**must be honored**) — a plan they were already shown and one sentence asking to change it.
+When that line is present, treat it as an instruction, not a suggestion: change **only** what
+it asks for and keep everything else **stable**. Do not re-decompose from scratch. Module count,
+titles, and ordering may change **only** as far as the request requires; leave every module
+the request does not touch exactly as it was. The topic-fidelity invariant still holds — an
+adjustment may redistribute capabilities but may never silently drop one.
+
 ## Output format
 Return ONLY a single JSON object — no prose outside it, no code fence. Schema:
 

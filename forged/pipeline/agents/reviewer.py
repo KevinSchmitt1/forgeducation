@@ -20,13 +20,13 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from pathlib import Path
 
 from forged.artifacts import Artifact, ArtifactStore
 from forged.pipeline.state import Degradation, PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
+from ._jsonparse import extract_json_candidate
 
 _LOG = logging.getLogger(__name__)
 
@@ -171,18 +171,14 @@ class ReviewerAgent(Agent[AgentOutput]):
     def _parse_review(self, raw: str) -> tuple[str, bool]:
         """Extract and validate the JSON review from the LLM response.
 
-        Tries a trailing ```json block, then a bare JSON object. On any parse error or
-        missing required key the report is marked unreviewed (reviewed=False) — an honest
-        "could not assess", never fabricated findings.
+        Parses the whole (structured-output) response first, falling back to fence/brace
+        extraction for prose-wrapped providers. On any parse error or missing required key
+        the report is marked unreviewed (reviewed=False) — an honest "could not assess",
+        never fabricated findings.
 
         Returns (json_string, reviewed).
         """
-        fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", raw, re.DOTALL)
-        if fence_match:
-            candidate = fence_match.group(1).strip()
-        else:
-            brace_match = re.search(r"(\{.*\})", raw, re.DOTALL)
-            candidate = brace_match.group(1).strip() if brace_match else raw.strip()
+        candidate = extract_json_candidate(raw)
 
         try:
             parsed = json.loads(candidate)

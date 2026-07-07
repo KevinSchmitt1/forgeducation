@@ -1,13 +1,10 @@
 # TODO — forgeducation Roadmap
 
-> **▶ Resuming work? Read [`HANDOVER.md`](HANDOVER.md) first** — it's the cold-start brief: current
-> state, the open next-task fork (curriculum Phases 3–5 vs. doc 14 Part III), files needed, and open
-> discussion items.
+> **▶ Resuming work?** Read [`CLAUDE.md`](CLAUDE.md) → "Current state & next task" first — the
+> cold-start brief (what's merged, what's on the branch, what's next). This file is the roadmap/backlog
+> behind it. Doc ownership is defined in `CLAUDE.md` → "Documentation".
 
 ## Current Status
-
-
-## Add a real section to work with all the .md files in the agentic workflow (e.g. update all documents after work and so on)
 
 ### ✅ Complete
 
@@ -114,10 +111,24 @@
   Deferred because R1 matters more right now. The linear-vs-agentic comparison is dropped — we
   only ship the agentic pipeline. Detail retained below.
 
-### ⏭ Next Up — open fork: curriculum Phases 3–5 vs. doc 14 Part III (pick one)
+### ✅ DONE (2026-07-07): the Smart Front Door (doc 16)
 
-Two tracks are now unblocked and neither has been prioritized over the other yet — this needs a call
-before coding starts.
+**Shipped on `feat/smart-front-door`** (Phases 1–5, one commit per phase, TDD): one `forged learn`
+command; the CurriculumPlanner sizes single-lesson vs. course; an **unconditional interactive
+confirmation gate** runs nothing paid until the learner confirms; natural-language plan adjustments
+are classified by a small model (`PlanAdjuster`) into deterministic `CourseSpec` operations
+(`merge`/`drop`/`force_single`/`reorder`), with a guided gpt-5-mini re-plan as the only escalation.
+`--yes` skips the gate; a non-TTY stdin without `--yes` is a usage error. Doc 16 flipped to
+IMPLEMENTED with the validating test names; README updated to lead with `forged learn`.
+
+**Still owed for this feature** (carried below, unchanged): the deliverable-writer extraction and a
+**paid live `forged learn` smoke run** (1-module topic → single-lesson path; then a small course).
+
+---
+
+### ⏭ Next Up — the queued fork (Option A remains)
+
+The 2026-07-05 fork resolved to the smart front door (now done). What remains queued:
 
 **Option A — Curriculum planner Phases 3–5.** The curriculum planner can now plan and run a course.
 What remains (see `docs/architecture/13-curriculum-planner.md` Phases 3–5):
@@ -285,5 +296,6 @@ remaining open questions belong to Phases 3–5.
 - `docs/architecture/14-code-explanation-and-readiness.md` — code maps, cell briefs, readiness
   verdict — Parts I–II done, Part III (escalation workflow) designed, not built
 - `docs/architecture/15-structured-grader-output.md` — structured (JSON-schema) grader outputs — done
-- `DEVELOPMENT.md` — contributor-oriented map of the codebase
+- `docs/architecture/16-smart-front-door.md` — `forged learn` interactive plan gate — IMPLEMENTED
+- `CLAUDE.md` — agent orientation, conventions, current state + next task, extending the system
 - `templates/README.md` — user-facing structured input guide

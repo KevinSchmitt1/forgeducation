@@ -7,6 +7,9 @@ captures what every cell really does, so explanations are checked against realit
 This file is repo-specific orientation + the conventions that aren't obvious from the code. General
 coding/testing/git style is assumed (see your global rules); this covers what's particular to here.
 
+#EDIT:
+This section above is outdated. We want to get to something where there are no differences in the cli calls anymore. So there is only on cli call of the forgeducation program, the workflow decides what flow to use, depending on the complexity and coverage of the topic.
+
 ## Architecture at a glance
 
 Two execution paths share the same agents, personas, and context block:
@@ -87,12 +90,22 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   - Use the `gh` CLI for PRs/checks (installed + authenticated on this machine).
 - **Reviewer-on-diff per phase**, findings addressed before close-out (cost-bounded: once per phase,
   on the diff only).
-- **Documentation:** always update the documents used, especially when things change. When building new stuff, always add a .md in the docs/archtiecture/ folder with the given structure. Most of the time there will be a .md created when the ecc "plan" command is used to plan new features and integrations. **Keep the top-level `README.md` current too** — when a user-facing capability changes (a new command, a new run output, a new honesty guarantee), update the README in the same change; it drifts fastest because it's the one doc nobody is forced to touch. The `docs/architecture/*.md` files are dated design snapshots — add a new one, don't rewrite old ones.
+- **Documentation — know which doc owns what, and update it in the same change.** Every doc has one
+  job so there is one place to change, not three that drift:
+  - **Dynamic — update at the end of each unit of work:**
+    - `CLAUDE.md` → "Current state & next task" — the cold-start brief (what's merged, what's on the
+      branch, what's next). This is the single source of truth for project state; read it first when
+      resuming. (There is intentionally no separate `HANDOVER.md`.)
+    - `TODO.md` — the roadmap/backlog across features, cost findings, open design questions.
+    - `README.md` — user-facing; when a user-facing capability changes (new command, new run output,
+      new honesty guarantee), update it in the same change. It drifts fastest — nobody is forced to touch it.
+  - **Append-only — add, don't rewrite:** `docs/architecture/NN-*.md` are dated design snapshots. When
+    building something new, add a new numbered `.md` (an ecc `/plan` run usually creates one); when a
+    feature ships, flip its doc's status to IMPLEMENTED but leave the design body intact.
+  - **Durable — edit only when the thing it describes changes:** this file (conventions), the
+    templates. No routine per-work-unit updates.
 
 ## Current state & next task
-
-> **Resuming? Read [`HANDOVER.md`](HANDOVER.md) first** — cold-start brief with the next task, file
-> map, and open discussion items. Next session should open with a `/plan` phase.
 
 - **Merged & on `master`:** the Reviewer second critic + learner-aligned personas (PR #5);
   **R1 — topic fidelity, Half A** (`docs/architecture/11-…`); the **learner orientation cell**
@@ -104,20 +117,40 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   Student/Reviewer (`docs/architecture/15-…`, PR #15 + follow-up hardening). The four honesty features
   compound: R1 (don't drop in a lesson) → orientation (don't silently assume a prereq) → curriculum
   (don't drop/re-teach across a course) → readiness (don't cram a topic past the learner's foundation).
-- **🔜 Next — an open fork, pick one before starting:**
+- **On `feat/smart-front-door` (2026-07-07):** the **Smart Front Door** (`docs/architecture/16-…`,
+  Phases 1–5) — one `forged learn` command that sizes single-lesson vs. course, shows the plan + a
+  rough cost/time estimate, and runs nothing paid until the learner confirms; plan tweaks classified
+  into deterministic `CourseSpec` ops (merge/drop/force_single/reorder) with a guided gpt-5-mini
+  re-plan as the only escalation. Adds a fifth honesty feature: **don't spend before you agree.**
+- **🔜 Next:**
   1. **Curriculum planner Phases 3–5** — course assembly (index + cross-links), reactive
      `R1 → planner → R1` re-decomposition, close-out. Start: `docs/architecture/13-curriculum-planner.md`.
-  2. **Doc 14 Part III — escalation workflow.** Wire the readiness verdict into: planner detects
-     "gap too deep" → auto-calls the curriculum planner for a course plan → shows the learner
-     `COURSE.md` + a cost/time preview → stops for explicit confirmation before any paid course build.
-     Buildable now — only needs machinery already merged (readiness verdict + curriculum Phases 1–2).
-     Start: `docs/architecture/14-code-explanation-and-readiness.md` Part III.
+  2. **Doc 14 Part III — escalation workflow.** Wire the readiness verdict so the planner detecting
+     "gap too deep" auto-routes into the front door's course path. The front door supersedes Part III's
+     gate sketch; what remains is the auto-route on the verdict. Start:
+     `docs/architecture/14-code-explanation-and-readiness.md` Part III.
 
-  Both are unblocked; neither is inherently more urgent — this needs a call before coding starts.
-  Regardless of pick, still owed: the **cli deliverable-writer cleanup** (extract
+  Still owed regardless: the **cli deliverable-writer cleanup** (extract
   `_write_agentic_summary`/`_write_final_notebook`/`_write_learner_package` out of `cli` into a shared
-  module) and a **paid live full-course run** (`--max-modules 1` smoke test first).
+  module — `_run_agentic_lesson` was already extracted) and a **paid live `forged learn` run**
+  (1-module smoke test first).
 - **Roadmap & priorities:** `TODO.md`.
+
+## Extending the system (common tasks)
+
+Folded from the retired `DEVELOPMENT.md`; kept current here.
+
+- **Add an agentic stage:** create `forged/pipeline/agents/<stage>.py` (thin `Agent` subclass) +
+  `personas/<stage>.md`; wire a node/edge in `forged/pipeline/graph.py` and, if it needs routing,
+  `router.py`/`failure.py`; add the stage to the relevant `config/pipeline.*.yaml`; add tests for
+  routing + artifacts + prompt inputs. Behavior lives in the persona, not the wrapper.
+- **Add a `LearnerProfile`/`TopicSpecification` field:** add it to the dataclass in `forged/models.py`;
+  surface it in the shared context via `build_context_block` in `forged/context.py` (there is no
+  `prompts.py`/`to_prompt_context` — context is one rendered block every agent reads); update
+  `templates/examples/*.yaml` + `templates/README.md`; update `_default_*` in `forged/cli.py`.
+- **Add a CLI command:** add a subparser in `_build_parser()` and a dispatch line in `main()` (each
+  command is a `_cmd_<name>` in `forged/cli.py`); mirror an existing command's load/error-code block
+  (`EXIT_OK`/`EXIT_RUNTIME`/`EXIT_USAGE`); verify `python -m forged.cli <cmd> --help`; add CLI tests.
 
 ## Gotchas learned the hard way
 

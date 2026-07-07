@@ -32,6 +32,7 @@ def personas_dir(tmp_path: Path) -> Path:
     (d / "planner.md").write_text("You are the Planner.", encoding="utf-8")
     (d / "code_author.md").write_text("You are the Code Author.", encoding="utf-8")
     (d / "student.md").write_text("You are the Student.", encoding="utf-8")
+    (d / "reviewer.md").write_text("You are the Reviewer.", encoding="utf-8")
     (d / "reviser.md").write_text("You are the Reviser.", encoding="utf-8")
     return d
 
@@ -311,6 +312,50 @@ def test_student_parses_bare_json_object(
 
 
 @pytest.mark.unit
+def test_student_parses_nested_structured_grade_report(
+    personas_dir: Path,
+    initial_state: PipelineState,
+    artifact_store: ArtifactStore,
+    mock_llm_client: MagicMock,
+) -> None:
+    """A full structured grade returned as pure nested JSON must parse as graded.
+
+    Regression for the paid-run failure "Grade report missing keys: ['blockers',
+    'findings', 'quality_score']": response_format returns the whole object as JSON, but
+    the old brace regex grabbed a shallow inner object (the rubric). The parser must read
+    the whole response, not an inner slice.
+    """
+    from forged.pipeline.agents.student import StudentAgent
+
+    report = {
+        "quality_score": 88.0,
+        "rubric": {
+            "structure": 90, "explanation_depth": 85, "code_clarity": 88,
+            "correctness": 92, "learner_fit": 80,
+        },
+        "verdict": "good",
+        "blockers": [],
+        "findings": [
+            {
+                "source": "student", "severity": "NITPICK", "scope": "content",
+                "location": {"type": "cell", "cell_index": 3, "label": None},
+                "text": "minor nit",
+            }
+        ],
+    }
+    mock_llm_client.complete.return_value = json.dumps(report)  # pure JSON, no fence/prose
+
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=mock_llm_client)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
+
+    stored = json.loads(artifact_store.get(result.outputs[-1].artifact_name).content)
+    assert stored["graded"] is True
+    assert stored["rubric"] is not None  # nested rubric survived, not mistaken for the report
+    assert stored["findings"] and stored["findings"][0]["location"]["cell_index"] == 3
+    assert not any(d.kind == "grade_unparseable" for d in result.degradations)
+
+
+@pytest.mark.unit
 def test_student_marks_ungraded_on_unparseable_response(
     personas_dir: Path,
     initial_state: PipelineState,
@@ -519,3 +564,57 @@ def test_student_grade_report_missing_keys_degrades(
     # Missing required keys → ungraded, not a neutral score
     assert stored["graded"] is False
     assert stored["quality_score"] != pytest.approx(50.0)
+
+
+@pytest.mark.unit
+def test_reviewer_parses_nested_structured_review_report(
+    personas_dir: Path,
+    initial_state: PipelineState,
+    artifact_store: ArtifactStore,
+    mock_llm_client: MagicMock,
+) -> None:
+    """A full structured review returned as pure nested JSON must parse as reviewed."""
+    from forged.pipeline.agents.reviewer import ReviewerAgent
+
+    report = {
+        "verdict": "good",
+        "blockers": [],
+        "findings": [
+            {
+                "source": "reviewer",
+                "severity": "CONFUSING",
+                "scope": "content",
+                "location": {"type": "cell", "cell_index": 2, "label": None},
+                "text": "The explanation skips an intermediate step.",
+            }
+        ],
+    }
+    mock_llm_client.complete.return_value = json.dumps(report)
+
+    agent = ReviewerAgent(personas_dir=personas_dir, llm_client=mock_llm_client)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
+
+    stored = json.loads(artifact_store.get(result.outputs[-1].artifact_name).content)
+    assert stored["reviewed"] is True
+    assert stored["findings"][0]["location"]["cell_index"] == 2
+    assert not any(d.kind == "review_unparseable" for d in result.degradations)
+
+
+@pytest.mark.unit
+def test_reviewer_report_missing_findings_degrades(
+    personas_dir: Path,
+    initial_state: PipelineState,
+    artifact_store: ArtifactStore,
+    mock_llm_client: MagicMock,
+) -> None:
+    """ReviewerAgent._parse_review() degrades when required keys are missing."""
+    from forged.pipeline.agents.reviewer import ReviewerAgent
+
+    mock_llm_client.complete.return_value = '{"verdict": "good", "blockers": []}'
+    agent = ReviewerAgent(personas_dir=personas_dir, llm_client=mock_llm_client)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(initial_state, artifact_store))
+
+    artifact_name = result.outputs[-1].artifact_name
+    stored = json.loads(artifact_store.get(artifact_name).content)
+    assert stored["reviewed"] is False
+    assert result.degradations[-1].kind == "review_unparseable"
