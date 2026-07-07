@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from pathlib import Path
 
 from forged.artifacts import Artifact, ArtifactStore
@@ -18,6 +17,7 @@ from forged.pipeline.failure import RUBRIC_DIMENSIONS, RubricScores
 from forged.pipeline.state import Degradation, PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
+from ._jsonparse import extract_json_candidate
 
 _LOG = logging.getLogger(__name__)
 
@@ -190,20 +190,16 @@ class StudentAgent(Agent[AgentOutput]):
     def _parse_grade_report(self, raw: str) -> tuple[str, bool]:
         """Extract and validate the JSON grade report from the LLM response.
 
-        Tries a trailing ```json block, then a bare JSON object. On any parse
-        error or missing required key the report is marked ungraded (graded=False)
-        — an honest "could not assess", never a silent neutral score.
+        Parses the whole (structured-output) response first, falling back to fence/brace
+        extraction for prose-wrapped providers. On any parse error or missing required key
+        the report is marked ungraded (graded=False) — an honest "could not assess", never
+        a silent neutral score.
 
         Returns (json_string, graded).
         """
-        # Try to extract a ```json ... ``` fence at the end of the response
-        fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
-        if fence_match:
-            candidate = fence_match.group(1).strip()
-        else:
-            # Try to find the last bare { ... } block in the response
-            brace_match = re.search(r"(\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\})", raw, re.DOTALL)
-            candidate = brace_match.group(1).strip() if brace_match else raw.strip()
+        # Structured output (response_format) returns pure JSON — parse the whole response
+        # first; fence/brace extraction is only a fallback for prose-wrapped providers.
+        candidate = extract_json_candidate(raw)
 
         try:
             parsed = json.loads(candidate)
