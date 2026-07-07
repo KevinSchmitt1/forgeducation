@@ -14,6 +14,7 @@ tested with scripted `StringIO` conversations and zero real TTY.
 
 from __future__ import annotations
 
+import textwrap
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TextIO
@@ -37,6 +38,10 @@ EST_USD_PER_TOKEN_HIGH = 5.0e-6
 
 _PROMPT = "Build this? (yes / no / describe a change) > "
 
+# Wrap width for the objective bullets so a long objective doesn't run off the terminal.
+_WRAP_WIDTH = 88
+_BULLET_PAD = "        "  # objective bullets sit under their module header
+
 # A callable that takes the current course + the learner's verbatim sentence and returns a
 # re-planned course (CLI wires this to CurriculumPlanner.plan(..., guidance=sentence)).
 Replanner = Callable[[CourseSpec, str], CourseSpec]
@@ -55,19 +60,38 @@ class GateOutcome:
 
 
 def render_plan(course: CourseSpec, original_capabilities: Sequence[str]) -> str:
-    """Render the plan the way the learner sees it: numbered modules with objectives and
-    builds-on links, a module-scaled cost/time estimate, and the current fidelity check."""
+    """Render the plan the way the learner sees it: numbered modules, one objective per
+    (wrapped) line, compact builds-on links, a cost/time estimate, and the fidelity check."""
     count = len(course.modules)
-    lines = [f"Proposed plan ({count} module{'' if count == 1 else 's'}):"]
+    order_by_title = {module.spec.title: module.order for module in course.modules}
+
+    lines = [f"Proposed plan ({count} module{'' if count == 1 else 's'}):", ""]
     for module in course.modules:
-        objectives = "; ".join(module.spec.learning_objectives) or "(no objectives)"
-        line = f"  [{module.order}] {module.spec.title}  (objectives: {objectives})"
+        header = f"  [{module.order}] {module.spec.title}"
         if module.module_prerequisites:
-            line += f"  · builds on: {', '.join(module.module_prerequisites)}"
-        lines.append(line)
+            refs = ", ".join(
+                f"[{order_by_title[title]}]" if title in order_by_title else title
+                for title in module.module_prerequisites
+            )
+            header += f"  (builds on {refs})"
+        lines.append(header)
+        for objective in module.spec.learning_objectives or ["(no objectives stated)"]:
+            lines.append(_wrap_bullet(objective))
+        lines.append("")
+
     lines.append(_render_estimate(count))
     lines.append(_render_fidelity(course, original_capabilities))
     return "\n".join(lines)
+
+
+def _wrap_bullet(text: str) -> str:
+    """One objective as a wrapped, hanging-indented bullet."""
+    return textwrap.fill(
+        text,
+        width=_WRAP_WIDTH,
+        initial_indent=f"{_BULLET_PAD}• ",
+        subsequent_indent=f"{_BULLET_PAD}  ",
+    )
 
 
 def _render_estimate(module_count: int) -> str:
@@ -83,10 +107,11 @@ def _render_estimate(module_count: int) -> str:
 
 def _render_fidelity(course: CourseSpec, original_capabilities: Sequence[str]) -> str:
     report = assess_course_fidelity(original_capabilities, course)
-    if report.missing:
-        missing = ", ".join(report.missing)
-        return f"  ⚠ Course-fidelity check: no longer covered: {missing}"
-    return "  ✓ Course-fidelity check: every requested capability is covered"
+    if not report.missing:
+        return "  ✓ Fidelity check: every requested capability is covered"
+    lines = ["  ⚠ Fidelity check: some requested capabilities are no longer covered:"]
+    lines.extend(_wrap_bullet(cap) for cap in report.missing)
+    return "\n".join(lines)
 
 
 # ── The loop ────────────────────────────────────────────────────────────────────────

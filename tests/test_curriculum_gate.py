@@ -101,7 +101,21 @@ def test_render_shows_modules_objectives_and_builds_on() -> None:
     text = render_plan(_course(), _caps(_course()))
     assert "[0] Setup" in text and "[1] Train" in text and "[2] Serve" in text
     assert "install stack" in text  # objective shown
-    assert "builds on: Setup" in text  # prerequisite link shown
+    assert "builds on [0]" in text  # prerequisite link shown as a compact index reference
+
+
+@pytest.mark.unit
+def test_render_puts_each_objective_on_its_own_bullet_line() -> None:
+    course = CourseSpec(
+        title="C",
+        modules=(_module("Setup", 0, ["install the stack", "verify the install"], []),),
+        rationale="",
+    )
+    text = render_plan(course, _caps(course))
+    # Two objectives → two bullet lines, not one semicolon-joined blob.
+    assert "• install the stack" in text
+    assert "• verify the install" in text
+    assert "install the stack; verify the install" not in text
 
 
 @pytest.mark.unit
@@ -116,7 +130,7 @@ def test_render_shows_cost_and_time_estimate_scaled_by_modules() -> None:
 def test_render_shows_fidelity_ok_when_all_covered() -> None:
     course = _course()
     text = render_plan(course, _caps(course))
-    assert "✓ Course-fidelity check" in text
+    assert "✓ Fidelity check" in text
 
 
 @pytest.mark.unit
@@ -124,7 +138,7 @@ def test_render_shows_fidelity_warning_when_capability_missing() -> None:
     course = _course()
     original = (*_caps(course), "deploy to a phone")  # a capability no module covers
     text = render_plan(course, original)
-    assert "⚠ Course-fidelity check" in text
+    assert "⚠ Fidelity check" in text
     assert "deploy to a phone" in text
 
 
