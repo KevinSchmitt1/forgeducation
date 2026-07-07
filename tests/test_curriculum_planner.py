@@ -12,7 +12,7 @@ import json
 import pytest
 
 from forged.curriculum.model import CourseSpec
-from forged.curriculum.planner import CurriculumPlanner
+from forged.curriculum.planner import COURSE_PLAN_RESPONSE_FORMAT, CurriculumPlanner
 from forged.models import LearnerProfile
 
 
@@ -35,10 +35,12 @@ class _StubClient:
         self.response = response
         self.system_prompt: str | None = None
         self.user_prompt: str | None = None
+        self.response_format: dict | None = None
 
-    def complete(self, system_prompt, user_prompt, trace_context=None) -> str:
+    def complete(self, system_prompt, user_prompt, trace_context=None, response_format=None) -> str:
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
+        self.response_format = response_format
         return self.response
 
 
@@ -147,3 +149,48 @@ def test_plan_user_message_carries_brief_and_learner_context() -> None:
     assert stub.user_prompt is not None
     assert "setup and train local LLMs on M1" in stub.user_prompt
     assert "Kevin" in stub.user_prompt  # learner context block was included
+
+
+# ── T3.1 structured output (doc 15 parity) ────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_plan_forwards_strict_response_format() -> None:
+    stub = _StubClient(_TWO_MODULE_JSON)
+    CurriculumPlanner(llm_client=stub).plan(brief="x", learner_profile=_profile())
+    assert stub.response_format is COURSE_PLAN_RESPONSE_FORMAT
+    assert stub.response_format["json_schema"]["strict"] is True
+    assert stub.response_format["json_schema"]["name"] == "course_plan"
+
+
+# ── T3.2 Tier-2 guidance parameter ────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_guidance_lands_verbatim_in_prompt() -> None:
+    stub = _StubClient(_TWO_MODULE_JSON)
+    CurriculumPlanner(llm_client=stub).plan(
+        brief="x", learner_profile=_profile(), guidance="module 2 should focus on quantization"
+    )
+    assert stub.user_prompt is not None
+    assert "must be honored" in stub.user_prompt
+    assert "module 2 should focus on quantization" in stub.user_prompt
+
+
+@pytest.mark.unit
+def test_guidance_absent_by_default() -> None:
+    stub = _StubClient(_TWO_MODULE_JSON)
+    CurriculumPlanner(llm_client=stub).plan(brief="x", learner_profile=_profile())
+    assert stub.user_prompt is not None
+    assert "must be honored" not in stub.user_prompt
+
+
+@pytest.mark.unit
+def test_persona_pins_adjustment_stability_mandate() -> None:
+    """The persona must instruct: honor the adjustment, change ONLY what it asks, keep the
+    rest stable — pinned so a future edit can't silently drop the Tier-2 contract."""
+    from pathlib import Path
+
+    persona = (Path("personas") / "curriculum_planner.md").read_text(encoding="utf-8").lower()
+    assert "must be honored" in persona
+    assert "only" in persona and "stable" in persona
