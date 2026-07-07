@@ -1,13 +1,10 @@
 # TODO — forgeducation Roadmap
 
-> **▶ Resuming work? Read [`HANDOVER.md`](HANDOVER.md) first** — it's the cold-start brief: current
-> state, the open next-task fork (curriculum Phases 3–5 vs. doc 14 Part III), files needed, and open
-> discussion items.
+> **▶ Resuming work?** Read [`CLAUDE.md`](CLAUDE.md) → "Current state & next task" first — the
+> cold-start brief (what's merged, what's on the branch, what's next). This file is the roadmap/backlog
+> behind it. Doc ownership is defined in `CLAUDE.md` → "Documentation".
 
 ## Current Status
-
-
-## Add a real section to work with all the .md files in the agentic workflow (e.g. update all documents after work and so on)
 
 ### ✅ Complete
 
@@ -299,5 +296,6 @@ remaining open questions belong to Phases 3–5.
 - `docs/architecture/14-code-explanation-and-readiness.md` — code maps, cell briefs, readiness
   verdict — Parts I–II done, Part III (escalation workflow) designed, not built
 - `docs/architecture/15-structured-grader-output.md` — structured (JSON-schema) grader outputs — done
-- `DEVELOPMENT.md` — contributor-oriented map of the codebase
+- `docs/architecture/16-smart-front-door.md` — `forged learn` interactive plan gate — IMPLEMENTED
+- `CLAUDE.md` — agent orientation, conventions, current state + next task, extending the system
 - `templates/README.md` — user-facing structured input guide

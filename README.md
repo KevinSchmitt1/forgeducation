@@ -228,12 +228,10 @@ For detailed status, capabilities, and testing guide see [TEST.md](TEST.md) and
 
 ## Developing
 
-New contributors: start with [DEVELOPMENT.md](DEVELOPMENT.md). It explains:
-- The system architecture and data flow
-- The `docs/architecture/` guide (design docs for learner profiles, input flow, implementation)
-- Key concepts (profiles, topics, context threading)
-- How to add agents, modify profiles, or change the CLI
-- Project structure and file layout
+New contributors: start with [`CLAUDE.md`](CLAUDE.md) — it carries the architecture overview,
+current state + next task, the common "how to extend" tasks (add an agent stage, add a profile
+field, add a CLI command), and the conventions that matter here. Per-feature design lives in
+[`docs/architecture/`](docs/architecture/) (dated snapshots); the roadmap lives in [`TODO.md`](TODO.md).
 
 Users: skip this and jump to [Use](#use) above.
 

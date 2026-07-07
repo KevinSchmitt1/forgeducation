@@ -1,8 +1,8 @@
 # 16 — Smart Front Door (interactive plan gate)
 
 **Status:** ✅ IMPLEMENTED (2026-07-07). Phases 1–5 shipped on `feat/smart-front-door`; this doc
-remains the design of record. Phase 6 close-out (this update, README, TODO/HANDOVER) done in the
-same branch. Validating tests per phase are listed in the [Implementation record](#implementation-record).
+remains the design of record. Phase 6 close-out (this update, README, TODO, and the `CLAUDE.md` state
+section) done in the same branch. Validating tests per phase are listed in the [Implementation record](#implementation-record).
 
 > Original plan header (2026-07-05): each task was sized small enough for an inexpensive model
 > to implement in one sitting, TDD, suite green after every task.
@@ -111,7 +111,7 @@ allowed to want less; honesty means they are told what they are giving up).
 | Persona-contract tests | `tests/pipeline/test_orientation_persona.py`, `test_pedagogy_persona.py` | pin every persona mandate with a test so it can't be silently deleted |
 | CLI command shape | `forged/cli.py` `_cmd_course` | input loading + error handling + `EXIT_USAGE`/`EXIT_RUNTIME`/`EXIT_OK` discipline |
 | Fidelity recheck | `forged/cli.py` (course cmd) `assess_course_fidelity(list(topic_capabilities(topic_spec)), course)` | re-run after every plan edit |
-| Cost estimate inputs | `HANDOVER`-era usage findings: one lesson run ≈ 100K tokens, ~10–12 min typical | constants, clearly labeled rough |
+| Cost estimate inputs | measured usage findings (`usage.json`/`USAGE.md`): one lesson run ≈ 100K tokens, ~10–12 min typical | constants, clearly labeled rough |
 
 ## Part IV — Data contracts
 
@@ -268,7 +268,7 @@ Touch: `forged/cli.py`; new `tests/test_cli_learn.py`.
 - Flip this doc to IMPLEMENTED with the validating test names per phase.
 - README: document `forged learn` as the primary entry point (the "one front door" story);
   `agentic`/`course` remain documented as direct/advanced commands.
-- Sync `TODO.md` + `HANDOVER.md`; delete stale branches; all three CI gates; reviewer-on-diff;
+- Sync `TODO.md` + `CLAUDE.md` state section; delete stale branches; all three CI gates; reviewer-on-diff;
   branch + PR (never straight to master).
 
 ## Part VI — Cost & safety analysis

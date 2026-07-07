@@ -489,7 +489,7 @@ Before considering the agentic pipeline "ready," verify:
 
 - Check `./run/pipeline.log` for error details
 - Run with `--debug` for verbose output
-- Review docs: [DEVELOPMENT.md](DEVELOPMENT.md), [docs/architecture/](docs/architecture/)
+- Review docs: [CLAUDE.md](CLAUDE.md), [docs/architecture/](docs/architecture/)
 - Run unit tests: `pytest tests/test_cli_agentic.py -xvs`
 
 ---
