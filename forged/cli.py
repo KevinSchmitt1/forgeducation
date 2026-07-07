@@ -63,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_agentic(args)
     if args.command == "course":
         return _cmd_course(args)
+    if args.command == "learn":
+        return _cmd_learn(args)
     return _cmd_build(args)
 
 
@@ -208,15 +210,6 @@ def _cmd_agentic(args) -> int:
     Invokes run_pipeline() with structured feedback loop so agents can
     iterate on failures (Phase 8-9).
     """
-    import asyncio
-    import logging
-    from datetime import datetime
-
-    from .artifacts import ArtifactStore
-    from .logging_config import setup_logging
-    from .pipeline.graph import run_pipeline
-    from .pipeline.state import create_initial_state
-
     topic = (args.topic or "").strip()
     if not topic:
         print("✗ --topic must not be empty", file=sys.stderr)
@@ -240,13 +233,49 @@ def _cmd_agentic(args) -> int:
         print(f"✗ {exc}", file=sys.stderr)
         return EXIT_USAGE
 
-    run_dir = Path(args.run_dir)
+    return _run_agentic_lesson(
+        topic=topic,
+        learner_profile=learner_profile,
+        topic_spec=topic_spec,
+        pipeline=pipeline,
+        personas_dir=Path(args.personas),
+        run_dir=Path(args.run_dir),
+        provision=not getattr(args, "no_provision", False),
+        debug=args.debug,
+    )
+
+
+def _run_agentic_lesson(
+    topic: str,
+    learner_profile,
+    topic_spec,
+    pipeline,
+    personas_dir: Path,
+    run_dir: Path,
+    provision: bool,
+    debug: bool,
+) -> int:
+    """Run one lesson through the agentic pipeline and write its deliverables.
+
+    The shared single-lesson entry point behind both `forged agentic` and the smart
+    front door's 1-module branch (doc 16): given a resolved topic spec + learner profile,
+    it provisions, runs the pipeline, writes lesson.ipynb / SUMMARY.md / the learner
+    package / usage, and returns an honest exit code (0 only on an acceptable notebook).
+    """
+    import asyncio
+    import logging
+    from datetime import datetime
+
+    from .artifacts import ArtifactStore
+    from .logging_config import setup_logging
+    from .pipeline.graph import run_pipeline
+    from .pipeline.state import create_initial_state
+
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    setup_logging(debug=args.debug, log_file=run_dir / "pipeline.log")
+    setup_logging(debug=debug, log_file=run_dir / "pipeline.log")
     logger = logging.getLogger(__name__)
 
-    personas_dir = Path(args.personas)
     if not personas_dir.is_dir():
         print(f"✗ personas directory not found: {personas_dir}", file=sys.stderr)
         return EXIT_RUNTIME
@@ -277,7 +306,6 @@ def _cmd_agentic(args) -> int:
         state = create_initial_state(run_id=run_dir.name)
         logger.info("Initial state created (run_id=%s, iteration=0)", state.run_id)
 
-        provision = not getattr(args, "no_provision", False)
         final_state = asyncio.run(
             run_pipeline(state, store, pipeline, personas_dir, provision=provision)
         )
@@ -581,6 +609,153 @@ def _report_course_result(result, course_dir: Path) -> int:
     return EXIT_OK
 
 
+def _cmd_learn(args) -> int:
+    """One front door (doc 16): plan first, confirm, then build a lesson or a course.
+
+    Always calls the CurriculumPlanner (the sizing authority): 1 module → single-lesson
+    branch (same lifecycle as `forged agentic`); N modules → course orchestration (same
+    as `forged course`). The interactive gate runs nothing paid until the learner confirms;
+    `--yes` skips it, and a non-TTY stdin without `--yes` is a usage error so a script must
+    opt into spending explicitly.
+    """
+    topic = (args.topic or "").strip()
+    if not topic:
+        print("✗ --topic must not be empty", file=sys.stderr)
+        return EXIT_USAGE
+
+    _load_dotenv(Path.cwd() / ".env")
+    _load_dotenv(PACKAGE_ROOT / ".env")
+
+    try:
+        pipeline = load_pipeline(args.config)
+        learner_profile = (
+            LearnerProfile.from_yaml(args.learner_profile)
+            if args.learner_profile
+            else _default_learner_profile()
+        )
+        topic_spec = (
+            TopicSpecification.from_yaml(args.topic_spec)
+            if args.topic_spec
+            else _default_topic_spec(topic)
+        )
+    except (FileNotFoundError, ValueError, TypeError) as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    personas_dir = Path(args.personas)
+    try:
+        planner = CurriculumPlanner(personas_dir=personas_dir)
+        course = planner.plan(
+            brief=topic, learner_profile=learner_profile, topic_spec=topic_spec
+        )
+    except Exception as exc:
+        print(f"\n✗ Curriculum planning failed: {exc}", file=sys.stderr)
+        return EXIT_RUNTIME
+
+    original_capabilities = list(topic_capabilities(topic_spec))
+
+    # The gate: plan first, confirm before spending. --yes accepts as-is (still printed);
+    # a non-TTY stdin without --yes is a usage error so a script opts into spending.
+    if args.yes:
+        _print_course(course)
+        print("\n▶ --yes given: building without the interactive gate.")
+        confirmed_course = course
+    elif not sys.stdin.isatty():
+        print(
+            "✗ the interactive plan gate needs a TTY; pass --yes to run non-interactively",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    else:
+        confirmed_course = _run_plan_gate(
+            course, original_capabilities, personas_dir, planner,
+            topic, learner_profile, topic_spec,
+        )
+        if confirmed_course is None:
+            print("\nNothing was run.")
+            return EXIT_OK  # a deliberate 'no' / cancelled gate is a success, not an error
+
+    return _build_confirmed(
+        args, confirmed_course, learner_profile, topic, pipeline, personas_dir,
+        original_capabilities,
+    )
+
+
+def _run_plan_gate(
+    course, original_capabilities, personas_dir, planner,
+    topic, learner_profile, topic_spec,
+):
+    """Run the interactive gate; return the confirmed course, or None if it cancelled."""
+    from .curriculum.adjuster import PlanAdjuster
+    from .curriculum.gate import run_gate
+
+    adjuster = PlanAdjuster(personas_dir=personas_dir)
+
+    def _replanner(_current, sentence):
+        return planner.plan(
+            brief=topic,
+            learner_profile=learner_profile,
+            topic_spec=topic_spec,
+            guidance=sentence,
+        )
+
+    outcome = run_gate(
+        course,
+        original_capabilities,
+        adjuster,
+        _replanner,
+        input_stream=sys.stdin,
+        output_stream=sys.stdout,
+    )
+    return outcome.course if outcome.confirmed else None
+
+
+def _build_confirmed(
+    args, course, learner_profile, topic, pipeline, personas_dir, original_capabilities
+) -> int:
+    """Build a confirmed plan: 1 module → single lesson, N modules → course orchestration."""
+    from datetime import datetime
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    provision = not getattr(args, "no_provision", False)
+
+    if len(course.modules) == 1:
+        module = course.modules[0]
+        run_dir = Path(args.runs) / f"{stamp}_{_dir_slug(module.spec.title)}"
+        print(f"\n▶ Running 1 module lesson into {run_dir} …")
+        return _run_agentic_lesson(
+            topic=module.spec.title,
+            learner_profile=learner_profile,
+            topic_spec=module.spec,
+            pipeline=pipeline,
+            personas_dir=personas_dir,
+            run_dir=run_dir,
+            provision=provision,
+            debug=args.debug,
+        )
+
+    from .curriculum.orchestrator import run_course
+
+    report = assess_course_fidelity(list(original_capabilities), course)
+    course_dir = Path(args.runs) / f"{stamp}_course_{_dir_slug(topic)}"
+    course_dir.mkdir(parents=True, exist_ok=True)
+    _persist_course(course_dir, course, report)
+
+    total = len(course.modules)
+    n = total if args.max_modules is None else min(args.max_modules, total)
+    print(f"\n▶ Running {n} module lesson(s) into {course_dir} …")
+    result = run_course(
+        course,
+        learner_profile,
+        course_dir,
+        pipeline=pipeline,
+        personas_dir=personas_dir,
+        provision=provision,
+        max_modules=args.max_modules,
+    )
+    return _report_course_result(result, course_dir)
+
+
 def _persist_course(out_dir: Path, course, report) -> None:
     """Write the course plan to <out>/course_plan.json + <out>/COURSE.md."""
     import json
@@ -763,6 +938,50 @@ def _build_parser() -> argparse.ArgumentParser:
              "When omitted, the plan is only printed.",
     )
     course.add_argument("--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS)
+
+    learn = sub.add_parser(
+        "learn",
+        help="One front door: plan first, confirm, then build a lesson or a course",
+    )
+    learn.add_argument("--topic", required=True, help="What you want to learn")
+    learn.add_argument(
+        "--yes", action="store_true",
+        help="Skip the interactive plan gate and build the proposed plan as-is "
+             "(required for non-interactive/scripted use).",
+    )
+    learn.add_argument(
+        "--config", default=str(DEFAULT_CONFIG),
+        help="Pipeline YAML used to resolve stage-specific models (default: bundled "
+             "review-loop).",
+    )
+    learn.add_argument(
+        "--runs", default=str(Path.cwd() / "runs"),
+        help="Root directory for run output (default: ./runs).",
+    )
+    learn.add_argument(
+        "--max-modules", type=int, default=None,
+        help="Cap the number of module lessons actually run when the plan is a course "
+             "(cost control).",
+    )
+    learn.add_argument(
+        "--no-provision", action="store_true",
+        help="Skip per-lesson virtualenv provisioning; run on the base kernel.",
+    )
+    learn.add_argument(
+        "--learner-profile",
+        type=Path,
+        help="Path to learner_profile.yaml. Uses a sensible default if omitted.",
+    )
+    learn.add_argument(
+        "--topic-spec",
+        type=Path,
+        help="Path to topic_specification.yaml. Uses a sensible default if omitted.",
+    )
+    learn.add_argument(
+        "--debug", action="store_true",
+        help="Enable DEBUG logging for a single-lesson build.",
+    )
+    learn.add_argument("--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS)
 
     clean = sub.add_parser("clean", help="Prune old run directories (manual, confirmed)")
     clean.add_argument(
