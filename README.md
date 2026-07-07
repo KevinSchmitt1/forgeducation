@@ -67,55 +67,47 @@ agent prompt is traced automatically.
 
 ## Use
 
-A lesson is built from a **topic** plus, optionally, two **context** files that
-describe *who* it's for (a learner profile) and *what* it should cover (a topic
-spec). Two engines can build it — see [Execution paths](#execution-paths). The
-agentic engine is the recommended one: it runs the notebook, classifies any
-failure, and re-routes to the right agent to fix it.
+**There is one command you run: `forged learn`.** Give it a topic; it decides whether that's a
+single notebook or a short course, shows you the plan with a rough cost/time estimate, and **runs
+nothing paid until you confirm**. At the prompt you type `yes`, `no`, or a change in plain language
+("just make it one notebook", "combine 1 and 2", "drop module 3") — a small model turns that into a
+structural edit applied deterministically, so adjusting the plan never triggers an expensive re-plan.
 
-**Start with `forged learn`** — the one front door. It sizes the topic (one notebook or a
-short course), **shows you the plan plus a rough cost/time estimate, and runs nothing paid
-until you confirm**. Adjust the plan in plain language ("just make it one notebook", "combine
-1 and 2", "drop module 3"); a small model turns that into a structural edit applied
-deterministically — no expensive re-plan for a tweak. `forged agentic` and `forged course`
-remain as direct/advanced commands for scripts and power users.
+Optionally tailor the lesson with two **context** files describing *who* it's for (a learner profile)
+and *what* it should cover (a topic spec) — see [Writing the two context files](#writing-the-two-context-files).
 
 ```bash
-# 0. The front door (recommended) — plan first, confirm, then build a lesson or a course.
+# The one command — plan first, confirm at the prompt, then it builds.
 forged learn --topic "How to set up and train local LLMs on Apple Silicon"
-#   → shows the proposed plan + estimate; you type yes / no / a change at the prompt.
-#   --yes builds the proposed plan non-interactively (scripts must pass it; a non-TTY
-#   stdin without --yes is a usage error, so money is never spent silently).
-forged learn --topic "How a Bloom filter works" --yes
 
-# 1. Direct engine — just a topic; sensible defaults for everything else.
-forged agentic --topic "How a Bloom filter works" --run-dir ./runs/bloom
-
-# 2. Full context (recommended) — tailor the lesson to a specific learner + topic.
-forged agentic \
+# Tailored to a specific learner + topic (recommended for a real run):
+forged learn \
     --topic "Transformer attention from scratch" \
     --learner-profile templates/examples/learner-ml-practitioner.yaml \
-    --topic-spec      templates/examples/topic-transformers.yaml \
-    --run-dir ./runs/transformers
+    --topic-spec      templates/examples/topic-transformers.yaml
 
-# The same two context flags work on the linear engine (writes to ./runs/<ts>_<pipeline>/):
-forged build \
-    --topic "Recursion and the call stack" \
-    --learner-profile templates/examples/learner-beginner.yaml \
-    --topic-spec      templates/examples/topic-hash-maps.yaml
-
-# Cheaper/shorter linear pipeline; list bundled pipelines; go fully local with Ollama
-forged build --topic "How a Bloom filter works" --config config/pipeline.skeleton.yaml
-forged pipelines
-# (start `ollama serve`, set provider: ollama in the YAML — nothing leaves your machine)
-
-# 3. Course — decompose an over-large topic into an ordered set of module notebooks.
-#    --plan-only just prints/saves the decomposition (cheap: one planner call, no module runs);
-#    omit it to run one lesson pipeline per module (each module's learner profile gains the
-#    earlier modules' objectives as prior knowledge, so later modules aren't re-taught).
-forged course --topic "Local LLM engineering on Apple Silicon" --plan-only --out ./runs/course-plan
-forged course --topic "Local LLM engineering on Apple Silicon" --max-modules 1   # run modules
+# Non-interactive: --yes accepts the proposed plan and builds without prompting.
+# A script MUST pass --yes; a non-TTY stdin without it is a usage error, so money is
+# never spent silently.
+forged learn --topic "How a Bloom filter works" --yes
 ```
+
+Output lands in `./runs/<timestamp>_<slug>/` for a single lesson (or `./runs/<timestamp>_course_<slug>/`
+for a course): open `lesson.ipynb`, read `SUMMARY.md`. Cap cost with `--max-modules N` (limit how many
+course modules actually run) and `--no-provision` (skip per-lesson virtualenv building).
+
+### Advanced & development commands
+
+You do **not** need these for normal use — `forged learn` composes them for you. They exist for
+scripting, testing, and development, and skip the plan-first confirmation gate:
+
+| Command | What it's for |
+|---|---|
+| `forged agentic --topic … --run-dir …` | Run the agentic engine directly on **one** lesson — what `learn` calls under the hood for a single notebook. No plan gate. |
+| `forged course --topic … [--plan-only]` | Decompose a topic into a course and run it directly. `--plan-only` prints/saves the decomposition without running anything (cheap: one planner call). |
+| `forged build --topic …` | The older **linear** engine (fixed single pass, no failure re-routing). Kept for deterministic/offline runs; not actively developed. Add `--config config/pipeline.skeleton.yaml` for a cheaper pass, or point the YAML at Ollama to stay fully local. |
+| `forged pipelines` | List the bundled pipeline configs. |
+| `forged clean --keep N` | Prune old run directories (asks before deleting). |
 
 ### Writing the two context files
 
@@ -150,9 +142,9 @@ Output lands in `./runs/<timestamp>_<pipeline>/` (or the `--run-dir` you pass to
 Intermediate plumbing (raw JSON reports, draft notebooks) is pruned automatically on
 success; failed runs keep everything **and still write a `SUMMARY.md`** for debugging.
 
-### Environment provisioning (agentic)
+### Environment provisioning
 
-By default `forged agentic` reads the lesson's dependencies from the plan, builds a
+By default every lesson build (`forged learn`, and `forged agentic`/`forged course` directly) reads the lesson's dependencies from the plan, builds a
 **per-run virtualenv** (cached and reused across runs by a content hash of the
 requirements, so heavy wheels download once), registers a Jupyter kernel, and runs the
 notebook against it — so the lesson's cells execute for real instead of skipping behind
@@ -181,16 +173,18 @@ forged clean --keep 10 --dry-run    # preview what would be removed
 forged clean --keep 10 --yes        # skip the prompt (required non-interactively)
 ```
 
-### Execution paths
+### Execution paths (under the hood)
 
-There are two ways the pipeline can run. Both accept the same `--learner-profile`
-and `--topic-spec` context files; the difference is how they iterate.
+`forged learn` builds each lesson with the **agentic** engine — you don't pick this, it's what
+runs after you confirm. It's documented here for contributors and for the direct `forged agentic`
+command. There's also an older **linear** engine. Both accept the same `--learner-profile` and
+`--topic-spec` context files; the difference is how they iterate.
 
 **Linear (`forged build`, simple + predictable):** runs every stage once in a fixed
 sequence — planner → code_author → executor → student → reviser — followed by a bounded
 revision loop. No failure classification; good when you want a deterministic single pass.
 
-**Agentic (`forged agentic`, recommended):** a LangGraph pipeline that classifies
+**Agentic (`forged agentic`, the one `forged learn` uses):** a LangGraph pipeline that classifies
 failures, reroutes to the appropriate agent, and feeds structured feedback back in for
 intelligent iteration:
 
