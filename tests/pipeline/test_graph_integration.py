@@ -19,6 +19,7 @@ import pytest
 
 from forged.artifacts import Artifact, ArtifactStore
 from forged.config import PipelineConfig, load_pipeline
+from forged.pipeline.agents.reviewer import ReviewerAgent
 from forged.pipeline.state import (
     PipelineStage,
     PipelineState,
@@ -28,6 +29,37 @@ from forged.pipeline.state import (
 )
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _stub_reviewer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep this module's no-real-API-calls contract (see module docstring).
+
+    The graph's static student→reviewer→revisor edge always runs the ReviewerAgent
+    node, and tests/conftest.py loads a real OPENAI_API_KEY from .env — so without
+    this stub the reviewer fires a live, paid, nondeterministic OpenAI call on every
+    run_pipeline() test here (the source of the intermittent extra-reroute flakiness).
+    No test in this file asserts reviewer behavior; stub it with a clean report so the
+    critic is a deterministic no-op. Reviewer routing is covered in test_agents_concrete.
+    """
+    clean_report = json.dumps({"reviewed": True, "blockers": [], "findings": []})
+
+    async def _clean_reviewer(
+        self: ReviewerAgent, state: PipelineState, store: ArtifactStore
+    ) -> PipelineState:
+        store.put(
+            Artifact(
+                name=f"reviewer_report_v{state.iteration}", kind="json", content=clean_report
+            )
+        )
+        output = StageOutput(
+            stage=PipelineStage.REVIEWER,
+            artifact_name=f"reviewer_report_v{state.iteration}",
+            iteration=state.iteration,
+        )
+        return state.with_output(output).with_current_stage(PipelineStage.REVISER)
+
+    monkeypatch.setattr(ReviewerAgent, "run", _clean_reviewer)
 
 
 @pytest.fixture

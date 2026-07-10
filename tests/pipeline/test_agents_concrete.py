@@ -919,6 +919,47 @@ def test_reviewer_code_blocker_routes_to_code_author(
 
 
 @pytest.mark.unit
+def test_reviewer_cell_finding_without_index_does_not_crash(
+    personas_dir: Path,
+    state_with_grade: PipelineState,
+    artifact_store: ArtifactStore,
+) -> None:
+    """A reviewer finding tagged location.type='cell' but missing cell_index must not
+    crash the routing loop. Real LLM output routinely omits the index; the reviser
+    downgrades the location to GLOBAL and keeps the finding (routes by scope), rather
+    than raising the state.Location CELL-requires-cell_index invariant mid-pipeline."""
+    from forged.pipeline.agents.reviser import RevisorAgent
+
+    _put_reviewer_report(
+        artifact_store,
+        findings=[
+            {
+                "source": "reviewer",
+                "severity": "BLOCKER",
+                "scope": "code",
+                "location": {"type": "cell"},  # cell type, no cell_index
+                "text": "This cell calls a nonexistent API.",
+            }
+        ],
+    )
+    state = state_with_grade.with_output(
+        StageOutput(
+            stage=PipelineStage.REVIEWER,
+            artifact_name="reviewer_report_v0",
+            iteration=0,
+        )
+    )
+
+    agent = RevisorAgent(personas_dir=personas_dir)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(state, artifact_store))
+
+    # The finding survived the downgrade: a code BLOCKER still reroutes to the author.
+    assert not result.is_terminal
+    assert result.current_stage == PipelineStage.CODE_AUTHOR
+    assert result.routing_log[-1].classification == "test_failure"
+
+
+@pytest.mark.unit
 def test_clean_reviewer_leaves_acceptable_grade_untouched(
     personas_dir: Path,
     state_with_grade: PipelineState,

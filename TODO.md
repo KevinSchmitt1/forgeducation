@@ -121,8 +121,9 @@ are classified by a small model (`PlanAdjuster`) into deterministic `CourseSpec`
 `--yes` skips the gate; a non-TTY stdin without `--yes` is a usage error. Doc 16 flipped to
 IMPLEMENTED with the validating test names; README updated to lead with `forged learn`.
 
-**Still owed for this feature** (carried below, unchanged): the deliverable-writer extraction and a
-**paid live `forged learn` smoke run** (1-module topic → single-lesson path; then a small course).
+**Still owed for this feature:** the deliverable-writer extraction is **done** (writers now live in
+`forged/deliverables.py`; see below). Remaining: a **paid live `forged learn` smoke run** (1-module
+topic → single-lesson path; then a small course).
 
 ---
 
@@ -153,9 +154,10 @@ Option A's Phase 4 (reactive re-decomposition shares the same machinery), so bui
 strand A's later work.
 
 **Regardless of which is picked:**
-- **Cleanup (known gap):** extract `forged.cli`'s per-run deliverable writers
-  (`_write_agentic_summary`/`_write_final_notebook`/`_write_learner_package`) into a shared module so
-  the orchestrator needn't reach into `cli` via a deferred import.
+- **Cleanup (known gap): DONE** — the per-run deliverable writers now live in `forged/deliverables.py`
+  (`write_agentic_summary`/`write_final_notebook`/`write_learner_package`); both the single-lesson CLI
+  path and the curriculum orchestrator import them there, so the orchestrator's deferred `forged.cli`
+  import is gone.
 - **Live validation (paid):** a real full course run (N module pipelines) — needs consent + cost
   (~$10–25, 1–3h for the 6-module course). Suggested first step: a single-module smoke test
   (`forged course … --max-modules 1 --no-provision`).

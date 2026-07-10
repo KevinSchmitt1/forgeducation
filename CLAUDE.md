@@ -130,10 +130,10 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
      gate sketch; what remains is the auto-route on the verdict. Start:
      `docs/architecture/14-code-explanation-and-readiness.md` Part III.
 
-  Still owed regardless: the **cli deliverable-writer cleanup** (extract
-  `_write_agentic_summary`/`_write_final_notebook`/`_write_learner_package` out of `cli` into a shared
-  module — `_run_agentic_lesson` was already extracted) and a **paid live `forged learn` run**
-  (1-module smoke test first).
+  The **cli deliverable-writer cleanup** is now **done** (`write_agentic_summary`/
+  `write_final_notebook`/`write_learner_package` live in `forged/deliverables.py`; both the single-lesson
+  CLI path and the curriculum orchestrator import them there, so the orchestrator's deferred `forged.cli`
+  import is gone). Still owed regardless: a **paid live `forged learn` run** (1-module smoke test first).
 - **Roadmap & priorities:** `TODO.md`.
 
 ## Extending the system (common tasks)

@@ -15,9 +15,8 @@ A failing module is recorded (terminal_ok=False), never silently skipped. Execut
 sequential (doc 13 Part I.b); the marked loop is where dependency-aware parallelism would
 later hook in.
 
-Note (tech debt): `_write_module_deliverables` reuses the per-run writers in `forged.cli`
-via a deferred import to avoid a module-load cycle. Those writers should be extracted to a
-shared module; tracked as a follow-up.
+`_write_module_deliverables` reuses the per-run writers in `forged.deliverables`, the same
+shared module the single-lesson CLI path uses.
 """
 
 from __future__ import annotations
@@ -31,6 +30,11 @@ from typing import Any
 
 from forged.artifacts import Artifact, ArtifactStore
 from forged.context import build_context_block, topic_spec_to_json
+from forged.deliverables import (
+    write_agentic_summary,
+    write_final_notebook,
+    write_learner_package,
+)
 from forged.models import LearnerProfile
 from forged.pipeline.graph import run_pipeline
 from forged.pipeline.state import create_initial_state
@@ -152,17 +156,8 @@ def _run_one_module(
 def _write_module_deliverables(
     run_dir: Path, store: ArtifactStore, state: Any, title: str, profile: LearnerProfile
 ) -> None:
-    """Write the module's SUMMARY/notebook/learner-package, reusing the single-run writers.
-
-    Deferred import of `forged.cli` avoids a module-load cycle (cli depends on this layer).
-    TODO: extract these writers to a shared module so the orchestrator needn't reach into cli.
-    """
-    from forged.cli import (
-        _write_agentic_summary,
-        _write_final_notebook,
-        _write_learner_package,
-    )
-
-    _write_agentic_summary(run_dir, state, 0.0)
-    _write_final_notebook(run_dir, store, state)
-    _write_learner_package(run_dir, store, state, title, profile)
+    """Write the module's SUMMARY/notebook/learner-package, reusing the single-run writers
+    from `forged.deliverables` (the same shared module the single-lesson CLI path uses)."""
+    write_agentic_summary(run_dir, state, 0.0)
+    write_final_notebook(run_dir, store, state)
+    write_learner_package(run_dir, store, state, title, profile)
