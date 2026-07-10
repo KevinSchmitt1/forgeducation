@@ -166,6 +166,17 @@ class RevisorAgent(Agent[AgentOutput]):
                 continue
             location = f.get("location") or {}
             loc_type = self._coerce_location_type(location.get("type"))
+            cell_index = location.get("cell_index")
+            if loc_type == LocationType.CELL:
+                # CELL requires a concrete integer index (state.Location invariant).
+                # Real LLM output routinely tags a finding "cell" without one —
+                # downgrade to GLOBAL rather than crash the routing loop or drop the
+                # finding, so the critic's concern still reaches the classifier.
+                if isinstance(cell_index, bool) or not isinstance(cell_index, int):
+                    loc_type, cell_index = LocationType.GLOBAL, None
+            else:
+                # Non-cell types must omit cell_index (the invariant's other half).
+                cell_index = None
             findings.append(
                 Evidence(
                     source=f.get("source") or default_source,
@@ -173,11 +184,7 @@ class RevisorAgent(Agent[AgentOutput]):
                     scope=self._coerce_scope(f.get("scope")),
                     location=Location(
                         type=loc_type,
-                        cell_index=(
-                            location.get("cell_index")
-                            if loc_type == LocationType.CELL
-                            else None
-                        ),
+                        cell_index=cell_index,
                         label=location.get("label"),
                     ),
                     text=f["text"],
