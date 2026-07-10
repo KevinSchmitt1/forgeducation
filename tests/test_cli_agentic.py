@@ -185,7 +185,7 @@ def test_agentic_cli_rejects_missing_learner_profile(tmp_path: Path) -> None:
 @pytest.mark.integration
 def test_agentic_cli_writes_summary_with_routing_log(tmp_path: Path) -> None:
     """SUMMARY.md includes routing log from state."""
-    from forged.cli import _write_agentic_summary
+    from forged.deliverables import write_agentic_summary
 
     state = create_initial_state()
     from forged.pipeline.state import RoutingDecision
@@ -202,7 +202,7 @@ def test_agentic_cli_writes_summary_with_routing_log(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
 
-    _write_agentic_summary(run_dir, state, 10.5)
+    write_agentic_summary(run_dir, state, 10.5)
 
     summary = (run_dir / "SUMMARY.md").read_text(encoding="utf-8")
     assert "code_quality" in summary
@@ -213,7 +213,7 @@ def test_agentic_cli_writes_summary_with_routing_log(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_agentic_summary_surfaces_degradations(tmp_path: Path) -> None:
     """SUMMARY.md includes a Degradations section so fallbacks are never silent."""
-    from forged.cli import _write_agentic_summary
+    from forged.deliverables import write_agentic_summary
     from forged.pipeline.state import Degradation
 
     state = create_initial_state()
@@ -228,7 +228,7 @@ def test_agentic_summary_surfaces_degradations(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
 
-    _write_agentic_summary(run_dir, state, 5.0)
+    write_agentic_summary(run_dir, state, 5.0)
 
     summary = (run_dir / "SUMMARY.md").read_text(encoding="utf-8")
     assert "Degradations" in summary
@@ -242,7 +242,7 @@ def test_agentic_summary_surfaces_dropped_topic_capability(tmp_path: Path) -> No
 
     This is the honesty guarantee of R1: a descope must never be silent.
     """
-    from forged.cli import _write_agentic_summary
+    from forged.deliverables import write_agentic_summary
     from forged.pipeline.state import TopicFidelitySignal
 
     state = create_initial_state().with_topic_fidelity(
@@ -257,7 +257,7 @@ def test_agentic_summary_surfaces_dropped_topic_capability(tmp_path: Path) -> No
     run_dir = tmp_path / "run"
     run_dir.mkdir()
 
-    _write_agentic_summary(run_dir, state, 5.0)
+    write_agentic_summary(run_dir, state, 5.0)
 
     summary = (run_dir / "SUMMARY.md").read_text(encoding="utf-8")
     assert "Topic Fidelity" in summary
