@@ -10,6 +10,7 @@ assumed it would do.
 from __future__ import annotations
 
 import json
+import os
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
@@ -25,6 +26,20 @@ from .config import StageConfig
 DEFAULT_TIMEOUT_SECONDS = 120
 DEFAULT_KERNEL = "python3"
 MAX_OUTPUT_CHARS = 2000  # Truncate long cell outputs to keep the report readable.
+HEADLESS_MPL_BACKEND = "Agg"  # Non-interactive matplotlib backend for the run kernel.
+
+
+def _ensure_headless_matplotlib() -> None:
+    """Force a non-interactive matplotlib backend for the kernel subprocess.
+
+    The run kernel inherits this process's environment. matplotlib's default backend
+    on macOS is the GUI ``macosx`` backend, which blocks on window-server init under a
+    headless nbclient kernel — on a cold venv the very first ``import matplotlib.pyplot``
+    then exceeds the per-cell timeout and kills the whole run at iteration 0. ``Agg``
+    renders off-screen and imports in well under a second. ``setdefault`` so an explicit
+    caller-provided ``MPLBACKEND`` still wins.
+    """
+    os.environ.setdefault("MPLBACKEND", HEADLESS_MPL_BACKEND)
 
 
 def executed_notebook_filename(output_name: str) -> str:
@@ -63,6 +78,7 @@ class ExecutorStage:
 
     def _execute(self, notebook, store: ArtifactStore) -> dict:
         """Run the notebook, persist the executed copy, and summarise results."""
+        _ensure_headless_matplotlib()
         try:
             client = NotebookClient(
                 notebook,
