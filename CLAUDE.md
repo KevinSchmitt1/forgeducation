@@ -122,9 +122,18 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   rough cost/time estimate, and runs nothing paid until the learner confirms; plan tweaks classified
   into deterministic `CourseSpec` ops (merge/drop/force_single/reorder) with a guided gpt-5-mini
   re-plan as the only escalation. Adds a fifth honesty feature: **don't spend before you agree.**
+- **On `feat/curriculum-reactive-loop` (2026-07-12):** **Curriculum planner Phase 4 — the reactive
+  safety net** (`docs/architecture/13-…` Phase 4). `forged/curriculum/reactive.py::run_course_reactive`,
+  opt-in behind `--redecompose` (+ `--max-depth`, default 1) on `course` and `learn`: a module that
+  still drops a capability hands the overflow back to the CurriculumPlanner as a new module, run and
+  appended to the grown course; bounded by `--max-modules` (total budget) and `--max-depth` (rounds).
+  The orchestrator's per-module hand-down was extracted to `run_module_with_handdown` so both paths
+  seed context identically. Shipped ahead of Phase 3 (it needs no assembler). This completes the R1
+  → planner → R1 self-correcting loop.
 - **🔜 Next:**
-  1. **Curriculum planner Phases 3–5** — course assembly (index + cross-links), reactive
-     `R1 → planner → R1` re-decomposition, close-out. Start: `docs/architecture/13-curriculum-planner.md`.
+  1. **Curriculum planner Phases 3 & 5** — course assembly (`assembler.py`: index + cross-links +
+     aggregate `COURSE.md` that also records each reactive re-split) and close-out. Phase 4 is now done.
+     Start: `docs/architecture/13-curriculum-planner.md`.
   2. **Doc 14 Part III — escalation workflow.** Wire the readiness verdict so the planner detecting
      "gap too deep" auto-routes into the front door's course path. The front door supersedes Part III's
      gate sketch; what remains is the auto-route on the verdict. Start:

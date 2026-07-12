@@ -221,3 +221,46 @@ def test_course_fidelity_failure_blocks_orchestration(monkeypatch, tmp_path) -> 
     )
     assert code == cli.EXIT_RUNTIME
     assert ran["called"] is False
+
+
+# ── reactive safety net (--redecompose) routing (doc 13, Phase 4) ──────────────
+
+
+@pytest.mark.unit
+def test_redecompose_routes_to_reactive_loop_and_threads_max_depth(monkeypatch, tmp_path) -> None:
+    import forged.curriculum.reactive as reactive
+
+    course = _faithful_course()
+    _patch_planner(monkeypatch, course)
+    captured: dict = {}
+
+    def _fake_reactive(course_, learner_profile, course_dir, **kwargs):
+        captured["kwargs"] = kwargs
+        return _module_result(course_, terminal_ok=True)
+
+    # If it wrongly took the sequential path this would raise (run_course not stubbed).
+    monkeypatch.setattr(reactive, "run_course_reactive", _fake_reactive)
+    monkeypatch.setattr(cli, "_make_remediation_planner", lambda personas_dir: object())
+
+    code = cli.main(
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path),
+         "--redecompose", "--max-depth", "3"]
+    )
+
+    assert code == cli.EXIT_OK
+    assert captured["kwargs"]["max_depth"] == 3
+    assert "plan_remediation" in captured["kwargs"]
+
+
+@pytest.mark.unit
+def test_without_redecompose_uses_sequential_run_course(monkeypatch, tmp_path) -> None:
+    course = _faithful_course()
+    _patch_planner(monkeypatch, course)
+    captured = _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
+
+    code = cli.main(
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+    )
+
+    assert code == cli.EXIT_OK
+    assert "max_depth" not in captured["kwargs"]  # sequential path, no reactive kwargs

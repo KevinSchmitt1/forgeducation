@@ -19,7 +19,9 @@ course under `runs/<stamp>_course_<slug>/` with `--max-modules`/`--no-provision`
 > import (avoids a load cycle) and is patched out in unit tests — the real per-module SUMMARY/notebook/
 > package writing is only exercised in a live run. Follow-up: extract those writers to a shared module.
 
-Phases 3–5 (course assembly, reactive safety net, close-out) remain. This is **Half B** of the
+**Phase 4 (reactive safety net) implemented** (2026-07-12) — see the Phase 4 section below; it shipped
+ahead of Phase 3 because it only composes existing runs + the planner, needing no assembler. Phase 3
+(course assembly / the `assembler.py` stitch) and Phase 5 (close-out) remain. This is **Half B** of the
 deliberate two-way split begun in R1 (`11-topic-fidelity-r1.md`). Half A (lesson-level *detect & be
 honest*) is merged. Half B is *resolve by decomposing*: turn an over-large topic into an ordered
 **course** of module-level lessons instead of silently cutting content. The two halves are coupled by
@@ -185,7 +187,16 @@ independently shippable — stop after any one and the repo is coherent.
 - Tests: assembler produces an index with correct ordering + links; aggregate surfaces a module's
   degradations.
 
-### Phase 4 — Reactive safety net (the R1 → planner → R1 feedback loop)
+### Phase 4 — Reactive safety net (the R1 → planner → R1 feedback loop) — ✅ IMPLEMENTED (2026-07-12)
+Implemented as `forged/curriculum/reactive.py::run_course_reactive`, opt-in behind
+`forged course --redecompose` / `forged learn --redecompose` (both also take `--max-depth`, default 1).
+It runs the course via the unchanged `run_course`, then handles overflow; the orchestrator's per-module
+hand-down step was extracted to `run_module_with_handdown` so both the sequential loop and the reactive
+one seed context identically. The remediation planner is injected as a callback (`RemediationPlanner`),
+so `reactive.py` stays LLM-free and unit-testable; the CLI wires the real `CurriculumPlanner` in via
+`_make_remediation_planner`. Validated by `tests/test_curriculum_reactive.py` +
+`tests/test_cli_course.py::test_redecompose_routes_to_reactive_loop_and_threads_max_depth`.
+
 This is the loop that makes the whole design self-correcting (Kevin's framing): **if a module run is
 still too dense, R1 hands the overflow back to the curriculum planner, which plans a new module topic
 and feeds it to a fresh R1 run.** Concretely:

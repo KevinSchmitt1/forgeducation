@@ -69,12 +69,35 @@ def run_course(
     # this loop with one bounded asyncio.gather per DAG level; nothing else changes.
     for module in modules:
         completed = tuple(m for m in course.modules if m.order < module.order)
-        profile = _augment_profile(learner_profile, completed)
-        run_dir = _build_module_run_dir(course_dir, module)
         results.append(
-            _run_one_module(module, profile, run_dir, pipeline, personas_dir, provision)
+            run_module_with_handdown(
+                module, completed, learner_profile, course_dir,
+                pipeline=pipeline, personas_dir=personas_dir, provision=provision,
+            )
         )
     return CourseResult(course=course, modules=tuple(results))
+
+
+def run_module_with_handdown(
+    module: ModuleSpec,
+    completed_modules: tuple[ModuleSpec, ...],
+    learner_profile: LearnerProfile,
+    course_dir: Path,
+    *,
+    pipeline: Any,
+    personas_dir: Path,
+    provision: bool,
+) -> ModuleResult:
+    """Run one module with the context hand-down (Design decision 7).
+
+    Folds `completed_modules`' objectives into the learner's prior knowledge, builds the
+    module's run dir, and runs it through the unchanged pipeline. Shared by the sequential
+    course loop and the reactive safety net (doc 13, Phase 4), so both paths seed context
+    and record results identically.
+    """
+    profile = _augment_profile(learner_profile, completed_modules)
+    run_dir = _build_module_run_dir(course_dir, module)
+    return _run_one_module(module, profile, run_dir, pipeline, personas_dir, provision)
 
 
 def _augment_profile(

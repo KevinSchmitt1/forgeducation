@@ -137,10 +137,13 @@ What remains (see `docs/architecture/13-curriculum-planner.md` Phases 3–5):
 - **Phase 3 — course assembly.** Stitch the per-module outputs into one course: an index `README.md`
   (ordered modules, prerequisite cross-links) + aggregate `COURSE.md` surfacing each module's
   degradations / fidelity signals.
-- **Phase 4 — reactive safety net (the R1 → planner → R1 loop).** When a module run still drops a
-  capability (`ModuleResult.topic_fidelity.missing`), hand the overflow back to the curriculum planner
-  as a new module and run it; bounded by `--max-modules`. (Kevin's framing.)
-- **Phase 5 — close-out.** Flip doc 13 to IMPLEMENTED; full CLI polish.
+- **Phase 4 — reactive safety net (the R1 → planner → R1 loop).** ✅ DONE (2026-07-12).
+  `forged/curriculum/reactive.py::run_course_reactive`, opt-in behind `--redecompose` (+ `--max-depth`,
+  default 1) on both `course` and `learn`. A module that still drops a capability
+  (`ModuleResult.topic_fidelity.missing`) hands the overflow back to the CurriculumPlanner as a new
+  module, which is run and appended to the grown course; bounded by `--max-modules` (total run budget)
+  and `--max-depth` (rounds). Tests: `tests/test_curriculum_reactive.py` + CLI routing test.
+- **Phase 5 — close-out.** Flip doc 13 to IMPLEMENTED; full CLI polish. (Phase 3 assembly still owed.)
 
 **Option B — Doc 14 Part III: escalation workflow.** See
 `docs/architecture/14-code-explanation-and-readiness.md` Part III. Wires the planner's readiness
