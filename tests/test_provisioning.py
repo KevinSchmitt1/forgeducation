@@ -111,6 +111,38 @@ def test_cache_miss_builds_venv_installs_and_registers_kernel(tmp_path):
     assert any("ipykernel install" in c for c in joined)
 
 
+# ── matplotlib font-cache warm-up (keeps the executor's timed import warm) ───────
+
+
+def test_matplotlib_requirement_warms_font_cache_during_provisioning(tmp_path):
+    # A cold `import matplotlib.pyplot` builds the font cache (~60-90s), which would
+    # otherwise run inside the executor's 120s per-cell timeout. Provisioning pre-warms
+    # it (headless) so the notebook's import is fast.
+    runner = FakeRunner()
+    result = _provision(_reqs("numpy>=1.26", "matplotlib>=3.5"), tmp_path / "cache", runner=runner)
+
+    assert result.ok is True
+    joined = [" ".join(c) for c in runner.calls]
+    assert any("import matplotlib.pyplot" in c for c in joined)
+
+
+def test_no_matplotlib_skips_font_cache_warm_up(tmp_path):
+    runner = FakeRunner()
+    result = _provision(_reqs("numpy>=1.26", "pandas"), tmp_path / "cache", runner=runner)
+
+    assert result.ok is True
+    joined = [" ".join(c) for c in runner.calls]
+    assert not any("import matplotlib.pyplot" in c for c in joined)
+
+
+def test_matplotlib_warm_up_failure_does_not_fail_provisioning(tmp_path):
+    # The warm-up is best-effort: a failing import must not sink an otherwise-good build.
+    runner = FakeRunner(timeout_on="import matplotlib.pyplot")
+    result = _provision(_reqs("numpy>=1.26", "matplotlib>=3.5"), tmp_path / "cache", runner=runner)
+
+    assert result.ok is True
+
+
 def test_cache_hit_skips_rebuild(tmp_path):
     cache = tmp_path / "cache"
     req = _reqs("numpy>=1.26")

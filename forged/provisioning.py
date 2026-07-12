@@ -26,6 +26,9 @@ the logic is unit-tested with no real venv, pip, or network.
 
 from __future__ import annotations
 
+import contextlib
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -196,6 +199,30 @@ def provision_environment(
     )
 
 
+def _requirement_name(requirement: str) -> str:
+    """The bare package name from a requirement string ('matplotlib>=3.5' -> 'matplotlib')."""
+    return re.split(r"[<>=!~;\[\s]", requirement.strip(), maxsplit=1)[0].lower()
+
+
+def _warm_up_matplotlib(
+    venv_py: str, rendered: tuple[str, ...], runner: Runner, timeout_seconds: int
+) -> None:
+    """Best-effort: pre-build matplotlib's font cache in the fresh venv (headless), so
+    the notebook's first `import matplotlib.pyplot` is warm and fast. No-op when the
+    lesson doesn't use matplotlib. Never fails provisioning — a failed warm-up just
+    means the first notebook import pays the cost (as it did before this existed)."""
+    if not any(_requirement_name(r) == "matplotlib" for r in rendered):
+        return
+    with contextlib.suppress(subprocess.SubprocessError, OSError):
+        runner(
+            [venv_py, "-c", "import matplotlib.pyplot"],
+            timeout=timeout_seconds,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "MPLBACKEND": "Agg"},
+        )
+
+
 def _build_environment(
     *,
     venv_dir: Path,
@@ -264,6 +291,12 @@ def _build_environment(
         )
         if register.returncode != 0:
             return fail(f"Could not register kernel: {register.stderr.strip() or 'unknown error'}")
+
+        # Build matplotlib's font cache now — once, and outside the executor's per-cell
+        # timeout. A cold `import matplotlib.pyplot` builds it (~60-90s on macOS with
+        # many fonts); left to the notebook, that import exceeds the 120s cell timeout
+        # and kills the whole run at iteration 0 (observed on real smoke runs).
+        _warm_up_matplotlib(venv_py, rendered, runner, install_timeout_seconds)
     except subprocess.TimeoutExpired as exc:
         return fail(f"Provisioning timed out after {exc.timeout}s.")
     except OSError as exc:

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -208,6 +209,28 @@ def test_executor_flags_failing_cell(tmp_path):
     assert report["failed_cell_count"] == 1
     failing = [c for c in report["cells"] if c["status"] == "error"][0]
     assert "ValueError" in failing["error"]
+
+
+def test_executor_forces_headless_matplotlib_backend(tmp_path, monkeypatch):
+    # The run kernel inherits this process's env. Without a headless backend, the
+    # default macOS GUI backend blocks on a cold `import matplotlib.pyplot` and the
+    # per-cell timeout kills the run at iteration 0 (observed on a real smoke run).
+    monkeypatch.delenv("MPLBACKEND", raising=False)
+    store = _store_with_notebook(tmp_path, ["a = 1"])
+
+    ExecutorStage(_executor_stage()).run(store)
+
+    assert os.environ["MPLBACKEND"] == "Agg"
+
+
+def test_executor_preserves_explicit_matplotlib_backend(tmp_path, monkeypatch):
+    # setdefault: an explicitly chosen backend must win over the headless default.
+    monkeypatch.setenv("MPLBACKEND", "svg")
+    store = _store_with_notebook(tmp_path, ["a = 1"])
+
+    ExecutorStage(_executor_stage()).run(store)
+
+    assert os.environ["MPLBACKEND"] == "svg"
 
 
 # ── Finalize / cleanup ───────────────────────────────────────────────────────
