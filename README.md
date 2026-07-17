@@ -44,7 +44,10 @@ surfaced in the run's `SUMMARY.md`:
   unfollowable code. (`docs/architecture/14-code-explanation-and-readiness.md`)
 - **Never drop or re-teach across a course.** `forged course` decomposes an over-large topic into
   ordered modules whose union must cover every requested capability, folding earlier modules'
-  objectives into later modules' prior knowledge. (`docs/architecture/13-curriculum-planner.md`)
+  objectives into later modules' prior knowledge. With `--redecompose`, a module that *still* drops a
+  capability at run time is handed back to the planner as a fresh follow-on module and run — so the
+  course grows to cover the overflow instead of losing it (bounded by `--max-modules` and `--max-depth`).
+  (`docs/architecture/13-curriculum-planner.md`)
 - **Never spend before you agree.** `forged learn` (the front door) always shows the proposed
   plan and a rough cost/time estimate and runs nothing paid until you confirm; plan tweaks are
   applied deterministically, so an interactive round never costs an expensive re-plan.

@@ -449,8 +449,6 @@ def _cmd_course(args) -> int:
     # Phase 2: run each module through the lesson pipeline.
     from datetime import datetime
 
-    from .curriculum.orchestrator import run_course
-
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     course_dir = Path(args.runs) / f"{stamp}_course_{_dir_slug(topic)}"
     course_dir.mkdir(parents=True, exist_ok=True)
@@ -459,16 +457,58 @@ def _cmd_course(args) -> int:
     total = len(course.modules)
     n = total if args.max_modules is None else min(args.max_modules, total)
     print(f"\n▶ Running {n} module lesson(s) into {course_dir} …")
-    result = run_course(
-        course,
-        learner_profile,
-        course_dir,
-        pipeline=pipeline,
-        personas_dir=Path(args.personas),
-        provision=not getattr(args, "no_provision", False),
-        max_modules=args.max_modules,
+    result = _orchestrate_course(
+        course, learner_profile, course_dir,
+        pipeline=pipeline, personas_dir=Path(args.personas), args=args,
     )
     return _report_course_result(result, course_dir)
+
+
+def _orchestrate_course(course, learner_profile, course_dir, *, pipeline, personas_dir, args):
+    """Run a course sequentially, or (opt-in via `--redecompose`) with the reactive safety
+    net that re-decomposes any module still dropping a capability (doc 13, Phase 4)."""
+    from .curriculum.orchestrator import run_course
+
+    provision = not getattr(args, "no_provision", False)
+    if getattr(args, "redecompose", False):
+        from .curriculum.reactive import run_course_reactive
+
+        return run_course_reactive(
+            course, learner_profile, course_dir,
+            pipeline=pipeline, personas_dir=personas_dir,
+            plan_remediation=_make_remediation_planner(personas_dir),
+            provision=provision,
+            max_modules=args.max_modules,
+            max_depth=getattr(args, "max_depth", 1),
+        )
+    return run_course(
+        course, learner_profile, course_dir,
+        pipeline=pipeline, personas_dir=personas_dir,
+        provision=provision, max_modules=args.max_modules,
+    )
+
+
+def _make_remediation_planner(personas_dir: Path):
+    """Build the reactive loop's remediation planner: dropped capabilities → new module
+    spec(s), via the same CurriculumPlanner, one altitude down (follow-on modules only)."""
+    from .curriculum.planner import CurriculumPlanner
+
+    planner = CurriculumPlanner(personas_dir=personas_dir)
+
+    def _plan(dropped, profile):
+        brief = (
+            "An earlier lesson could not fit these capabilities. Plan focused follow-on "
+            "module(s) that cover them, assuming everything else is already known:\n"
+            + "\n".join(f"- {c}" for c in dropped)
+        )
+        try:
+            spec = planner.plan(brief=brief, learner_profile=profile, topic_spec=None)
+        except Exception as exc:  # noqa: BLE001 - a failed re-plan must not abort the course
+            print(f"  ⚠ remediation planning failed: {exc}", file=sys.stderr)
+            return ()
+        return tuple(m.spec for m in spec.modules)
+
+    return _plan
 
 
 def _dir_slug(text: str) -> str:
@@ -624,8 +664,6 @@ def _build_confirmed(
             debug=args.debug,
         )
 
-    from .curriculum.orchestrator import run_course
-
     report = assess_course_fidelity(list(original_capabilities), course)
     course_dir = Path(args.runs) / f"{stamp}_course_{_dir_slug(topic)}"
     course_dir.mkdir(parents=True, exist_ok=True)
@@ -634,14 +672,9 @@ def _build_confirmed(
     total = len(course.modules)
     n = total if args.max_modules is None else min(args.max_modules, total)
     print(f"\n▶ Running {n} module lesson(s) into {course_dir} …")
-    result = run_course(
-        course,
-        learner_profile,
-        course_dir,
-        pipeline=pipeline,
-        personas_dir=personas_dir,
-        provision=provision,
-        max_modules=args.max_modules,
+    result = _orchestrate_course(
+        course, learner_profile, course_dir,
+        pipeline=pipeline, personas_dir=personas_dir, args=args,
     )
     return _report_course_result(result, course_dir)
 
@@ -806,6 +839,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Cap the number of module lessons actually run (cost control).",
     )
     course.add_argument(
+        "--redecompose", action="store_true",
+        help="Enable the reactive safety net: any module that still drops a requested "
+             "capability is re-decomposed into a new module and run (opt-in; adds cost).",
+    )
+    course.add_argument(
+        "--max-depth", type=int, default=1,
+        help="Max reactive re-decomposition rounds when --redecompose is set (default: 1). "
+             "Bounds the R1 → planner → R1 loop so it always terminates.",
+    )
+    course.add_argument(
         "--no-provision", action="store_true",
         help="Skip per-module virtualenv provisioning; run on the base kernel.",
     )
@@ -852,6 +895,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--max-modules", type=int, default=None,
         help="Cap the number of module lessons actually run when the plan is a course "
              "(cost control).",
+    )
+    learn.add_argument(
+        "--redecompose", action="store_true",
+        help="Enable the reactive safety net for a course plan: a module that still drops "
+             "a capability is re-decomposed into a new module and run (opt-in; adds cost).",
+    )
+    learn.add_argument(
+        "--max-depth", type=int, default=1,
+        help="Max reactive re-decomposition rounds when --redecompose is set (default: 1).",
     )
     learn.add_argument(
         "--no-provision", action="store_true",
