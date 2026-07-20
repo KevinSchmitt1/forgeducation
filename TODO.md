@@ -127,30 +127,26 @@ topic → single-lesson path; then a small course).
 
 ---
 
-### ⏭ Next Up — both scoped (2026-07-20), ready to implement
+### ✅ DONE (2026-07-20): Doc 14 Part III — escalation workflow
 
-Both tracks below are now fully scoped (concrete data contracts, file lists, test lists) in their
-design docs. No longer framed as an either/or fork — both are queued for implementation.
+Implemented on `feat/readiness-escalation-workflow`. See
+`docs/architecture/14-code-explanation-and-readiness.md` Part III. A pre-flight
+`ReadinessAssessor` inside `forged learn` catches a topic the `CurriculumPlanner` sized to 1
+module but that's too hard for *this* learner's profile, before any gpt-5 spend on an unwanted
+beachhead (Phase 4's reactive net already catches the same overflow, but only *after* a wasted
+build). New: `forged/curriculum/readiness.py`, `personas/readiness_assessor.md`, a new
+`ReadinessVerdict` dataclass in `forged/curriculum/model.py` (deliberately not an extension of
+`TopicFidelitySignal`). `forged agentic` is untouched — the escalation lives in `forged learn`
+only, reusing the existing confirmation gate unchanged. All three CI gates green (583 passed,
+92.57% coverage). **Caught mid-implementation:** the first wiring pass made 3 pre-existing
+`test_cli_learn.py` tests issue live, unconsented OpenAI calls (an un-mocked 1-module course
+constructed a real `ReadinessAssessor`/`LLMClient`) — fixed by mocking `cli.ReadinessAssessor`
+in every test that reaches the pre-flight, same as every test already mocks
+`cli.CurriculumPlanner`.
 
-**Curriculum planner Phase 3 — course assembly.** See `docs/architecture/13-curriculum-planner.md`
-Phase 3. Stitches per-module outputs into one course: index `README.md` (ordered modules,
-prerequisite cross-links) + aggregate `COURSE.md` (post-run outcomes/degradations, overwriting the
-pre-run preview). Scoping surfaced two real gaps: reactive re-splits (Phase 4) carry no
-per-capability provenance today (fixed by an additive `ModuleSpec.remediation_for` field), and each
-module dir's `README.md` is already owned by the learner-package writer (fixed by a separate
-per-module `NAV.md` for cross-links). New: `forged/curriculum/assembler.py`. Phase 4 (reactive
-safety net) is ✅ DONE (2026-07-12) — see below; Phase 5 (close-out) follows once Phase 3 ships.
-
-**Doc 14 Part III — escalation workflow.** See
-`docs/architecture/14-code-explanation-and-readiness.md` Part III. **Decision (2026-07-20): build
-it**, despite tension with doc 16 decision 2 (which deliberately rejected a second sizing signal) —
-its scoped value is narrower than the original sketch: a pre-flight `ReadinessAssessor` inside
-`forged learn` catches a topic `CurriculumPlanner` sized to 1 module but that's too hard for *this*
-learner's profile, before any gpt-5 spend on an unwanted beachhead (Phase 4's reactive net already
-catches the same overflow, but only *after* a wasted build). New: `forged/curriculum/readiness.py`,
-`personas/readiness_assessor.md`, a new `ReadinessVerdict` dataclass (deliberately not an extension
-of `TopicFidelitySignal`). `forged agentic` is untouched — the escalation lives in `forged learn`
-only, reusing the existing confirmation gate unchanged.
+**Curriculum planner Phase 3 — course assembly** (`docs/architecture/13-curriculum-planner.md`
+Phase 3) and **Phase 5 close-out** are implemented on the separate `feat/curriculum-course-assembly`
+branch (PR #23) — see that PR/branch for status if it hasn't merged yet.
 
 **Regardless of which ships first:**
 - **Cleanup (known gap): DONE** — the per-run deliverable writers now live in `forged/deliverables.py`
@@ -293,10 +289,10 @@ remaining open questions belong to Phases 3–5.
 - `docs/architecture/09-langfuse-tracing.md` — current tracing implementation and caveats
 - `docs/architecture/11-topic-fidelity-r1.md` — R1 (topic fidelity, Half A) — DONE
 - `docs/architecture/12-notebook-orientation-cell.md` — learner orientation cell — DONE
-- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1, 2, 4 done;
-  Phase 3 (course assembly) scoped 2026-07-20, ready to implement
+- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1, 2, 4 done
+  on master; Phase 3 (course assembly) + Phase 5 (close-out) implemented on PR #23
 - `docs/architecture/14-code-explanation-and-readiness.md` — code maps, cell briefs, readiness
-  verdict — Parts I–II done; Part III (escalation workflow) scoped 2026-07-20, ready to implement
+  verdict — all parts DONE (2026-07-20), including Part III (escalation workflow)
 - `docs/architecture/15-structured-grader-output.md` — structured (JSON-schema) grader outputs — done
 - `docs/architecture/16-smart-front-door.md` — `forged learn` interactive plan gate — IMPLEMENTED
 - `CLAUDE.md` — agent orientation, conventions, current state + next task, extending the system
