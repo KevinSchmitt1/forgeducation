@@ -155,6 +155,9 @@ def test_drop_triggers_a_remediation_module(wire, tmp_path) -> None:
     assert len(result.modules) == 3
     assert result.modules[2].module.spec.title == "Fine-tuning"
     assert result.modules[2].module.order == 2
+    # Provenance: the remediation module records which capabilities it was spawned
+    # to cover (doc 13, Phase 3 gap), so the assembler can flag it as reactive.
+    assert result.modules[2].module.remediation_for == ("fine-tune a model with LoRA",)
 
 
 @pytest.mark.unit

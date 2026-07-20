@@ -38,11 +38,19 @@ class ModuleSpec:
     `module_prerequisites` names earlier modules (by title) this one builds on; the
     orchestrator folds those modules' objectives into the learner's prior knowledge so
     a later module never re-teaches an earlier one (doc 13, Design decision 7).
+
+    `remediation_for` names the capabilities this module was reactively spawned to
+    cover (doc 13, Phase 4's R1 → planner → R1 loop); empty means the module was part
+    of the original proactive decomposition. It is coarse-grained by design — the
+    whole round's overflow union, not per-module-attributed capability sets — so the
+    course assembly (Phase 3) can flag a reactively-added module honestly without
+    claiming false precision about which module dropped which capability.
     """
 
     spec: TopicSpecification
     order: int
     module_prerequisites: tuple[str, ...] = ()
+    remediation_for: tuple[str, ...] = ()
 
     @property
     def capabilities(self) -> tuple[str, ...]:

@@ -33,6 +33,7 @@ from pathlib import Path
 
 from .config import load_pipeline
 from .context import build_context_block, topic_spec_to_json
+from .curriculum.assembler import assemble_course
 from .curriculum.fidelity import assess_course_fidelity
 from .curriculum.model import topic_capabilities
 from .curriculum.planner import CurriculumPlanner
@@ -462,6 +463,14 @@ def _cmd_course(args) -> int:
         course, learner_profile, course_dir,
         pipeline=pipeline, personas_dir=Path(args.personas), args=args,
     )
+    return _finalize_course(result, course_dir, report)
+
+
+def _finalize_course(result, course_dir: Path, fidelity) -> int:
+    """Assemble the course deliverable (README/COURSE.md/NAV.md, doc 13 Phase 3) from
+    the course's outcome, then print the per-module status report. Shared by
+    `_cmd_course` and `_build_confirmed` so both entry points assemble identically."""
+    assemble_course(result, course_dir, fidelity=fidelity)
     return _report_course_result(result, course_dir)
 
 
@@ -731,7 +740,7 @@ def _build_confirmed(
         course, learner_profile, course_dir,
         pipeline=pipeline, personas_dir=personas_dir, args=args,
     )
-    return _report_course_result(result, course_dir)
+    return _finalize_course(result, course_dir, report)
 
 
 def _persist_course(out_dir: Path, course, report) -> None:

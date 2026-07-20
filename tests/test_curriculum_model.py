@@ -47,6 +47,24 @@ def test_module_prerequisites_default_empty_tuple() -> None:
 
 
 @pytest.mark.unit
+def test_remediation_for_defaults_empty_tuple() -> None:
+    """A proactively-planned module (not a reactive remediation) has an empty
+    remediation_for — the assembler uses this to tell the two kinds apart."""
+    module = ModuleSpec(spec=_topic("Setup", ["install"], []), order=0)
+    assert module.remediation_for == ()
+
+
+@pytest.mark.unit
+def test_remediation_for_records_the_dropped_capabilities() -> None:
+    module = ModuleSpec(
+        spec=_topic("Fine-tuning", ["fine-tune with LoRA"], []),
+        order=2,
+        remediation_for=("fine-tune with LoRA",),
+    )
+    assert module.remediation_for == ("fine-tune with LoRA",)
+
+
+@pytest.mark.unit
 def test_module_capabilities_are_objectives_plus_focus() -> None:
     """Mirror R1's capability derivation (learning_objectives + focus_areas) so the
     course-level fidelity check agrees with the per-module one."""
