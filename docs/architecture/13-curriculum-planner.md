@@ -179,13 +179,74 @@ independently shippable — stop after any one and the repo is coherent.
 - Tests: orchestrator runs N stub modules and aggregates results; a failing module is recorded, not
   silently skipped; `--max-modules` is enforced.
 
-### Phase 3 — Course assembly (the stitch)
-- New `forged/curriculum/assembler.py`: write a course directory — an index `README.md` (ordered
-  module list, one-line each, prerequisite chain), per-module subdirs, and an aggregate `COURSE.md`
-  summarizing each module's outcome + any degradations/fidelity signals.
-- Cross-links: each module README links prev/next + its prerequisites.
-- Tests: assembler produces an index with correct ordering + links; aggregate surfaces a module's
-  degradations.
+### Phase 3 — Course assembly (the stitch) — SCOPED (2026-07-20), ready to implement
+
+Scoped via a dedicated research pass; concrete plan below. Two real gaps surfaced that the
+original one-paragraph sketch missed:
+
+- **Provenance gap:** a reactively-added module (Phase 4) records *that* it was added
+  (`CourseSpec.rationale` gets an aggregate note), but not *which capability* it covers — no
+  per-module attribution survives. Fixed by one additive field (below).
+- **Filename collision:** each module dir's `README.md` is already the learner-package README
+  (`write_learner_package` → `packaging.write_package`). Per-module cross-links cannot reuse that
+  file without coupling Phase 3 to a writer it doesn't own.
+
+**Data-model addition** (`forged/curriculum/model.py`, additive + frozen, defaulted so existing
+callers are unaffected):
+```python
+@dataclass(frozen=True)
+class ModuleSpec:
+    spec: TopicSpecification
+    order: int
+    module_prerequisites: tuple[str, ...] = ()
+    remediation_for: tuple[str, ...] = ()   # capabilities this module was spawned to cover;
+                                            # () ⇒ a proactively-planned module
+```
+Set once, in `forged/curriculum/reactive.py` where it builds a remediation `ModuleSpec`
+(`ModuleSpec(spec=spec, order=…, module_prerequisites=prerequisites, remediation_for=dropped)`).
+Coarse-grained by design: `dropped` is the whole round's overflow union, not per-module-attributed
+capability sets — an honest "covers: …" line, not false precision.
+
+**New `forged/curriculum/assembler.py`** (mirrors the `deliverables.py` writer convention — a
+side-effecting `assemble_*` plus pure, directly-testable `_render_*` string builders):
+```python
+def assemble_course(
+    result: CourseResult, course_dir: Path, *, fidelity: TopicFidelityReport | None = None,
+) -> None: ...
+def _render_course_index(result: CourseResult) -> str: ...
+def _render_course_report(result: CourseResult, fidelity: TopicFidelityReport | None) -> str: ...
+```
+- Reads `result.course` (the **grown** spec post-Phase-4, never the pre-run input) — every
+  reactively-added module must appear.
+- Writes course-root `README.md` (ordered index: one line + prerequisite chain + link per
+  module; reactively-added modules flagged inline) and **overwrites** course-root `COURSE.md`
+  (the pre-run `_persist_course` preview becomes the post-run outcome report: per-module
+  terminal_ok/notebook link/dropped-capability rollup, reusing the exact drop-surfacing shape
+  `_report_course_result` and `write_agentic_summary`'s Topic Fidelity section already use).
+- Per-module cross-links go in a **new `NAV.md`** per module dir (prev/next/up + prerequisite
+  links) — not the learner-package `README.md`, to avoid the collision above and keep the
+  assembler decoupled from a file another writer owns.
+
+**CLI wiring**: both `_cmd_course` and `_build_confirmed` (`forged/cli.py`) currently end with
+`result = _orchestrate_course(...); return _report_course_result(result, course_dir)` —
+duplicated identically. Dedupe into one `_finalize_course(result, course_dir, fidelity)` helper
+that calls `assemble_course(...)` then `_report_course_result(...)`; swap both call sites to it.
+The single-lesson branch in `_cmd_learn` is untouched (no course to assemble).
+
+**Tests** (`tests/test_curriculum_assembler.py`, all unit-level against synthetic `CourseResult`
+fixtures, no LLM/network/pipeline): index ordering + prerequisite chain rendering; terminal_ok
+vs. failed status marks; dropped-capability surfacing; notebook-link presence/absence; reactive
+provenance line renders only when `remediation_for` is non-empty; plan-fidelity verdict line
+gated on the optional `fidelity` arg; `assemble_course` writes/overwrites the right files in
+`tmp_path`; per-module `NAV.md` prev/next/up correctness; assembler reads the *grown*
+`result.course`, not the original plan. Plus one-line extensions to
+`test_curriculum_model.py` (new field defaults `()`, frozen), `test_curriculum_reactive.py`
+(remediation module records provenance), and `test_cli_course.py` (post-run `README.md`/
+`COURSE.md` exist and reflect outcomes).
+
+Files touched: new `forged/curriculum/assembler.py` + `tests/test_curriculum_assembler.py`;
+edited `forged/curriculum/model.py`, `forged/curriculum/reactive.py`, `forged/cli.py`, and the
+three test files named above.
 
 ### Phase 4 — Reactive safety net (the R1 → planner → R1 feedback loop) — ✅ IMPLEMENTED (2026-07-12)
 Implemented as `forged/curriculum/reactive.py::run_course_reactive`, opt-in behind
