@@ -11,7 +11,13 @@ import dataclasses
 
 import pytest
 
-from forged.curriculum.model import CourseResult, CourseSpec, ModuleResult, ModuleSpec
+from forged.curriculum.model import (
+    CourseResult,
+    CourseSpec,
+    ModuleResult,
+    ModuleSpec,
+    ReadinessVerdict,
+)
 from forged.models import TopicSpecification
 
 
@@ -115,3 +121,32 @@ def test_course_result_is_frozen_and_holds_module_results() -> None:
     assert result.modules[0].run_dir == "/tmp/m0"
     with pytest.raises(dataclasses.FrozenInstanceError):
         result.modules = ()  # type: ignore[misc]
+
+
+# ── ReadinessVerdict (doc 14, Part III) ─────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_readiness_verdict_is_frozen() -> None:
+    verdict = ReadinessVerdict(
+        reachable=True, beachhead="", missing_foundations=(),
+        unreachable_capabilities=(), reason="",
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        verdict.reachable = False  # type: ignore[misc]
+
+
+@pytest.mark.unit
+def test_readiness_verdict_holds_an_unreachable_topic() -> None:
+    verdict = ReadinessVerdict(
+        reachable=False,
+        beachhead="load a pretrained model and generate text",
+        missing_foundations=("what a tensor is", "what training a neural net does"),
+        unreachable_capabilities=("fine-tune with LoRA",),
+        reason="requires prerequisites the learner lacks: tensors, neural net training",
+    )
+    assert verdict.reachable is False
+    assert verdict.missing_foundations == (
+        "what a tensor is", "what training a neural net does",
+    )
+    assert verdict.unreachable_capabilities == ("fine-tune with LoRA",)

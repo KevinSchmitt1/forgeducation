@@ -37,6 +37,7 @@ from .curriculum.assembler import assemble_course
 from .curriculum.fidelity import assess_course_fidelity
 from .curriculum.model import topic_capabilities
 from .curriculum.planner import CurriculumPlanner
+from .curriculum.readiness import ReadinessAssessor
 from .deliverables import (
     write_agentic_summary,
     write_final_notebook,
@@ -591,6 +592,10 @@ def _cmd_learn(args) -> int:
         print(f"\n✗ Curriculum planning failed: {exc}", file=sys.stderr)
         return EXIT_RUNTIME
 
+    course = _apply_readiness_preflight(
+        course, personas_dir, planner, topic, learner_profile, topic_spec
+    )
+
     original_capabilities = list(topic_capabilities(topic_spec))
 
     # The gate: plan first, confirm before spending. --yes accepts as-is (still printed);
@@ -617,6 +622,56 @@ def _cmd_learn(args) -> int:
     return _build_confirmed(
         args, confirmed_course, learner_profile, topic, pipeline, personas_dir,
         original_capabilities,
+    )
+
+
+def _apply_readiness_preflight(
+    course, personas_dir: Path, planner, topic: str, learner_profile, topic_spec
+):
+    """Doc 14 Part III: before any paid build, check whether a plan the CurriculumPlanner
+    sized to a single module is honestly reachable for this learner.
+
+    Only runs for a 1-module plan — an N-module course already went through the planner's
+    own decomposition judgment. On an unreachable verdict, escalates via a guided re-plan
+    (the same Tier-2 guidance channel the front-door gate's PlanAdjuster uses), producing
+    an N-module course that flows into the existing, unchanged gate/build path. Fails open
+    (returns the original plan) on any re-plan error — never blocks a build over an
+    escalation attempt that itself failed.
+    """
+    if len(course.modules) != 1:
+        return course
+
+    assessor = ReadinessAssessor(personas_dir=personas_dir)
+    verdict = assessor.assess(
+        brief=topic, learner_profile=learner_profile, topic_spec=topic_spec
+    )
+    if verdict.reachable:
+        return course
+
+    print(
+        f"\n⚠ Readiness check: {verdict.reason} — replanning as a course.",
+        file=sys.stderr,
+    )
+    try:
+        return planner.plan(
+            brief=topic, learner_profile=learner_profile, topic_spec=topic_spec,
+            guidance=_readiness_escalation_guidance(verdict),
+        )
+    except Exception as exc:  # noqa: BLE001 - fail open: keep the original single-lesson plan
+        print(
+            f"  ⚠ readiness escalation re-plan failed, proceeding as-is: {exc}",
+            file=sys.stderr,
+        )
+        return course
+
+
+def _readiness_escalation_guidance(verdict) -> str:
+    """Synthesize the guidance sentence for the planner's Tier-2 re-plan channel from a
+    not-reachable ReadinessVerdict."""
+    foundations = "; ".join(verdict.missing_foundations) or "the missing prerequisites"
+    return (
+        f"{verdict.reason} Split this into an ordered course that first teaches "
+        f"{foundations}, then proceeds to the original topic."
     )
 
 

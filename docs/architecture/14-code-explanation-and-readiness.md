@@ -1,7 +1,30 @@
 # 14 — Code explanation & learner readiness
 
-**Status:** IMPLEMENTED (persona quick-wins). The escalation workflow in Part III is **designed,
-not built** — it is the next feature.
+**Status:** ✅ IMPLEMENTED, all parts (2026-07-20). Parts I–II shipped as persona quick-wins.
+**Part III (escalation workflow) implemented**: new `ReadinessVerdict` (frozen, in
+`forged/curriculum/model.py`), `forged/curriculum/readiness.py::ReadinessAssessor` (mirrors
+`CurriculumPlanner`/`PlanAdjuster`'s shape — persona file + `LLMClient.complete` with strict
+`response_format`, fails open to `reachable=True` on any parse failure or LLM error),
+`personas/readiness_assessor.md`, and a pre-flight wired into `forged/cli.py::_cmd_learn` via
+`_apply_readiness_preflight`/`_readiness_escalation_guidance` — runs only when the
+`CurriculumPlanner` sizes a topic to exactly 1 module; on an unreachable verdict, escalates via
+a guided Tier-2 re-plan (the same guidance channel the front-door gate's `PlanAdjuster` uses)
+into the existing, unchanged gate/build path. `forged agentic` is untouched. Validated by
+`tests/test_curriculum_readiness.py` (20 tests: schema forwarding, reachable/unreachable
+parsing, fail-open on parse failure/LLM exception/missing field, context guard, persona
+contract) and `tests/test_cli_learn.py` extensions (assessor called exactly once on a 1-module
+reachable plan, escalation with guidance + gate shown, assessor never called on an N-module
+plan, `--yes` + not-reachable escalates and skips the gate, non-TTY-without-`--yes` on an
+escalation still `EXIT_USAGE`, cancel-after-escalation still `EXIT_OK`/nothing run). All three
+CI gates green (583 passed, 92.57% coverage; `readiness.py` itself at 90%).
+
+**Caught during implementation, not a Part III design flaw:** the first wiring pass constructed
+a real `ReadinessAssessor` (and thus a real `LLMClient`) whenever a test's 1-module course
+wasn't mocked — this made 3 pre-existing `test_cli_learn.py` tests issue live, unconsented
+OpenAI calls before the mock was added. Fixed by patching `cli.ReadinessAssessor` in every test
+that reaches the pre-flight (mirrors how every test already patches `cli.CurriculumPlanner`).
+Flagging here so a future persona/agent addition following this same "construct-a-real-client-
+by-default" pattern remembers to mock it in every existing test path, not just new ones.
 
 ## Why
 
@@ -65,7 +88,7 @@ planner must NOT cram. Instead:
 It reuses everything already built: the KNOWN/GAP map (orientation, doc 12), the fidelity signal
 (R1, doc 11), and — for the real sequencing — the curriculum decomposition (doc 13).
 
-## Part III — Escalation workflow — SCOPED (2026-07-20), ready to implement
+## Part III — Escalation workflow — ✅ IMPLEMENTED (2026-07-20)
 
 The readiness verdict is the *detection*. The response, scoped via a dedicated research pass:
 
@@ -167,12 +190,17 @@ re-plan with guidance, gate shown, `run_course` invoked; N-module plan → asses
 `--yes` on an escalation → `EXIT_USAGE`; cancel at the gate after escalation → `EXIT_OK`, nothing
 run.
 
-Files touched: new `forged/curriculum/readiness.py`, `personas/readiness_assessor.md`,
-`tests/test_curriculum_readiness.py`; edited `forged/pipeline/state.py` (or a new module for
-`ReadinessVerdict` if it should stay out of `state.py` entirely — TBD at implementation time,
-leaning toward `forged/curriculum/model.py` alongside `ModuleSpec`/`CourseSpec` since it never
-enters `PipelineState`), `forged/cli.py` (`_cmd_learn` pre-flight wiring), and
-`tests/pipeline/test_pedagogy_persona.py` + `tests/test_cli_learn.py` extensions.
+**Files touched (as built):** new `forged/curriculum/readiness.py`,
+`personas/readiness_assessor.md`, `tests/test_curriculum_readiness.py`; `ReadinessVerdict` landed
+in `forged/curriculum/model.py` alongside `ModuleSpec`/`CourseSpec` (it never enters
+`PipelineState`) — `state.py` untouched; edited `forged/cli.py` (`_apply_readiness_preflight`/
+`_readiness_escalation_guidance` + `_cmd_learn` wiring) and `tests/test_cli_learn.py`
+extensions. **Deviation from the original sketch:** persona-contract tests for
+`readiness_assessor.md` live inside `test_curriculum_readiness.py` itself (mirroring
+`test_curriculum_adjuster.py`'s own bottom section), not `tests/pipeline/test_pedagogy_persona.py`
+— that file covers the lesson-loop personas (`code_author`/`student`/`reviewer`/`planner`);
+`readiness_assessor.md` is a curriculum-layer persona like `plan_adjuster.md`/
+`curriculum_planner.md`, which already keep their contract tests in their own module's test file.
 
 ## Validation
 

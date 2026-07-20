@@ -127,6 +127,7 @@ topic → single-lesson path; then a small course).
 
 ---
 
+<<<<<<< HEAD
 ### ✅ DONE (2026-07-20): Curriculum planner Phase 3 — course assembly
 
 Implemented on `feat/curriculum-course-assembly`. See `docs/architecture/13-curriculum-planner.md`
@@ -155,6 +156,28 @@ catches the same overflow, but only *after* a wasted build). New: `forged/curric
 `personas/readiness_assessor.md`, a new `ReadinessVerdict` dataclass (deliberately not an extension
 of `TopicFidelitySignal`). `forged agentic` is untouched — the escalation lives in `forged learn`
 only, reusing the existing confirmation gate unchanged.
+=======
+### ✅ DONE (2026-07-20): Doc 14 Part III — escalation workflow
+
+Implemented on `feat/readiness-escalation-workflow`. See
+`docs/architecture/14-code-explanation-and-readiness.md` Part III. A pre-flight
+`ReadinessAssessor` inside `forged learn` catches a topic the `CurriculumPlanner` sized to 1
+module but that's too hard for *this* learner's profile, before any gpt-5 spend on an unwanted
+beachhead (Phase 4's reactive net already catches the same overflow, but only *after* a wasted
+build). New: `forged/curriculum/readiness.py`, `personas/readiness_assessor.md`, a new
+`ReadinessVerdict` dataclass in `forged/curriculum/model.py` (deliberately not an extension of
+`TopicFidelitySignal`). `forged agentic` is untouched — the escalation lives in `forged learn`
+only, reusing the existing confirmation gate unchanged. All three CI gates green (583 passed,
+92.57% coverage). **Caught mid-implementation:** the first wiring pass made 3 pre-existing
+`test_cli_learn.py` tests issue live, unconsented OpenAI calls (an un-mocked 1-module course
+constructed a real `ReadinessAssessor`/`LLMClient`) — fixed by mocking `cli.ReadinessAssessor`
+in every test that reaches the pre-flight, same as every test already mocks
+`cli.CurriculumPlanner`.
+
+**Curriculum planner Phase 3 — course assembly** (`docs/architecture/13-curriculum-planner.md`
+Phase 3) and **Phase 5 close-out** are implemented on the separate `feat/curriculum-course-assembly`
+branch (PR #23) — see that PR/branch for status if it hasn't merged yet.
+>>>>>>> origin/master
 
 **Regardless of which ships first:**
 - **Cleanup (known gap): DONE** — the per-run deliverable writers now live in `forged/deliverables.py`
@@ -302,9 +325,14 @@ any phase.
 - `docs/architecture/09-langfuse-tracing.md` — current tracing implementation and caveats
 - `docs/architecture/11-topic-fidelity-r1.md` — R1 (topic fidelity, Half A) — DONE
 - `docs/architecture/12-notebook-orientation-cell.md` — learner orientation cell — DONE
+<<<<<<< HEAD
 - `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — all 5 phases DONE
+=======
+- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1, 2, 4 done
+  on master; Phase 3 (course assembly) + Phase 5 (close-out) implemented on PR #23
+>>>>>>> origin/master
 - `docs/architecture/14-code-explanation-and-readiness.md` — code maps, cell briefs, readiness
-  verdict — Parts I–II done; Part III (escalation workflow) scoped 2026-07-20, ready to implement
+  verdict — all parts DONE (2026-07-20), including Part III (escalation workflow)
 - `docs/architecture/15-structured-grader-output.md` — structured (JSON-schema) grader outputs — done
 - `docs/architecture/16-smart-front-door.md` — `forged learn` interactive plan gate — IMPLEMENTED
 - `CLAUDE.md` — agent orientation, conventions, current state + next task, extending the system
