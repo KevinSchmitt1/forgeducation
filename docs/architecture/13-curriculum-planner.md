@@ -1,7 +1,12 @@
 # 13 — Curriculum Planner (Phase 2 / Half B)
 
-**Status:** 🚧 IN PROGRESS (2026-07-20). **Phases 1, 2, 3, 4 implemented**; Phase 5
-(CLI surface + docs close-out) remains. **Phase 1 (plan-only) implemented** — course data model
+**Status:** ✅ IMPLEMENTED (2026-07-20). **All five phases done** — plan-only decomposition (1),
+orchestration with context hand-down (2), course assembly (3), the reactive safety net (4), and
+this Phase 5 close-out: the CLI surface below was already complete (built incrementally across
+Phases 1–4, not held back for Phase 5); this close-out flips this doc's status, syncs `TODO.md`,
+and records that all three CI gates (`ruff`, `mypy`, `pytest --cov-fail-under=80`) are green and
+a reviewer-on-diff pass on the Phase 3 diff came back clean (0 CRITICAL/HIGH; see PR #23).
+**Phase 1 (plan-only) implemented** — course data model
 (`forged/curriculum/model.py`), course-fidelity union check (`forged/curriculum/fidelity.py`, reusing
 an extracted `assess_capability_coverage` core in `pipeline/fidelity.py`), the `curriculum_planner`
 persona + `CurriculumPlanner` agent (defaults to **gpt-5-mini** — gpt-4o-mini gave coarser splits),
@@ -16,14 +21,15 @@ recorded never skipped; sequential (parallel deferred); `forged course` (no `--p
 course under `runs/<stamp>_course_<slug>/` with `--max-modules`/`--no-provision`. Validated by
 `tests/test_curriculum_*.py` + `test_cli_course.py` (full suite green; coverage ≥ 80%).
 
-> **Known gap:** `_write_module_deliverables` reaches into `forged.cli` private writers via a deferred
-> import (avoids a load cycle) and is patched out in unit tests — the real per-module SUMMARY/notebook/
-> package writing is only exercised in a live run. Follow-up: extract those writers to a shared module.
+> **Known gap — RESOLVED:** the per-run deliverable writers (`write_agentic_summary`,
+> `write_final_notebook`, `write_learner_package`) now live in `forged/deliverables.py`, imported
+> directly by both `forged/curriculum/orchestrator.py` and the single-lesson CLI path — the deferred
+> `forged.cli` import this note used to flag is gone.
 
 **Phase 4 (reactive safety net) implemented** (2026-07-12) — see the Phase 4 section below; it shipped
 ahead of Phase 3 because it only composes existing runs + the planner, needing no assembler.
-**Phase 3 (course assembly) implemented** (2026-07-20) — see the Phase 3 section below. Phase 5
-(close-out) remains. This is **Half B** of the
+**Phase 3 (course assembly) implemented** (2026-07-20) — see the Phase 3 section below. **Phase 5
+(close-out) implemented** (2026-07-20) — see the Phase 5 section below. This is **Half B** of the
 deliberate two-way split begun in R1 (`11-topic-fidelity-r1.md`). Half A (lesson-level *detect & be
 honest*) is merged. Half B is *resolve by decomposing*: turn an over-large topic into an ordered
 **course** of module-level lessons instead of silently cutting content. The two halves are coupled by
@@ -294,10 +300,16 @@ and feeds it to a fresh R1 run.** Concretely:
 - Tests: a module that drops a capability hands that capability back and yields a new module; bounded
   re-decomposition terminates; the overflow capability ends up covered by the grown course.
 
-### Phase 5 — CLI surface + docs close-out
-- `forged course --topic … [--learner-profile …] [--plan-only] [--max-modules N] [--no-provision]`.
-- Flip this doc to IMPLEMENTED with validating test names; sync `TODO.md` (Phase 2 → in progress/done).
-- Run all three CI gates; address reviewer-on-diff findings.
+### Phase 5 — CLI surface + docs close-out — ✅ IMPLEMENTED (2026-07-20)
+- CLI surface already covered this bullet in full (built incrementally across Phases 1–4, not
+  held back for Phase 5): `forged course --topic … [--learner-profile …] [--topic-spec …]
+  [--config …] [--plan-only] [--max-modules N] [--runs DIR] [--redecompose] [--max-depth N]
+  [--no-provision] [--out DIR]`.
+- This doc flipped to IMPLEMENTED (was: 🚧 IN PROGRESS); `TODO.md` synced to match.
+- All three CI gates green (`ruff`, `mypy`, `pytest --cov-fail-under=80`: 576 passed, 92.80%
+  coverage); reviewer-on-diff pass on the Phase 3 diff came back clean — 0 CRITICAL/HIGH, 2 LOW
+  cosmetic notes (title-collision edge case in NAV prerequisite links; unescaped Markdown special
+  characters in LLM-generated titles), neither requiring a fix this phase. See PR #23.
 
 ---
 
@@ -351,20 +363,26 @@ mitigations, built in from Phase 1:
 
 ## Part VI — Acceptance
 
-- [ ] `forged course --plan-only` emits an ordered `CourseSpec` whose modules' union covers every
+- [x] `forged course --plan-only` emits an ordered `CourseSpec` whose modules' union covers every
       capability of the original topic (course-fidelity check passes); a decomposition that drops a
-      capability fails the check honestly.
-- [ ] Per-module orchestration runs each `ModuleSpec` through the **unchanged** `run_pipeline` and
+      capability fails the check honestly. (`fidelity.py::assess_course_fidelity`,
+      `test_cli_course.py::test_course_plan_only_warns_on_dropped_capability`)
+- [x] Per-module orchestration runs each `ModuleSpec` through the **unchanged** `run_pipeline` and
       aggregates a `CourseResult`; a failing module is recorded, never silently skipped.
-- [ ] Each module run is seeded with handed-down context (`brief`/`lesson_context`/`topic_spec`) in
+      (`orchestrator.py::run_course`)
+- [x] Each module run is seeded with handed-down context (`brief`/`lesson_context`/`topic_spec`) in
       which earlier modules appear as prior knowledge — so later modules don't re-teach earlier ones —
       assembled via the existing `build_context_block` (no divergent context builder).
-- [ ] Course assembly writes an ordered index with prerequisite links + an aggregate summary that
+      (`orchestrator.py::_augment_profile`/`_seed_module_store`)
+- [x] Course assembly writes an ordered index with prerequisite links + an aggregate summary that
       surfaces any module's degradations / fidelity warnings.
-- [ ] A module whose run still reports `TopicFidelitySignal.missing` produces a course-level warning
+      (`assembler.py::assemble_course` → `README.md`/`COURSE.md`/`NAV.md`)
+- [x] A module whose run still reports `TopicFidelitySignal.missing` produces a course-level warning
       (and, gated, bounded re-decomposition) — never a silent course-level drop.
-- [ ] `--max-modules` enforced; `--plan-only` incurs no LLM run cost.
-- [ ] Course state objects are frozen + immutable; CI gates green (`ruff`, `mypy`, coverage ≥ 80%).
+      (`reactive.py::run_course_reactive`; surfaced in `assembler.py`'s dropped-capability rollup)
+- [x] `--max-modules` enforced; `--plan-only` incurs no LLM run cost. (`cli.py` `_cmd_course`)
+- [x] Course state objects are frozen + immutable; CI gates green (`ruff`, `mypy`, coverage ≥ 80%).
+      (576 passed, 92.80% coverage, 2026-07-20)
 
 ---
 

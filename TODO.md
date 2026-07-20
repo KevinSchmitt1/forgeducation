@@ -136,8 +136,12 @@ outcomes/degradations, overwriting the pre-run `_persist_course` preview) + a pe
 (prev/next/up + prerequisite links, kept separate from the learner-package `README.md` it doesn't
 own). New `forged/curriculum/assembler.py`; additive `ModuleSpec.remediation_for` field records a
 reactively-added module's provenance; `_cmd_course`/`_build_confirmed` deduped into one
-`_finalize_course` helper. Phase 4 (reactive safety net) was already ✅ DONE (2026-07-12); **Phase 5
-(CLI surface + docs close-out) is next.**
+`_finalize_course` helper. Phase 4 (reactive safety net) was already ✅ DONE (2026-07-12).
+**Phase 5 (CLI surface + docs close-out) is also ✅ DONE (2026-07-20)** — the CLI surface was
+already complete (built incrementally across Phases 1–4); this close-out flipped doc 13's status
+to fully IMPLEMENTED and confirmed all three CI gates green (576 passed, 92.80% coverage) plus a
+clean reviewer-on-diff pass on the Phase 3 diff (0 CRITICAL/HIGH, 2 LOW cosmetic notes not
+requiring a fix). **The curriculum planner (doc 13) is now fully implemented, all 5 phases.**
 
 ### ⏭ Next Up
 
@@ -251,11 +255,12 @@ The bill is **output/reasoning-dominated**, not input-dominated (this reverses t
 
 ---
 
-## Curriculum Planner (Half B) — design questions still open for Phase 5
+## Curriculum Planner (Half B) — design questions
 
-**Status:** Phases 1–4 **implemented** (plan + orchestrate + assemble + reactive safety net; see
-Recently Completed and `docs/architecture/13-curriculum-planner.md`). The decisions below were
-resolved during build; the remaining open question belongs to Phase 5.
+**Status:** All 5 phases **implemented** (plan + orchestrate + assemble + reactive safety net +
+CLI/docs close-out; see Recently Completed and `docs/architecture/13-curriculum-planner.md`). The
+decisions below were resolved during build; one deferred-by-design question remains, not blocking
+any phase.
 
 **Resolved during Phases 1–2:**
 
@@ -273,7 +278,7 @@ resolved during build; the remaining open question belongs to Phase 5.
    by `--max-modules` + `max_depth`; every re-split recorded in the grown `CourseSpec.rationale` and
    now also tagged per-module via `ModuleSpec.remediation_for`.
 
-**Still open (Phase 5):**
+**Deferred by design (YAGNI, not blocking any phase):**
 
 1. When (if ever) to turn on parallel module execution.
 
@@ -281,8 +286,8 @@ resolved during build; the remaining open question belongs to Phase 5.
 
 ## Dependencies
 
-- **Curriculum planner Phase 5** (CLI surface + docs close-out) builds on the merged Phases 1–4 (no
-  external gate).
+- **Doc 14 Part III** (escalation workflow) builds on the merged curriculum planner (all 5 phases
+  done; no external gate).
 - **Step 7 (postponed)** depends on the completed agentic pipeline; lower priority than the curriculum
   planner follow-ups.
 - **Observability follow-up** depends on the current Langfuse wiring; next focus is linking run
@@ -297,8 +302,7 @@ resolved during build; the remaining open question belongs to Phase 5.
 - `docs/architecture/09-langfuse-tracing.md` — current tracing implementation and caveats
 - `docs/architecture/11-topic-fidelity-r1.md` — R1 (topic fidelity, Half A) — DONE
 - `docs/architecture/12-notebook-orientation-cell.md` — learner orientation cell — DONE
-- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1, 2, 3, 4
-  done; Phase 5 (CLI surface + docs close-out) next
+- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — all 5 phases DONE
 - `docs/architecture/14-code-explanation-and-readiness.md` — code maps, cell briefs, readiness
   verdict — Parts I–II done; Part III (escalation workflow) scoped 2026-07-20, ready to implement
 - `docs/architecture/15-structured-grader-output.md` — structured (JSON-schema) grader outputs — done
