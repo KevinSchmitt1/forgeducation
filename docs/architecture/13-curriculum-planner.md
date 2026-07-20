@@ -1,6 +1,7 @@
 # 13 — Curriculum Planner (Phase 2 / Half B)
 
-**Status:** 🚧 IN PROGRESS (2026-06-24). **Phase 1 (plan-only) implemented** — course data model
+**Status:** 🚧 IN PROGRESS (2026-07-20). **Phases 1, 2, 3, 4 implemented**; Phase 5
+(CLI surface + docs close-out) remains. **Phase 1 (plan-only) implemented** — course data model
 (`forged/curriculum/model.py`), course-fidelity union check (`forged/curriculum/fidelity.py`, reusing
 an extracted `assess_capability_coverage` core in `pipeline/fidelity.py`), the `curriculum_planner`
 persona + `CurriculumPlanner` agent (defaults to **gpt-5-mini** — gpt-4o-mini gave coarser splits),
@@ -20,8 +21,9 @@ course under `runs/<stamp>_course_<slug>/` with `--max-modules`/`--no-provision`
 > package writing is only exercised in a live run. Follow-up: extract those writers to a shared module.
 
 **Phase 4 (reactive safety net) implemented** (2026-07-12) — see the Phase 4 section below; it shipped
-ahead of Phase 3 because it only composes existing runs + the planner, needing no assembler. Phase 3
-(course assembly / the `assembler.py` stitch) and Phase 5 (close-out) remain. This is **Half B** of the
+ahead of Phase 3 because it only composes existing runs + the planner, needing no assembler.
+**Phase 3 (course assembly) implemented** (2026-07-20) — see the Phase 3 section below. Phase 5
+(close-out) remains. This is **Half B** of the
 deliberate two-way split begun in R1 (`11-topic-fidelity-r1.md`). Half A (lesson-level *detect & be
 honest*) is merged. Half B is *resolve by decomposing*: turn an over-large topic into an ordered
 **course** of module-level lessons instead of silently cutting content. The two halves are coupled by
@@ -179,9 +181,25 @@ independently shippable — stop after any one and the repo is coherent.
 - Tests: orchestrator runs N stub modules and aggregates results; a failing module is recorded, not
   silently skipped; `--max-modules` is enforced.
 
-### Phase 3 — Course assembly (the stitch) — SCOPED (2026-07-20), ready to implement
+### Phase 3 — Course assembly (the stitch) — ✅ IMPLEMENTED (2026-07-20)
 
-Scoped via a dedicated research pass; concrete plan below. Two real gaps surfaced that the
+Implemented as `forged/curriculum/assembler.py::assemble_course` (+ `_render_course_index`,
+`_render_course_report`, both directly testable). `ModuleSpec.remediation_for` (additive, default
+`()`) records which capabilities a reactively-added module (Phase 4) was spawned to cover;
+`reactive.py` sets it when it builds a remediation module. CLI wiring: `_cmd_course` and
+`_build_confirmed` both end by calling the shared `_finalize_course(result, course_dir, fidelity)`,
+which calls `assemble_course(...)` then the existing `_report_course_result(...)` — the prior
+duplicated tail between the two call sites is gone. Validated by
+`tests/test_curriculum_assembler.py` (12 tests: index ordering/prerequisite chain, reactive
+provenance line, terminal_ok vs. failed marks, dropped-capability surfacing, notebook-link
+presence/absence, plan-fidelity verdict gating, NAV.md prev/next/up + prerequisite links, a module
+absent from `CourseResult.modules` is marked "not run" rather than omitted, NAV writing is
+best-effort — a module directory that doesn't exist is skipped, never fabricated) plus one-line
+extensions to `test_curriculum_model.py`, `test_curriculum_reactive.py`, and `test_cli_course.py`.
+Full suite green; `ruff`/`mypy` clean.
+
+Scoped via a dedicated research pass; concrete plan below (historical — now implemented as
+described above). Two real gaps surfaced that the
 original one-paragraph sketch missed:
 
 - **Provenance gap:** a reactively-added module (Phase 4) records *that* it was added

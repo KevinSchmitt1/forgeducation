@@ -127,19 +127,19 @@ topic → single-lesson path; then a small course).
 
 ---
 
-### ⏭ Next Up — both scoped (2026-07-20), ready to implement
+### ✅ DONE (2026-07-20): Curriculum planner Phase 3 — course assembly
 
-Both tracks below are now fully scoped (concrete data contracts, file lists, test lists) in their
-design docs. No longer framed as an either/or fork — both are queued for implementation.
-
-**Curriculum planner Phase 3 — course assembly.** See `docs/architecture/13-curriculum-planner.md`
+Implemented on `feat/curriculum-course-assembly`. See `docs/architecture/13-curriculum-planner.md`
 Phase 3. Stitches per-module outputs into one course: index `README.md` (ordered modules,
-prerequisite cross-links) + aggregate `COURSE.md` (post-run outcomes/degradations, overwriting the
-pre-run preview). Scoping surfaced two real gaps: reactive re-splits (Phase 4) carry no
-per-capability provenance today (fixed by an additive `ModuleSpec.remediation_for` field), and each
-module dir's `README.md` is already owned by the learner-package writer (fixed by a separate
-per-module `NAV.md` for cross-links). New: `forged/curriculum/assembler.py`. Phase 4 (reactive
-safety net) is ✅ DONE (2026-07-12) — see below; Phase 5 (close-out) follows once Phase 3 ships.
+prerequisite cross-links, reactively-added modules flagged) + aggregate `COURSE.md` (post-run
+outcomes/degradations, overwriting the pre-run `_persist_course` preview) + a per-module `NAV.md`
+(prev/next/up + prerequisite links, kept separate from the learner-package `README.md` it doesn't
+own). New `forged/curriculum/assembler.py`; additive `ModuleSpec.remediation_for` field records a
+reactively-added module's provenance; `_cmd_course`/`_build_confirmed` deduped into one
+`_finalize_course` helper. Phase 4 (reactive safety net) was already ✅ DONE (2026-07-12); **Phase 5
+(CLI surface + docs close-out) is next.**
+
+### ⏭ Next Up
 
 **Doc 14 Part III — escalation workflow.** See
 `docs/architecture/14-code-explanation-and-readiness.md` Part III. **Decision (2026-07-20): build
@@ -251,11 +251,11 @@ The bill is **output/reasoning-dominated**, not input-dominated (this reverses t
 
 ---
 
-## Curriculum Planner (Half B) — design questions still open for Phases 3–5
+## Curriculum Planner (Half B) — design questions still open for Phase 5
 
-**Status:** Phases 1–2 **implemented** (plan + orchestrate; see Recently Completed and
-`docs/architecture/13-curriculum-planner.md`). The decisions below were resolved during build; the
-remaining open questions belong to Phases 3–5.
+**Status:** Phases 1–4 **implemented** (plan + orchestrate + assemble + reactive safety net; see
+Recently Completed and `docs/architecture/13-curriculum-planner.md`). The decisions below were
+resolved during build; the remaining open question belongs to Phase 5.
 
 **Resolved during Phases 1–2:**
 
@@ -267,18 +267,22 @@ remaining open questions belong to Phases 3–5.
    consecutively." Base profile never mutated.
 3. **Cross-module coverage validation.** Deterministic `assess_course_fidelity` (union-coverage) checks
    the plan covers every requested capability before any run.
+4. **Course-level manifest/index contract (Phase 3 assembly).** `assemble_course` writes an ordered
+   `README.md` index + a post-run `COURSE.md` outcome report + per-module `NAV.md` cross-links.
+5. **Reactive re-decomposition policy + bounds when a module is still over-large (Phase 4).** Bounded
+   by `--max-modules` + `max_depth`; every re-split recorded in the grown `CourseSpec.rationale` and
+   now also tagged per-module via `ModuleSpec.remediation_for`.
 
-**Still open (Phases 3–5):**
+**Still open (Phase 5):**
 
-1. Course-level manifest/index contract (Phase 3 assembly).
-2. Reactive re-decomposition policy + bounds when a module is still over-large (Phase 4).
-3. When (if ever) to turn on parallel module execution.
+1. When (if ever) to turn on parallel module execution.
 
 ---
 
 ## Dependencies
 
-- **Curriculum planner Phases 3–5** build on the merged Phases 1–2 (no external gate).
+- **Curriculum planner Phase 5** (CLI surface + docs close-out) builds on the merged Phases 1–4 (no
+  external gate).
 - **Step 7 (postponed)** depends on the completed agentic pipeline; lower priority than the curriculum
   planner follow-ups.
 - **Observability follow-up** depends on the current Langfuse wiring; next focus is linking run
@@ -293,8 +297,8 @@ remaining open questions belong to Phases 3–5.
 - `docs/architecture/09-langfuse-tracing.md` — current tracing implementation and caveats
 - `docs/architecture/11-topic-fidelity-r1.md` — R1 (topic fidelity, Half A) — DONE
 - `docs/architecture/12-notebook-orientation-cell.md` — learner orientation cell — DONE
-- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1, 2, 4 done;
-  Phase 3 (course assembly) scoped 2026-07-20, ready to implement
+- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1, 2, 3, 4
+  done; Phase 5 (CLI surface + docs close-out) next
 - `docs/architecture/14-code-explanation-and-readiness.md` — code maps, cell briefs, readiness
   verdict — Parts I–II done; Part III (escalation workflow) scoped 2026-07-20, ready to implement
 - `docs/architecture/15-structured-grader-output.md` — structured (JSON-schema) grader outputs — done

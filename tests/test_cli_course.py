@@ -175,6 +175,28 @@ def test_course_without_plan_only_invokes_orchestrator(monkeypatch, tmp_path) ->
 
 
 @pytest.mark.unit
+def test_course_run_writes_post_run_readme_and_course_md(monkeypatch, tmp_path) -> None:
+    """After orchestration, the course directory carries the assembled deliverable
+    (doc 13, Phase 3) — not just the pre-run COURSE.md preview from `_persist_course`."""
+    course = _faithful_course()
+    _patch_planner(monkeypatch, course)
+    _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
+
+    code = cli.main(
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+    )
+
+    assert code == cli.EXIT_OK
+    course_dirs = list(tmp_path.glob("*_course_*"))
+    assert len(course_dirs) == 1
+    course_dir = course_dirs[0]
+    assert (course_dir / "README.md").is_file()
+    assert "Foundations" in (course_dir / "README.md").read_text()
+    assert (course_dir / "COURSE.md").is_file()
+    assert "Quantum teleportation course" in (course_dir / "COURSE.md").read_text()
+
+
+@pytest.mark.unit
 def test_course_threads_max_modules_and_no_provision(monkeypatch, tmp_path) -> None:
     course = _faithful_course()
     _patch_planner(monkeypatch, course)

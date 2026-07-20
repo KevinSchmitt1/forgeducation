@@ -84,7 +84,8 @@ def run_course_reactive(
             if _budget_exhausted(all_results, max_modules):
                 break
             module = ModuleSpec(
-                spec=spec, order=len(all_modules), module_prerequisites=prerequisites
+                spec=spec, order=len(all_modules), module_prerequisites=prerequisites,
+                remediation_for=dropped,
             )
             result = run_module_with_handdown(
                 module, tuple(all_modules), learner_profile, course_dir,
