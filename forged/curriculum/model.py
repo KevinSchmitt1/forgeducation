@@ -100,6 +100,26 @@ class CourseResult:
     modules: tuple[ModuleResult, ...]
 
 
+@dataclass(frozen=True)
+class ReadinessVerdict:
+    """Whether a topic is honestly reachable for THIS learner in one lesson.
+
+    Produced BEFORE any build (pre-execution, LLM) by `forged.curriculum.readiness
+    .ReadinessAssessor` — the input-side counterpart to `TopicFidelitySignal`'s
+    post-execution drop detection (doc 14, Part III). Deliberately not an extension of
+    `TopicFidelitySignal`: that signal is post-execution and deterministic, and doc 11
+    pins it "stable and additive-only" as the R1↔curriculum coupling contract —
+    overloading it with a pre-execution LLM verdict would blur that seam. Stays outside
+    `PipelineState`: a CLI/curriculum-layer value object that never enters the graph.
+    """
+
+    reachable: bool
+    beachhead: str
+    missing_foundations: tuple[str, ...]
+    unreachable_capabilities: tuple[str, ...]
+    reason: str
+
+
 def course_to_dict(course: CourseSpec) -> dict[str, Any]:
     """Serialize a CourseSpec to a plain JSON-able dict (for `--plan-only` persistence).
 
