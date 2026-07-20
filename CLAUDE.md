@@ -130,14 +130,24 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
   The orchestrator's per-module hand-down was extracted to `run_module_with_handdown` so both paths
   seed context identically. Shipped ahead of Phase 3 (it needs no assembler). This completes the R1
   → planner → R1 self-correcting loop.
+- **Scoped on `master` (2026-07-20):** both queued features now have concrete, implementation-ready
+  plans in their design docs (research delegated to parallel scoping agents, synthesized and written
+  back into docs 13/14 — no code yet). **Curriculum planner Phase 3** (course assembly): new
+  `forged/curriculum/assembler.py`; scoping found two real gaps — reactive re-splits carry no
+  per-capability provenance (fix: additive `ModuleSpec.remediation_for` field) and each module dir's
+  `README.md` is already owned by the learner-package writer (fix: separate per-module `NAV.md`).
+  **Doc 14 Part III** (escalation workflow): decided to build despite tension with doc 16 (which
+  deliberately rejected a second sizing signal) — scoped down to a narrow, worthwhile case: a
+  pre-flight `ReadinessAssessor` inside `forged learn` catches a topic sized to 1 module that's still
+  too hard for *this* learner's profile, before any gpt-5 spend on an unwanted beachhead. New
+  `ReadinessVerdict` dataclass (kept separate from `TopicFidelitySignal` on purpose), new
+  `forged/curriculum/readiness.py` + `personas/readiness_assessor.md`; `forged agentic` untouched,
+  escalation lives in `forged learn` only, reusing the existing confirmation gate.
 - **🔜 Next:**
-  1. **Curriculum planner Phases 3 & 5** — course assembly (`assembler.py`: index + cross-links +
-     aggregate `COURSE.md` that also records each reactive re-split) and close-out. Phase 4 is now done.
-     Start: `docs/architecture/13-curriculum-planner.md`.
-  2. **Doc 14 Part III — escalation workflow.** Wire the readiness verdict so the planner detecting
-     "gap too deep" auto-routes into the front door's course path. The front door supersedes Part III's
-     gate sketch; what remains is the auto-route on the verdict. Start:
-     `docs/architecture/14-code-explanation-and-readiness.md` Part III.
+  1. **Curriculum planner Phase 3** — implement per the concrete plan in
+     `docs/architecture/13-curriculum-planner.md` (TDD, phase-per-commit). Phase 5 (close-out) follows.
+  2. **Doc 14 Part III** — implement per the concrete plan in
+     `docs/architecture/14-code-explanation-and-readiness.md`.
 
   The **cli deliverable-writer cleanup** is now **done** (`write_agentic_summary`/
   `write_final_notebook`/`write_learner_package` live in `forged/deliverables.py`; both the single-lesson

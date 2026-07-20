@@ -65,28 +65,114 @@ planner must NOT cram. Instead:
 It reuses everything already built: the KNOWN/GAP map (orientation, doc 12), the fidelity signal
 (R1, doc 11), and — for the real sequencing — the curriculum decomposition (doc 13).
 
-## Part III — Escalation workflow (DESIGNED, next feature)
+## Part III — Escalation workflow — SCOPED (2026-07-20), ready to implement
 
-The readiness verdict is the *detection*. The agreed *response*, to be built next as its own
-plan + doc:
+The readiness verdict is the *detection*. The response, scoped via a dedicated research pass:
 
-`forged agentic` runs the planner → if the readiness verdict is "gap too deep," it does **not**
-build a single lesson. It calls the **curriculum planner** to produce a course *plan* (N modules,
-topics, order), shows the learner the preview (`COURSE.md` + rough cost/time), and **stops** —
-asking for explicit confirmation before any paid build.
+**Supersession note, recorded so it isn't silently missed:** doc 16 (`16-smart-front-door.md`
+decision 2) *deliberately* rejected adding a readiness signal to sizing — *"Sizing = the
+curriculum planner itself… No new 'readiness' signal, no second sizing heuristic."* It also
+already built the two pieces this section originally called "the new pieces": the confirmation
+gate (`forged/curriculum/gate.py::run_gate`) and the plan-first/confirm-before-spend UX
+(`forged/cli.py::_cmd_learn`). What Part III still owes, after that supersession, is narrower
+than the original sketch: **a pre-flight check that catches a topic `CurriculumPlanner` sized
+down to 1 module, but that is too hard for *this learner's* profile** — before any gpt-5 spend on
+a beachhead the learner didn't ask for. Phase 4's reactive safety net (doc 13) already catches the
+same overflow *after* a wasted build; this is the proactive, cheaper-but-narrower sibling.
+**Decision recorded 2026-07-20: build it** (see resolved design decisions below).
 
-Agreed design decisions (record so they aren't relitigated):
-- **Single smart front door:** the learner always inputs just a topic; the system decides
-  single-lesson vs course.
-- **Confirmation UX:** interactive, **plan-only by default** — nothing paid runs without an
-  explicit go (a `--yes` flag skips the prompt for automation). Chosen over auto-proceed because
-  it doubles as a spend gate (a course is N paid notebook builds).
-- **Reuse, don't rebuild:** `forged course --plan-only` already produces the preview
-  (`course_plan.json` + `COURSE.md`); curriculum decomposition (doc 13) already exists. The new
-  pieces are only: the auto-route on the verdict, and the confirmation gate.
+### Structured shape
 
-This is also the natural home for the curriculum planner's Phase 4 (reactive re-decomposition):
-readiness-triggered decomposition and capability-overflow re-decomposition share machinery.
+New frozen dataclass — deliberately **not** an extension of `TopicFidelitySignal` (that signal is
+post-execution, deterministic, and doc 11 pins it "stable and additive-only" as the R1↔curriculum
+coupling contract; overloading it with a pre-execution LLM verdict would blur that seam):
+```python
+@dataclass(frozen=True)
+class ReadinessVerdict:
+    """Whether this topic is honestly reachable for THIS learner in one lesson.
+
+    Produced BEFORE any build (pre-execution, LLM) — the input-side counterpart to
+    TopicFidelitySignal's post-execution drop detection.
+    """
+    reachable: bool
+    beachhead: str                            # furthest honest single-lesson scope, if we proceeded
+    missing_foundations: tuple[str, ...]      # prereq concepts the learner lacks, in learn order
+    unreachable_capabilities: tuple[str, ...] # requested capabilities out of reach this lesson
+    reason: str
+```
+It stays outside `PipelineState` — a CLI/curriculum-layer value object, never entering the graph
+(see routing decision below); adding a state field we don't route on would be speculative.
+
+### New wrapper, not a reuse of the lesson planner's prose
+
+New `forged/curriculum/readiness.py::ReadinessAssessor`, mirroring `CurriculumPlanner`
+(`curriculum/planner.py`) and `PlanAdjuster` (`curriculum/adjuster.py`) exactly: persona file
+(`personas/readiness_assessor.md`) + `LLMClient.complete(..., response_format=...)` per the doc-15
+structured-output pattern, injectable `llm_client`, `DEFAULT_MODEL="gpt-5-mini"`, lenient
+`_extract_json_object` fallback for non-OpenAI providers. The lesson `PlannerAgent` outputs
+markdown (consumed by `code_author`), which is incompatible with a whole-response JSON schema —
+doc 15 already ruled out "prose plus trailing fenced JSON" as unreliable, so a dedicated
+structured call is the doc-15-consistent choice over parsing the markdown plan's prose.
+
+### Where the check lives — CLI pre-flight in `forged learn`, not a graph node
+
+Sits between the front door's existing up-front sizing and the gate, inside `_cmd_learn`: after
+`CurriculumPlanner.plan` returns exactly 1 module, call `ReadinessAssessor`; if
+`reachable is False`, re-plan via `CurriculumPlanner.plan(..., guidance=...)` (the same Tier-2
+guidance channel the gate's `PlanAdjuster` already uses) synthesized from
+`missing_foundations`, producing an escalated N-module course that flows into the **existing,
+unchanged** `_run_plan_gate` → `_build_confirmed` path.
+
+Rejected alternative: a graph-halt node (a conditional edge after `planner` that ENDs early,
+mirroring `_continue_unless_terminal`). `router.py`/`failure.py` classify *post-execution*
+signals (execution report, grade report, structural report); a pre-execution planning verdict
+doesn't fit that model, and a graph node still has to pop back out to the CLI for the interactive
+gate — more moving parts than the pre-flight, no cost advantage. `forged agentic` is **left
+unchanged**: its non-interactive contract is load-bearing (doc 16 decision 1; `run_course`
+composes it), and its existing honest behavior on a too-deep topic (persona-level beachhead
+scoping + surfaced `TopicFidelitySignal` in SUMMARY.md) is appropriate for a power-user,
+non-interactive command.
+
+### Resolved design decisions (record so they aren't relitigated)
+
+- **Build it** (over: fold into `CurriculumPlanner`'s profile-awareness + rely on Phase 4 alone).
+  Decided 2026-07-20 — the narrow pre-build-vs-post-build-waste tradeoff is worth the scoped cost.
+- **Single smart front door:** the learner always inputs just a topic; `forged learn` decides
+  single-lesson vs. course, now including this pre-flight. `forged agentic` is untouched.
+- **`--yes` threading:** no new flag. The escalation slots in before `_cmd_learn`'s existing
+  `args.yes` branch — an escalated topic still respects `--yes` (skip gate, build the escalated
+  course) and the existing non-TTY-without-`--yes` → `EXIT_USAGE` rule.
+- **Fail-open on assessor parse failure:** degrade to the single-lesson build (conservative
+  spend; R1 + Phase 4 remain the runtime backstop), not an escalation — mirrors `PlanAdjuster`'s
+  "degrade to the non-destructive default."
+- **Accept the double-planning cost:** the pre-flight assessor call plus the lesson planner's own
+  re-plan inside `run_pipeline` (non-escalated case) is one extra gpt-5-mini call. Accepted for
+  now (KISS); threading the pre-flight result into `run_pipeline` to skip the re-plan is a later
+  optimization, not required for v1.
+
+### Tests
+
+`tests/test_curriculum_readiness.py` (mirrors `test_curriculum_adjuster.py`): forwards the
+strict JSON schema via `response_format`; parses `reachable: True`/`False` verdicts; unparseable
+response degrades to the fail-open default (pins the Q4 decision); context guard (only brief +
+learner context + topic_spec reach the prompt, no plan/notebook leakage). Persona-contract test
+extending `tests/pipeline/test_pedagogy_persona.py`'s pattern for `readiness_assessor.md`
+(verdict vocabulary, the "requires prerequisites the learner lacks" reason mandate, JSON-only
+output rule) — the existing planner-persona readiness tests are kept as-is, since the planner
+persona still governs in-pipeline beachhead scoping for lessons that do proceed.
+`tests/test_cli_learn.py` extension (mocked `ReadinessAssessor` + `CurriculumPlanner`): 1-module +
+reachable → single-lesson path, assessor called once, no escalation; 1-module + not-reachable →
+re-plan with guidance, gate shown, `run_course` invoked; N-module plan → assessor not called
+(pre-flight is 1-module-only); `--yes` + not-reachable → escalates, skips gate; non-TTY without
+`--yes` on an escalation → `EXIT_USAGE`; cancel at the gate after escalation → `EXIT_OK`, nothing
+run.
+
+Files touched: new `forged/curriculum/readiness.py`, `personas/readiness_assessor.md`,
+`tests/test_curriculum_readiness.py`; edited `forged/pipeline/state.py` (or a new module for
+`ReadinessVerdict` if it should stay out of `state.py` entirely — TBD at implementation time,
+leaning toward `forged/curriculum/model.py` alongside `ModuleSpec`/`CourseSpec` since it never
+enters `PipelineState`), `forged/cli.py` (`_cmd_learn` pre-flight wiring), and
+`tests/pipeline/test_pedagogy_persona.py` + `tests/test_cli_learn.py` extensions.
 
 ## Validation
 

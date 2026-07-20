@@ -127,36 +127,32 @@ topic → single-lesson path; then a small course).
 
 ---
 
-### ⏭ Next Up — the queued fork (Option A remains)
+### ⏭ Next Up — both scoped (2026-07-20), ready to implement
 
-The 2026-07-05 fork resolved to the smart front door (now done). What remains queued:
+Both tracks below are now fully scoped (concrete data contracts, file lists, test lists) in their
+design docs. No longer framed as an either/or fork — both are queued for implementation.
 
-**Option A — Curriculum planner Phases 3–5.** The curriculum planner can now plan and run a course.
-What remains (see `docs/architecture/13-curriculum-planner.md` Phases 3–5):
+**Curriculum planner Phase 3 — course assembly.** See `docs/architecture/13-curriculum-planner.md`
+Phase 3. Stitches per-module outputs into one course: index `README.md` (ordered modules,
+prerequisite cross-links) + aggregate `COURSE.md` (post-run outcomes/degradations, overwriting the
+pre-run preview). Scoping surfaced two real gaps: reactive re-splits (Phase 4) carry no
+per-capability provenance today (fixed by an additive `ModuleSpec.remediation_for` field), and each
+module dir's `README.md` is already owned by the learner-package writer (fixed by a separate
+per-module `NAV.md` for cross-links). New: `forged/curriculum/assembler.py`. Phase 4 (reactive
+safety net) is ✅ DONE (2026-07-12) — see below; Phase 5 (close-out) follows once Phase 3 ships.
 
-- **Phase 3 — course assembly.** Stitch the per-module outputs into one course: an index `README.md`
-  (ordered modules, prerequisite cross-links) + aggregate `COURSE.md` surfacing each module's
-  degradations / fidelity signals.
-- **Phase 4 — reactive safety net (the R1 → planner → R1 loop).** ✅ DONE (2026-07-12).
-  `forged/curriculum/reactive.py::run_course_reactive`, opt-in behind `--redecompose` (+ `--max-depth`,
-  default 1) on both `course` and `learn`. A module that still drops a capability
-  (`ModuleResult.topic_fidelity.missing`) hands the overflow back to the CurriculumPlanner as a new
-  module, which is run and appended to the grown course; bounded by `--max-modules` (total run budget)
-  and `--max-depth` (rounds). Tests: `tests/test_curriculum_reactive.py` + CLI routing test.
-- **Phase 5 — close-out.** Flip doc 13 to IMPLEMENTED; full CLI polish. (Phase 3 assembly still owed.)
+**Doc 14 Part III — escalation workflow.** See
+`docs/architecture/14-code-explanation-and-readiness.md` Part III. **Decision (2026-07-20): build
+it**, despite tension with doc 16 decision 2 (which deliberately rejected a second sizing signal) —
+its scoped value is narrower than the original sketch: a pre-flight `ReadinessAssessor` inside
+`forged learn` catches a topic `CurriculumPlanner` sized to 1 module but that's too hard for *this*
+learner's profile, before any gpt-5 spend on an unwanted beachhead (Phase 4's reactive net already
+catches the same overflow, but only *after* a wasted build). New: `forged/curriculum/readiness.py`,
+`personas/readiness_assessor.md`, a new `ReadinessVerdict` dataclass (deliberately not an extension
+of `TopicFidelitySignal`). `forged agentic` is untouched — the escalation lives in `forged learn`
+only, reusing the existing confirmation gate unchanged.
 
-**Option B — Doc 14 Part III: escalation workflow.** See
-`docs/architecture/14-code-explanation-and-readiness.md` Part III. Wires the planner's readiness
-verdict into an automatic route: `forged agentic` runs the planner → if the verdict is "gap too deep,"
-it does not build a single lesson — it calls the curriculum planner for a course plan, shows the
-learner the preview (`COURSE.md` + rough cost/time), and **stops**, asking for explicit confirmation
-before any paid build (a `--yes` flag skips the prompt for automation). Reuses everything already
-merged (readiness verdict + `forged course --plan-only` + curriculum decomposition); the new pieces
-are only the auto-route on the verdict and the confirmation gate. This is also the natural home for
-Option A's Phase 4 (reactive re-decomposition shares the same machinery), so building B first doesn't
-strand A's later work.
-
-**Regardless of which is picked:**
+**Regardless of which ships first:**
 - **Cleanup (known gap): DONE** — the per-run deliverable writers now live in `forged/deliverables.py`
   (`write_agentic_summary`/`write_final_notebook`/`write_learner_package`); both the single-lesson CLI
   path and the curriculum orchestrator import them there, so the orchestrator's deferred `forged.cli`
@@ -297,9 +293,10 @@ remaining open questions belong to Phases 3–5.
 - `docs/architecture/09-langfuse-tracing.md` — current tracing implementation and caveats
 - `docs/architecture/11-topic-fidelity-r1.md` — R1 (topic fidelity, Half A) — DONE
 - `docs/architecture/12-notebook-orientation-cell.md` — learner orientation cell — DONE
-- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1–2 done
+- `docs/architecture/13-curriculum-planner.md` — curriculum planner (Half B) — Phases 1, 2, 4 done;
+  Phase 3 (course assembly) scoped 2026-07-20, ready to implement
 - `docs/architecture/14-code-explanation-and-readiness.md` — code maps, cell briefs, readiness
-  verdict — Parts I–II done, Part III (escalation workflow) designed, not built
+  verdict — Parts I–II done; Part III (escalation workflow) scoped 2026-07-20, ready to implement
 - `docs/architecture/15-structured-grader-output.md` — structured (JSON-schema) grader outputs — done
 - `docs/architecture/16-smart-front-door.md` — `forged learn` interactive plan gate — IMPLEMENTED
 - `CLAUDE.md` — agent orientation, conventions, current state + next task, extending the system
