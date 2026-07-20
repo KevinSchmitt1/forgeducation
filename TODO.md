@@ -1,8 +1,8 @@
 # TODO — forgeducation Roadmap
 
-> **▶ Resuming work?** Read [`CLAUDE.md`](CLAUDE.md) → "Current state & next task" first — the
-> cold-start brief (what's merged, what's on the branch, what's next). This file is the roadmap/backlog
-> behind it. Doc ownership is defined in `CLAUDE.md` → "Documentation".
+> **▶ Resuming work?** This file is the cold-start brief — current status, what's shipped, what's
+> in flight, what's next. See [`CLAUDE.md`](CLAUDE.md) for repo conventions and architecture
+> orientation (durable, not state); doc ownership is defined there under "Documentation".
 
 ## Current Status
 

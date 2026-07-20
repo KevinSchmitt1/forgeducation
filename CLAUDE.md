@@ -93,67 +93,34 @@ green — `pytest` passing does **not** catch ruff line-length (E501) failures.
 - **Documentation — know which doc owns what, and update it in the same change.** Every doc has one
   job so there is one place to change, not three that drift:
   - **Dynamic — update at the end of each unit of work:**
-    - `CLAUDE.md` → "Current state & next task" — the cold-start brief (what's merged, what's on the
-      branch, what's next). This is the single source of truth for project state; read it first when
-      resuming. (There is intentionally no separate `HANDOVER.md`.)
-    - `TODO.md` — the roadmap/backlog across features, cost findings, open design questions.
+    - `TODO.md` — the cold-start brief AND the roadmap/backlog: current status, what's shipped,
+      what's in flight, what's next, cost findings, open design questions. This is the single
+      source of truth for project state; read it first when resuming. (There is intentionally no
+      separate `HANDOVER.md`.)
     - `README.md` — user-facing; when a user-facing capability changes (new command, new run output,
       new honesty guarantee), update it in the same change. It drifts fastest — nobody is forced to touch it.
   - **Append-only — add, don't rewrite:** `docs/architecture/NN-*.md` are dated design snapshots. When
     building something new, add a new numbered `.md` (an ecc `/plan` run usually creates one); when a
     feature ships, flip its doc's status to IMPLEMENTED but leave the design body intact.
-  - **Durable — edit only when the thing it describes changes:** this file (conventions), the
-    templates. No routine per-work-unit updates.
+  - **Durable — edit only when the thing it describes changes:** this file (conventions,
+    architecture orientation), the templates. No routine per-work-unit updates — see "Resuming
+    work in a new session" below for why this file deliberately holds no state.
 
-## Current state & next task
+## Resuming work in a new session
 
-- **Merged & on `master`:** the Reviewer second critic + learner-aligned personas (PR #5);
-  **R1 — topic fidelity, Half A** (`docs/architecture/11-…`); the **learner orientation cell**
-  (`docs/architecture/12-…`); the **curriculum planner Half B, Phases 1–2** (`docs/architecture/13-…`)
-  — plan a course (`forged course --plan-only`) and run it (`forged course`, orchestrating one lesson
-  pipeline per module with the prior-knowledge context hand-down); **per-call token observability**
-  (`usage.json`/`USAGE.md`, PR #13); **code maps, cell briefs, and the planner readiness verdict**
-  (`docs/architecture/14-…`, Parts I–II, PR #14); and **structured (JSON-schema) grader outputs** for
-  Student/Reviewer (`docs/architecture/15-…`, PR #15 + follow-up hardening). The four honesty features
-  compound: R1 (don't drop in a lesson) → orientation (don't silently assume a prereq) → curriculum
-  (don't drop/re-teach across a course) → readiness (don't cram a topic past the learner's foundation).
-- **On `feat/smart-front-door` (2026-07-07):** the **Smart Front Door** (`docs/architecture/16-…`,
-  Phases 1–5) — one `forged learn` command that sizes single-lesson vs. course, shows the plan + a
-  rough cost/time estimate, and runs nothing paid until the learner confirms; plan tweaks classified
-  into deterministic `CourseSpec` ops (merge/drop/force_single/reorder) with a guided gpt-5-mini
-  re-plan as the only escalation. Adds a fifth honesty feature: **don't spend before you agree.**
-- **On `feat/curriculum-reactive-loop` (2026-07-12):** **Curriculum planner Phase 4 — the reactive
-  safety net** (`docs/architecture/13-…` Phase 4). `forged/curriculum/reactive.py::run_course_reactive`,
-  opt-in behind `--redecompose` (+ `--max-depth`, default 1) on `course` and `learn`: a module that
-  still drops a capability hands the overflow back to the CurriculumPlanner as a new module, run and
-  appended to the grown course; bounded by `--max-modules` (total budget) and `--max-depth` (rounds).
-  The orchestrator's per-module hand-down was extracted to `run_module_with_handdown` so both paths
-  seed context identically. Shipped ahead of Phase 3 (it needs no assembler). This completes the R1
-  → planner → R1 self-correcting loop.
-- **Scoped on `master` (2026-07-20):** both queued features now have concrete, implementation-ready
-  plans in their design docs (research delegated to parallel scoping agents, synthesized and written
-  back into docs 13/14 — no code yet). **Curriculum planner Phase 3** (course assembly): new
-  `forged/curriculum/assembler.py`; scoping found two real gaps — reactive re-splits carry no
-  per-capability provenance (fix: additive `ModuleSpec.remediation_for` field) and each module dir's
-  `README.md` is already owned by the learner-package writer (fix: separate per-module `NAV.md`).
-  **Doc 14 Part III** (escalation workflow): decided to build despite tension with doc 16 (which
-  deliberately rejected a second sizing signal) — scoped down to a narrow, worthwhile case: a
-  pre-flight `ReadinessAssessor` inside `forged learn` catches a topic sized to 1 module that's still
-  too hard for *this* learner's profile, before any gpt-5 spend on an unwanted beachhead. New
-  `ReadinessVerdict` dataclass (kept separate from `TopicFidelitySignal` on purpose), new
-  `forged/curriculum/readiness.py` + `personas/readiness_assessor.md`; `forged agentic` untouched,
-  escalation lives in `forged learn` only, reusing the existing confirmation gate.
-- **🔜 Next:**
-  1. **Curriculum planner Phase 3** — implement per the concrete plan in
-     `docs/architecture/13-curriculum-planner.md` (TDD, phase-per-commit). Phase 5 (close-out) follows.
-  2. **Doc 14 Part III** — implement per the concrete plan in
-     `docs/architecture/14-code-explanation-and-readiness.md`.
+This file is conventions + architecture orientation only. It deliberately does not track current
+status, in-flight branches, or what's next — that kind of detail goes stale within days, and a
+second copy of it here just drifts from the real one. To catch up on actual project state:
 
-  The **cli deliverable-writer cleanup** is now **done** (`write_agentic_summary`/
-  `write_final_notebook`/`write_learner_package` live in `forged/deliverables.py`; both the single-lesson
-  CLI path and the curriculum orchestrator import them there, so the orchestrator's deferred `forged.cli`
-  import is gone). Still owed regardless: a **paid live `forged learn` run** (1-module smoke test first).
-- **Roadmap & priorities:** `TODO.md`.
+1. **`TODO.md`** — start here. Current status, what's shipped, what's in flight, what's next, cost
+   findings, open design questions.
+2. **`docs/architecture/`** — one dated design doc per feature (`NN-*.md`), each reporting its own
+   status inline (e.g. IMPLEMENTED / scoped, ready to implement / designed, not built). The
+   highest-numbered files are usually the most recent work.
+3. **`git log --oneline -20`, `git status`, `gh pr list`** — ground the above against what's
+   actually merged vs. still on a branch or open PR. Docs and branches can lag or lead each other;
+   don't assume either is current without checking. (See also "The working tree silently flips to
+   `master`" under Gotchas.)
 
 ## Extending the system (common tasks)
 
