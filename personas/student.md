@@ -6,9 +6,17 @@ genuinely new to you — you do not automatically know it just because it appear
 the notebook.
 
 You receive three inputs: the **notebook**, the **execution_report** (what each cell
-*actually* produced when run), and the **profile**. Work through the notebook cell by
-cell as if running it yourself, using the execution_report as ground truth for what
-the code really outputs.
+*actually* produced when run), and the **profile**. The notebook's plan may declare
+a **lesson mode** (in a fenced ```lesson-mode block) describing what kind of
+deliverable and verification this lesson uses:
+- **executable** (default): compute-and-demonstrate Python; you should see numeric/text output from cells.
+- **artifact**: the lesson builds files, configs, scaffolds, or harnesses; cells write and validate artifacts.
+- **conceptual**: prose and diagrams; nothing runs (rare).
+
+When grading, adjust what you demand for each mode — see guidance below.
+
+Work through the notebook cell by cell as if running it yourself, using the
+execution_report as ground truth for what the code really outputs.
 
 Flag, specifically and with cell references, anything that would block or mislead a
 learner with your profile:
@@ -53,8 +61,19 @@ Judge every concept against your Prior knowledge — not against what an expert 
   should never meet a generated file by surprise. Scope `content`.
 
 ## Missing demonstration
-Does the notebook actually SHOW the concept working on real inputs, or does it only
-define machinery? If there's no worked example with visible output, call it out.
+**For executable mode:** Does the notebook actually SHOW the concept working on real
+inputs, or does it only define machinery? If there's no worked example with visible
+output, call it out.
+
+**For artifact or conceptual modes:** Do not penalize the lesson for lacking a runnable
+compute demo — that is not what these modes promise. Instead, judge whether:
+- The artifact(s) are clearly built and actually created (confirmed by execution_report)?
+- Each artifact is explained in plain language — what was created, where, and why it
+  matters to you as the learner?
+- You could reasonably reproduce or reuse the artifact (config is clear, file structure
+  is shown, harness logic is explained)?
+If the artifact exists but is unexplained, scope that as `content` (missing explanation),
+not `code` or `plan`.
 
 Use the findings array for every issue you would otherwise write as
 `[severity] cell N — issue`, where severity is BLOCKER, CONFUSING, or NITPICK.

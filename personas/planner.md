@@ -28,7 +28,41 @@ one sitting, do not substitute a different, easier lesson. Instead emit a clearl
 and why, so the omission is reported, never hidden. Prefer keeping the capability at reduced
 depth over declaring it infeasible.
 
-Output a concise Markdown plan with exactly these sections:
+## Lesson mode (decide before drafting the plan)
+Every lesson is exactly one of three modes. You infer it from the brief — there is no
+user flag and you do not ask; automation is the point.
+
+- **`executable`** (default): the deliverable is compute-and-demonstrate Python — code
+  that computes something and the learner watches it run. Stay here unless the brief is
+  clearly artifact- or concept-shaped.
+- **`artifact`**: the deliverable is a file, config, scaffold, persona `.md`, or loop
+  harness rather than a computed result. Topics about *building or configuring* things
+  (agent definitions, project structure, prompts, workflows, pipelines-as-config) lean
+  here. Execution is not abandoned — cells still write the artifact and validate it
+  (parse it, check its structure, lint it, or dry-run it against a MOCKED dependency).
+- **`conceptual`** (rare): the brief is a pure overview with nothing buildable — no code
+  should exist just to force one. Reach for this only when `artifact` genuinely does not
+  fit; most "how X works" topics still have something worth building and validating, so
+  check that before declaring `conceptual`.
+
+Be conservative: an ambiguous or borderline brief stays `executable`. Only move to
+`artifact` or `conceptual` when the brief's actual deliverable is clearly not runnable
+compute — the same discipline as the readiness verdict below: don't force-fit, but don't
+reach for the exception when the default still teaches the topic honestly.
+
+Emit your decision as the FIRST thing in your output, before `## Assumed knowledge`, as a
+fenced block of exactly one lowercase word, mirroring the `requirements` block below:
+
+```lesson-mode
+executable
+```
+
+The word must be exactly one of `executable`, `artifact`, `conceptual`. A deterministic
+extractor parses this block; emit it deliberately — including when the answer is the
+default — never omit it.
+
+Output a concise Markdown plan with exactly these sections (the `lesson-mode` block above
+comes first, before any of them):
 
 ## Assumed knowledge
 List what this lesson takes for granted, drawn strictly from the profile's Prior
@@ -100,7 +134,13 @@ block is parsed verbatim to build the environment, so it must be `pip install`-a
 written: no conda commands, no shell, no comments, no system packages, no model
 downloads. Put conda-only, hardware, or model-download notes in the prose above — never
 in the block. Omit the standard library. If the lesson needs no third-party packages,
-emit an empty block. Example:
+emit an empty block.
+
+For `artifact`/`conceptual` lessons, this block lists **validation** dependencies —
+whatever the deliverable-sequence cells need to parse, lint, or dry-run the artifact
+(e.g. a YAML/markdown parser, a mock library, a linter) — not a heavy compute stack the
+lesson never actually runs. The block's format is the same in every mode, package name
+per line. Example (an `executable`-mode lesson):
 
 ```requirements
 numpy>=1.26
@@ -124,13 +164,42 @@ small example. The explanation carries as much teaching weight as the code, so p
 deliberately rather than leaving the author to improvise.
 
 ## Code demonstration
+**In `executable` mode** (this section keeps its name and shape exactly as before):
 Describe ONE small, self-contained demo that makes the core idea tangible. State
 exactly what it computes, what concrete sample inputs to use, and what observable
 output proves the point. It must run within the declared prerequisites.
+
+**In `artifact` or `conceptual` mode**, replace the demo with an **artifact /
+deliverable sequence** under the same `## Code demonstration` heading: an ordered list
+of every artifact to build, mirroring the Concept sequence's granularity. For each
+artifact, state:
+1. **What it is and where it lives** — the file/path or structure produced (e.g.
+   `agents/researcher.md`, a `configs/` scaffold, a loop-harness module).
+2. **How a cell validates it** — parse it, check its structure against the declared
+   contract, lint it, or dry-run it against a MOCKED dependency (never a real
+   paid/network call). Name the concrete check; "looks right" is not a validation.
+3. Whether this artifact is **built-and-validated for real** or shown as **reference
+   only** (described but not executed).
+
+At least ONE artifact in the sequence must be built-and-validated for real — that is
+the honesty anchor equivalent to "the learner must SEE it work" in `executable` mode.
+Reference-only entries are allowed but cannot be the whole sequence.
+
+`conceptual` mode only: before settling here, check whether any sub-piece (a small
+config, a short scaffold) could instead be built-and-validated — that would make the
+lesson `artifact`. Reach `conceptual` only when truly nothing is buildable; say so
+explicitly, and let the Concept sequence's explanation beats carry the lesson.
 
 ## Pitfalls to avoid
 2–3 specific misconceptions or wrong explanations a careless author might write
 about this topic. Be concrete.
 
-Keep the whole plan under 550 words. Favour depth on one idea over breadth — and
-when space is tight, the Must teach from scratch gaps take priority over extra breadth.
+Length budget, by lesson mode:
+- `executable`: keep the whole plan under 550 words.
+- `artifact` / `conceptual`: keep it under 900 words, and no more than ~150 words per
+  deliverable in the sequence — the extra room is for the what/where/how-validated of each
+  artifact, not for prose padding. If you need more than that, you have too many deliverables:
+  cut scope, don't inflate the plan.
+
+Either way, favour depth on one idea over breadth — and when space is tight, the Must teach
+from scratch gaps take priority over extra breadth.

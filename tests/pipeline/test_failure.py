@@ -750,6 +750,109 @@ def test_grade_report_defaults_findings_to_empty_list() -> None:
     assert report.findings == []
 
 
+# ── Mode-aware classification (docs/architecture/17-lesson-modes.md) ──────────
+
+
+@pytest.mark.unit
+def test_default_lesson_mode_matches_prior_behavior(
+    ok_execution: ExecutionReport,
+    high_quality_grade: GradeReport,
+) -> None:
+    """Regression pin: classify(...) without lesson_mode == classify(..., "executable")."""
+    without_mode = classify(execution_report=ok_execution, grade_report=high_quality_grade)
+    with_mode = classify(
+        execution_report=ok_execution, grade_report=high_quality_grade, lesson_mode="executable"
+    )
+    assert without_mode == with_mode
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("mode", ["artifact", "conceptual"])
+def test_missing_execution_report_is_not_misclassified_in_non_executable_modes(
+    mode: str,
+    high_quality_grade: GradeReport,
+) -> None:
+    """No ExecutionReport at all (nothing runnable ever ran) must not fall through
+    to UNCLASSIFIABLE in artifact/conceptual modes — a conceptual lesson legitimately
+    has no code, and an artifact lesson may have few cells."""
+    result = classify(
+        execution_report=None, grade_report=high_quality_grade, lesson_mode=mode
+    )
+
+    assert result.category == FailureCategory.ACCEPTABLE
+    assert result.category != FailureCategory.UNCLASSIFIABLE
+
+
+@pytest.mark.unit
+def test_missing_execution_report_in_executable_mode_stays_unclassifiable(
+    high_quality_grade: GradeReport,
+) -> None:
+    """Same missing-execution-report input, but default executable mode, must NOT
+    be reinterpreted as acceptable — this pins the mode-gated nature of the change."""
+    result = classify(
+        execution_report=None, grade_report=high_quality_grade, lesson_mode="executable"
+    )
+
+    assert result.category == FailureCategory.UNCLASSIFIABLE
+
+
+@pytest.mark.unit
+def test_real_execution_failure_still_routes_code_quality_regardless_of_mode(
+    failed_execution: ExecutionReport,
+) -> None:
+    """A real crash (cells raised) is still CODE_QUALITY in artifact/conceptual
+    modes — the mode change only concerns the *absence* of an execution report,
+    never masks an actual raised exception."""
+    result = classify(
+        execution_report=failed_execution, grade_report=None, lesson_mode="artifact"
+    )
+
+    assert result.category == FailureCategory.CODE_QUALITY
+
+
+@pytest.mark.unit
+def test_artifact_mode_claims_nothing_still_hollow_unclassifiable(
+    high_quality_grade: GradeReport,
+) -> None:
+    """Honesty guardrail: an artifact lesson that produced nothing is still hollow.
+
+    Even with no execution_report and a high quality score, a mode-aware hollow
+    structural_report must still route to UNCLASSIFIABLE, not ACCEPTABLE — the
+    mode-aware classifier extends the hollow backstop, never bypasses it.
+    """
+    from forged.pipeline.structure import StructuralReport
+
+    hollow = StructuralReport(
+        is_hollow=True,
+        reasons=["no code cell actually built or validated an artifact with real output"],
+    )
+
+    result = classify(
+        execution_report=None,
+        grade_report=high_quality_grade,
+        structural_report=hollow,
+        lesson_mode="artifact",
+    )
+
+    assert result.category == FailureCategory.UNCLASSIFIABLE
+
+
+@pytest.mark.unit
+def test_conceptual_mode_with_ok_execution_and_no_structural_report_is_acceptable(
+    ok_execution: ExecutionReport,
+    high_quality_grade: GradeReport,
+) -> None:
+    """A conceptual lesson where the executor ran cleanly (e.g. zero cells, ok=True)
+    behaves exactly like the executable path when quality passes."""
+    result = classify(
+        execution_report=ok_execution,
+        grade_report=high_quality_grade,
+        lesson_mode="conceptual",
+    )
+
+    assert result.category == FailureCategory.ACCEPTABLE
+
+
 # ── All 6 FailureCategory values exist ────────────────────────────────────────
 
 

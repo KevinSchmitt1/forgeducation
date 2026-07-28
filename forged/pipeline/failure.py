@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from .mode import LessonMode
 from .state import Evidence
 from .structure import StructuralReport
 
@@ -176,6 +177,7 @@ def classify(
     grade_report: GradeReport | None,
     quality_threshold: float = 80.0,
     structural_report: StructuralReport | None = None,
+    lesson_mode: LessonMode = "executable",
 ) -> Classification:
     """Classify what went wrong using a deterministic priority cascade.
 
@@ -187,7 +189,14 @@ def classify(
         structural_report: Deterministic anti-hollow check on the executed notebook.
                            Only consulted at the ACCEPTABLE gate: a notebook that
                            would otherwise pass but is structurally hollow (all
-                           cells skipped, no worked example) is refused.
+                           cells skipped, no worked example) is refused. Callers
+                           should compute this with the same lesson_mode.
+        lesson_mode: what kind of lesson this is (docs/architecture/17-lesson-modes.md).
+                     Defaults to ``"executable"`` — unchanged behavior. In
+                     ``"artifact"``/``"conceptual"`` modes, the absence of an
+                     execution report (nothing runnable ever ran — e.g. a
+                     conceptual lesson has no code at all) is not treated as an
+                     execution failure; every other route is unaffected.
 
     Returns:
         An immutable Classification with category, reason, and matched_signals.
@@ -280,12 +289,21 @@ def classify(
     # Priority 6: All signals pass.
     # Execution succeeded; reaching here means quality is acceptable too — priority 5
     # already returned for any below-threshold grade, so no quality re-check is needed.
-    if execution_report is not None and execution_report.ok:
+    #
+    # In non-executable modes, "nothing runnable executed" is not itself a failure:
+    # a conceptual lesson legitimately has no code, and an artifact lesson may have
+    # few cells. An absent execution_report there must not fall through to the
+    # UNCLASSIFIABLE catch-all below just because nothing ran.
+    execution_ok = execution_report is not None and execution_report.ok
+    execution_not_required = lesson_mode != "executable" and execution_report is None
+    if execution_ok or execution_not_required:
         # Anti-hollow backstop: a green, well-graded notebook that nonetheless
         # demonstrates nothing (all cells skipped behind dep guards) must not ship
         # as ACCEPTABLE. This is the deterministic catch for when the LLM student
         # wrongly passes a hollow lesson. Terminate for review rather than loop —
-        # replanning cannot conjure the missing runtime.
+        # replanning cannot conjure the missing runtime. structural_report is
+        # already mode-aware (the caller computes it with the same lesson_mode),
+        # so this backstop still fires with the mode-appropriate definition.
         if structural_report is not None and structural_report.is_hollow:
             detail = "; ".join(structural_report.reasons)
             signals.append(f"Notebook is structurally hollow: {detail}")
@@ -297,10 +315,20 @@ def classify(
                 ),
                 matched_signals=signals,
             )
-        signals.append("Execution OK and quality acceptable")
+        if execution_ok:
+            signals.append("Execution OK and quality acceptable")
+            reason = "Code executed successfully and quality is acceptable."
+        else:
+            signals.append(
+                f"No code execution required in '{lesson_mode}' mode; quality acceptable"
+            )
+            reason = (
+                f"No code execution was required for this '{lesson_mode}' lesson, "
+                "and quality is acceptable."
+            )
         return Classification(
             category=FailureCategory.ACCEPTABLE,
-            reason="Code executed successfully and quality is acceptable.",
+            reason=reason,
             matched_signals=signals,
         )
 

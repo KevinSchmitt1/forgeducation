@@ -4,6 +4,66 @@
 > in flight, what's next. See [`CLAUDE.md`](CLAUDE.md) for repo conventions and architecture
 > orientation (durable, not state); doc ownership is defined there under "Documentation".
 
+---
+
+## 🎯 NEXT UP — PAID VALIDATION RUNS
+
+**Two runs to execute + qualitatively compare against the earlier output.**
+
+### Run A — regression re-run (compare to first runs)
+
+Same input as the original "local LLMs" runs, to check the program improved.
+
+```bash
+.venv/bin/python -m forged.cli agentic \
+  --topic "How to setup and train local LLM's on apple silicon m1" \
+  --learner-profile templates/examples/kevin_learner.yaml \
+  --run-dir runs/localLLM-rerun \
+  --config config/pipeline.review-loop.yaml
+```
+
+- **Topic (raw `--topic`):** `How to setup and train local LLM's on apple silicon m1`
+- **Learner profile:** `templates/examples/kevin_learner.yaml` (Kevin: Junior Data Scientist)
+- **Topic-spec:** none — defaults used.
+- **Baseline to beat** (old `runs/localLLM-r1-validate`): "Acceptable" but had
+  **student grade-parse failures (×2), a reviewer empty-content failure, and a topic-fidelity
+  DROP** (silently dropped the "train" capability).
+- **"Did it improve" checks:** fewer/zero degradations, **no fidelity drop**, plus qualitative
+  notebook quality.
+
+### Run B — complex, low-code topic (qualitative classification test)
+
+Goal: check whether the program **detects a conceptual / low-code topic on its own** and reflects
+that in the output (light code, more prose) — **without being told** it's not code-heavy.
+
+```bash
+.venv/bin/python -m forged.cli learn \
+  --topic "How to structure a project so a team can work effectively with AI coding agents" \
+  --learner-profile templates/examples/kevin_learner.yaml \
+  --run-dir runs/agents-workflow
+```
+
+- Use `learn` (not `agentic`): its plan gate shows the sizing decision (single lesson vs course)
+  **before** spending on the paid build — inspect that first to keep cost bounded.
+- **Now the primary test of lesson modes** (shipped on `feat/lesson-modes`, see below). Check the
+  plan gate output for the `lesson-mode` block: does the planner infer `artifact` (build agents /
+  personas / scaffold, validated by cells) rather than force-fitting compute code? SUMMARY.md now
+  carries a `## Lesson Mode` line stating what verification ran.
+- **Success signal = planner picks `artifact` and the notebook builds+validates artifacts.**
+  If it still force-fits runnable compute cells or picks `executable`, that's the *finding* to report.
+- **Watch:** course decomposition inflates cost (multiple gpt-5 passes); artifact-validation cells
+  that call LLM APIs need keys → prefer MOCKED validation (read the SUMMARY degradations section).
+- Alt framings if wanted: "How to design a multi-agent AI workflow for a software project"
+  (some code) · "How to build an AI assistant that adapts to a user's needs over time"
+  (higher risk of going code-heavy).
+
+> **Lesson modes shipped (2026-07-28, `feat/lesson-modes`)** — planner-inferred `executable` /
+> `artifact` / `conceptual`; artifact lessons build-and-validate artifacts instead of computing.
+> Green in tests (631 passed, 92.8% cov) but **not yet observed on a live paid run** — Run B above
+> is that validation. Design: `docs/architecture/17-lesson-modes.md`.
+
+---
+
 ## Current Status
 
 ### ✅ Complete

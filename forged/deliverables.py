@@ -16,9 +16,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# What each lesson mode's verification actually checked, for the honest SUMMARY
+# statement (docs/architecture/17-lesson-modes.md). Keyed by LessonMode's literal
+# values rather than the type itself, so this stays a plain module constant.
+_MODE_VERIFICATION_NOTE: dict[str, str] = {
+    "executable": "Cells were executed and checked for real output.",
+    "artifact": "Artifacts were built and validated by cells that ran for real.",
+    "conceptual": (
+        "**No code was executed** — this lesson is prose/diagrams only; "
+        "explanations were not checked against execution."
+    ),
+}
+
 
 def write_agentic_summary(run_dir: Path, state, elapsed_sec: float) -> None:
     """Write SUMMARY.md with routing log for agentic pipeline."""
+    from .pipeline.mode import DEFAULT_MODE, extract_lesson_mode
+
     if state.is_terminal and state.terminal_ok:
         status = "✓ Acceptable"
     elif state.is_terminal:
@@ -26,12 +40,19 @@ def write_agentic_summary(run_dir: Path, state, elapsed_sec: float) -> None:
     else:
         status = "✗ Incomplete"
 
+    lesson_mode = extract_lesson_mode(_read_latest_plan_text(run_dir, state))
+
     lines = ["# Agentic Pipeline Summary\n\n"]
     lines.append(f"**Status**: {status}\n")
     if state.terminal_reason:
         lines.append(f"**Reason**: {state.terminal_reason}\n")
     lines.append(f"**Elapsed**: {elapsed_sec:.1f} seconds\n")
     lines.append(f"**Iterations**: {state.iteration}\n\n")
+
+    lines.append("## Lesson Mode\n\n")
+    lines.append(f"**Mode**: {lesson_mode}\n\n")
+    lines.append(_MODE_VERIFICATION_NOTE.get(lesson_mode, _MODE_VERIFICATION_NOTE[DEFAULT_MODE]))
+    lines.append("\n\n")
 
     if state.degradations:
         lines.append("## Degradations\n\n")
@@ -67,6 +88,27 @@ def write_agentic_summary(run_dir: Path, state, elapsed_sec: float) -> None:
             lines.append(f"- **Reason**: {decision.reason}\n\n")
 
     (run_dir / "SUMMARY.md").write_text("".join(lines), encoding="utf-8")
+
+
+def _read_latest_plan_text(run_dir: Path, state) -> str:
+    """Read the planner's latest lesson-plan markdown straight from the run dir.
+
+    write_agentic_summary only receives run_dir + state (no ArtifactStore), but
+    every artifact the store produces during a real run is also persisted to disk
+    as it's written (see ArtifactStore.put), so the plan file is guaranteed to be
+    there for a real pipeline run. Returns "" when no planner output is recorded
+    or its file is missing (e.g. a state built directly in a test) —
+    extract_lesson_mode treats an empty string as the conservative default.
+    """
+    from .pipeline.state import PipelineStage
+
+    for output in reversed(state.outputs):
+        if output.stage == PipelineStage.PLANNER:
+            plan_path = run_dir / f"{output.artifact_name}.md"
+            if plan_path.is_file():
+                return plan_path.read_text(encoding="utf-8")
+            break
+    return ""
 
 
 def write_final_notebook(run_dir: Path, store, state) -> None:

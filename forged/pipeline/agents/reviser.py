@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from forged.artifacts import ArtifactStore
 
 if TYPE_CHECKING:
+    from forged.pipeline.mode import LessonMode
     from forged.pipeline.structure import StructuralReport
 from forged.pipeline.failure import (
     RUBRIC_DIMENSIONS,
@@ -72,10 +73,12 @@ class RevisorAgent(Agent[AgentOutput]):
     async def run(self, state: PipelineState, store: ArtifactStore) -> PipelineState:
         from forged.artifacts import Artifact
 
+        lesson_mode = self._extract_lesson_mode(state, store)
+
         exec_report = self._read_execution_report(state, store)
         grade_report = self._read_grade_report(state, store)
         grade_report = self._merge_reviewer_findings(state, store, grade_report)
-        structural_report = self._assess_structure(state, store)
+        structural_report = self._assess_structure(state, store, lesson_mode)
 
         # Record any topic descope on the state up front, so every return path below
         # (terminal or routing) carries the signal — a dropped capability is never
@@ -85,7 +88,10 @@ class RevisorAgent(Agent[AgentOutput]):
             state = state.with_topic_fidelity(fidelity_signal)
 
         classification = classify(
-            exec_report, grade_report, structural_report=structural_report
+            exec_report,
+            grade_report,
+            structural_report=structural_report,
+            lesson_mode=lesson_mode,
         )
         request = RoutingRequest(
             state=state,
@@ -267,15 +273,30 @@ class RevisorAgent(Agent[AgentOutput]):
             return None
         return RubricScores(**{d: float(raw[d]) for d in RUBRIC_DIMENSIONS})
 
+    def _extract_lesson_mode(self, state: PipelineState, store: ArtifactStore) -> LessonMode:
+        """Read the planner's declared lesson mode from the latest plan artifact.
+
+        Mirrors _latest_artifact_name's fallback: when no plan artifact exists yet
+        (e.g. a mocked test store with no planner output), plan_text stays "" and
+        extract_lesson_mode already treats that as the conservative default
+        ("executable"), so this never needs its own error handling.
+        """
+        from forged.pipeline.mode import extract_lesson_mode
+
+        name = self._latest_artifact_name(state, PipelineStage.PLANNER, "lesson_plan")
+        plan_text = store.get(name).content if store.has(name) else ""
+        return extract_lesson_mode(plan_text)
+
     def _assess_structure(
-        self, state: PipelineState, store: ArtifactStore
+        self, state: PipelineState, store: ArtifactStore, lesson_mode: LessonMode
     ) -> StructuralReport | None:
         """Run the deterministic anti-hollow check on the executed notebook.
 
         Reads the executor's executed-with-outputs notebook from the run dir and
-        assesses it. Returns None when the executed notebook is absent or
-        unparseable (e.g. a mocked executor in tests) so the classifier simply
-        skips the structural gate rather than crashing or false-failing.
+        assesses it against the planner-declared lesson_mode. Returns None when
+        the executed notebook is absent or unparseable (e.g. a mocked executor in
+        tests) so the classifier simply skips the structural gate rather than
+        crashing or false-failing.
         """
         from forged.executor import executed_notebook_filename
         from forged.pipeline.structure import assess_structure
@@ -287,7 +308,7 @@ class RevisorAgent(Agent[AgentOutput]):
         if not executed_path.exists():
             return None
         try:
-            return assess_structure(executed_path.read_text(encoding="utf-8"))
+            return assess_structure(executed_path.read_text(encoding="utf-8"), lesson_mode)
         except Exception as exc:  # noqa: BLE001 — gating must degrade, not crash
             _LOG.warning("RevisorAgent: could not assess notebook structure: %s", exc)
             return None
