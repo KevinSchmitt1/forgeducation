@@ -57,7 +57,7 @@ that in the output (light code, more prose) — **without being told** it's not 
   (some code) · "How to build an AI assistant that adapts to a user's needs over time"
   (higher risk of going code-heavy).
 
-> **Lesson modes shipped (2026-07-28, `feat/lesson-modes`)** — planner-inferred `executable` /
+> **Lesson modes shipped (2026-07-28, PR #25, merged to `master`)** — planner-inferred `executable` /
 > `artifact` / `conceptual`; artifact lessons build-and-validate artifacts instead of computing.
 > Green in tests (631 passed, 92.8% cov) but **not yet observed on a live paid run** — Run B above
 > is that validation. Design: `docs/architecture/17-lesson-modes.md`.
@@ -99,6 +99,14 @@ that in the output (light code, more prose) — **without being told** it's not 
     first-class deliverable (`material_density` now drives explanation depth)
   - learner `requirements.txt` includes `ipykernel`; README documents kernel registration
   - **surfaced R1** (topic descoping) — now the top open task; see below
+
+- **Lesson modes** (PR #25) — planner-inferred `executable` / `artifact` / `conceptual`
+  - non-compute topics (agent building, personas, scaffolding) are teachable: `artifact` cells
+    build-and-validate deliverables instead of computing; the anti-hollow gate + classifier are
+    mode-aware; SUMMARY reports the mode + which verification ran
+  - purely inferred (no user flag/state field); executable path byte-for-byte unchanged
+  - **needs live-run validation** (Run B above) — logic is test-green only
+  - see `docs/architecture/17-lesson-modes.md`
 
 ### ✅ Recently Completed
 

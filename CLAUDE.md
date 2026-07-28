@@ -23,6 +23,12 @@ Two execution paths share the same agents, personas, and context block:
     **ContentReviser** is the LLM that rewrites prose for the `CONTENT_QUALITY` route.
   - Routing is deterministic (`router.py` + `failure.py`); a finding's **scope** (`plan`/`structure`/
     `code`/`content`) decides where it's sent. Scope tagging matters a lot — see R1 below.
+  - **Lesson modes** (`mode.py`, doc 17): the planner infers `executable` (default — compute-and-show,
+    executed) / `artifact` (cells *build and validate* files/config/scaffold) / `conceptual` (prose,
+    nothing runs) and declares it in a ` ```lesson-mode ` block (mirrors ` ```requirements `). The
+    reviser extracts it and threads it into `assess_structure()` + `classify()` so the anti-hollow gate
+    is **mode-aware**; the grader personas judge artifact lessons on their terms. Purely inferred — no
+    user flag, no state field. Executable behavior is unchanged.
 - **Linear** (`forged build`) — fixed single pass; still uses `reviewer.md` as a critic. We don't
   actively develop it; don't "fix" its docs as part of agentic work. This is not used anymore.
 
@@ -34,7 +40,8 @@ cache under `runs/.venv-cache/`), registers a kernel, and runs the notebook in i
 skips that and runs in the base `python3` kernel.
 
 ### Where things live
-- `forged/pipeline/` — agents, graph, state, router, failure classification, provisioning hook
+- `forged/pipeline/` — agents, graph, state, router, failure classification, lesson-mode inference
+  (`mode.py`), provisioning hook
 - `personas/` — the system prompts that define each agent
 - `config/pipeline.*.yaml` — stage→model resolution (planner/student/reviewer = gpt-5-mini; code_author/reviser = gpt-5)
 - `docs/architecture/` — design of record; last file is most of the time the most recent work, what was done.
