@@ -196,3 +196,131 @@ def test_structural_report_is_immutable() -> None:
     report = StructuralReport(is_hollow=False)
     with pytest.raises((TypeError, AttributeError)):
         report.is_hollow = True  # type: ignore[misc]
+
+
+# ── Mode-aware verification (docs/architecture/17-lesson-modes.md) ────────────
+
+
+@pytest.mark.unit
+def test_executable_mode_matches_default_behavior_byte_for_byte() -> None:
+    """Regression pin: assess_structure(nb) == assess_structure(nb, "executable").
+
+    lesson_mode defaults to "executable" and must be a complete no-op change for
+    every existing caller — this asserts the two call forms are identical, field
+    for field, across a healthy, a hollow, and an under-explained notebook.
+    """
+    for nb in (_healthy_notebook(), _hollow_skipped_notebook(), _nb([
+        nbformat.v4.new_markdown_cell("# Hi"), _code_cell("print(1)", stdout="1"),
+    ])):
+        assert assess_structure(nb) == assess_structure(nb, "executable")
+        assert assess_structure(nb) == assess_structure(nb, lesson_mode="executable")
+
+
+@pytest.mark.unit
+def test_artifact_mode_hollow_when_no_cell_produced_output() -> None:
+    """Artifact mode: zero cells produced real output → hollow, even with prose."""
+    intro = (
+        "# Building an agent persona\nWe scaffold a persona file and validate it "
+        "against the required section list before moving on to the next artifact."
+    )
+    nb = _nb(
+        [
+            nbformat.v4.new_markdown_cell(intro),
+            nbformat.v4.new_markdown_cell("## Validation\nWe check the parsed sections."),
+            _code_cell("write_persona_md()"),  # reference only — no output
+            _code_cell("validate_persona_md()"),  # reference only — no output
+        ]
+    )
+    report = assess_structure(nb, "artifact")
+    assert report.is_hollow is True
+    assert any("artifact" in reason for reason in report.reasons)
+    assert report.executed_count == 0
+
+
+@pytest.mark.unit
+def test_artifact_mode_not_hollow_when_one_cell_produced_real_output() -> None:
+    """Artifact mode: one real build-and-validate cell is enough, even alongside
+    non-running reference cells that must not be counted as skips."""
+    intro = (
+        "# Building an agent persona\nWe scaffold a persona file and validate it "
+        "against the required section list before moving on to the next artifact."
+    )
+    nb = _nb(
+        [
+            nbformat.v4.new_markdown_cell(intro),
+            nbformat.v4.new_markdown_cell("## Validation\nWe check the parsed sections."),
+            _code_cell("# reference only, not run\nprint_example_persona()"),  # no output
+            _code_cell(
+                "write_persona_md(); validate_persona_md()",
+                stdout="Wrote personas/researcher.md — 4/4 required sections present",
+            ),
+        ]
+    )
+    report = assess_structure(nb, "artifact")
+    assert report.is_hollow is False
+    assert report.executed_count == 1
+    assert report.skipped_count == 0
+
+
+@pytest.mark.unit
+def test_artifact_mode_still_flags_thin_prose_as_hollow() -> None:
+    """Artifact mode keeps the prose/section check even when a cell ran for real."""
+    nb = _nb(
+        [
+            nbformat.v4.new_markdown_cell("# Hi"),
+            _code_cell("write_persona_md()", stdout="Wrote personas/researcher.md"),
+        ]
+    )
+    report = assess_structure(nb, "artifact")
+    assert report.is_hollow is True
+    assert any("explanatory" in reason for reason in report.reasons)
+
+
+@pytest.mark.unit
+def test_conceptual_mode_never_hollow_on_code_grounds() -> None:
+    """Conceptual mode: zero code cells (or all-silent code cells) never trigger
+    the code-based hollow checks — only the prose/section check matters."""
+    intro = (
+        "# Understanding agentic loops\nThis lesson is prose and diagrams only; "
+        "we walk through the control-flow conceptually without running any code."
+    )
+    nb = _nb(
+        [
+            nbformat.v4.new_markdown_cell(intro),
+            nbformat.v4.new_markdown_cell("## The loop\nPlan, act, observe, repeat."),
+        ]
+    )
+    report = assess_structure(nb, "conceptual")
+    assert report.is_hollow is False
+    assert report.code_cell_count == 0
+    assert report.executed_count == 0
+
+
+@pytest.mark.unit
+def test_conceptual_mode_ignores_silent_code_cells() -> None:
+    """Even with silent (illustrative, non-run) code cells present, conceptual
+    mode does not flag them — only the prose/section check applies."""
+    intro = (
+        "# Understanding agentic loops\nThis lesson is prose and diagrams only; "
+        "we walk through the control-flow conceptually without running any code."
+    )
+    nb = _nb(
+        [
+            nbformat.v4.new_markdown_cell(intro),
+            nbformat.v4.new_markdown_cell("## The loop\nPlan, act, observe, repeat."),
+            _code_cell("# illustrative pseudocode, not executed\ndef loop(): ..."),
+        ]
+    )
+    report = assess_structure(nb, "conceptual")
+    assert report.is_hollow is False
+    assert report.executed_count == 0
+    assert report.skipped_count == 0
+
+
+@pytest.mark.unit
+def test_conceptual_mode_still_flags_thin_prose_as_hollow() -> None:
+    """Conceptual mode keeps the prose/section check as its only bar."""
+    nb = _nb([nbformat.v4.new_markdown_cell("# Hi")])
+    report = assess_structure(nb, "conceptual")
+    assert report.is_hollow is True
+    assert any("explanatory" in reason for reason in report.reasons)

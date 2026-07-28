@@ -1140,6 +1140,129 @@ def test_revisor_agent_run_is_immutable(
     assert len(state_with_grade.routing_log) == original_routing_log_len
 
 
+# ── RevisorAgent: lesson-mode extraction (docs/architecture/17-lesson-modes.md) ─
+
+
+def _with_plan(
+    state: PipelineState, artifact_store: ArtifactStore, plan_markdown: str
+) -> PipelineState:
+    """Attach a PLANNER-stage plan artifact to state + store, mirroring how the
+    real planner leaves a lesson_plan_v{N} artifact for the reviser to read."""
+    artifact_store.put(Artifact(name="lesson_plan_v0", kind="text", content=plan_markdown))
+    return state.with_output(
+        StageOutput(stage=PipelineStage.PLANNER, artifact_name="lesson_plan_v0", iteration=0)
+    )
+
+
+@pytest.mark.unit
+def test_revisor_extracts_lesson_mode_from_latest_plan_artifact(
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+) -> None:
+    """_extract_lesson_mode reads the planner's declared mode via the same
+    latest-artifact lookup the reviser uses for execution/grade reports."""
+    from forged.pipeline.agents.reviser import RevisorAgent
+
+    state = _with_plan(
+        create_initial_state(run_id="mode-extract"),
+        artifact_store,
+        "# Plan\n\n```lesson-mode\nartifact\n```\n",
+    )
+    agent = RevisorAgent(personas_dir=personas_dir)
+
+    assert agent._extract_lesson_mode(state, artifact_store) == "artifact"
+
+
+@pytest.mark.unit
+def test_revisor_extracts_default_mode_when_no_plan_artifact(
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+) -> None:
+    """No PLANNER output recorded (e.g. a mocked test store) → conservative default."""
+    from forged.pipeline.agents.reviser import RevisorAgent
+
+    state = create_initial_state(run_id="mode-extract-missing")
+    agent = RevisorAgent(personas_dir=personas_dir)
+
+    assert agent._extract_lesson_mode(state, artifact_store) == "executable"
+
+
+@pytest.mark.unit
+def test_revisor_passes_conceptual_mode_through_to_acceptance(
+    personas_dir: Path,
+    artifact_store: ArtifactStore,
+) -> None:
+    """End-to-end proof the extracted mode reaches both assess_structure and
+    classify: a plan declaring 'conceptual' plus an executed notebook whose code
+    cells never produced output must still be ACCEPTABLE — the exact notebook
+    would be flagged hollow (and terminate UNCLASSIFIABLE) under the default
+    'executable' mode, so this only passes if the mode was actually threaded
+    through, not just extracted and discarded.
+    """
+    import nbformat
+
+    from forged.executor import executed_notebook_filename
+    from forged.pipeline.agents.reviser import RevisorAgent
+
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [
+        nbformat.v4.new_markdown_cell(
+            "# Understanding agentic loops\nThis lesson is prose and diagrams "
+            "only; we walk through the control-flow conceptually in real depth."
+        ),
+        nbformat.v4.new_markdown_cell("## The loop\nPlan, act, observe, repeat."),
+        nbformat.v4.new_code_cell("# illustrative pseudocode, not run for real\ndef loop(): ..."),
+        nbformat.v4.new_code_cell("# another illustrative snippet\ndef act(): ..."),
+    ]
+    (artifact_store.run_dir / executed_notebook_filename("execution_report_v0")).write_text(
+        nbformat.writes(nb), encoding="utf-8"
+    )
+
+    state = create_initial_state(run_id="conceptual-acceptable")
+    artifact_store.put(
+        Artifact(
+            name="execution_report_v0",
+            kind="json",
+            content=json.dumps({"ok": True, "failed_cells": [], "error_summary": None}),
+        )
+    )
+    artifact_store.put(
+        Artifact(
+            name="student_grade_report_v0",
+            kind="json",
+            content=json.dumps(
+                {"quality_score": 90.0, "graded": True, "blockers": [], "findings": []}
+            ),
+        )
+    )
+    state = _with_plan(
+        state, artifact_store, "# Plan\n\n```lesson-mode\nconceptual\n```\n"
+    )
+    state = (
+        state.with_output(
+            StageOutput(
+                stage=PipelineStage.EXECUTOR,
+                artifact_name="execution_report_v0",
+                iteration=0,
+            )
+        )
+        .with_output(
+            StageOutput(
+                stage=PipelineStage.STUDENT,
+                artifact_name="student_grade_report_v0",
+                iteration=0,
+            )
+        )
+        .with_current_stage(PipelineStage.REVISER)
+    )
+
+    agent = RevisorAgent(personas_dir=personas_dir)
+    result = asyncio.get_event_loop().run_until_complete(agent.run(state, artifact_store))
+
+    assert result.is_terminal is True
+    assert result.terminal_ok is True
+
+
 # ── Shared cross-agent tests ──────────────────────────────────────────────────
 
 

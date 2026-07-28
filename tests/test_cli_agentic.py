@@ -264,6 +264,110 @@ def test_agentic_summary_surfaces_dropped_topic_capability(tmp_path: Path) -> No
     assert "Fine-tune the model with LoRA" in summary
 
 
+# ── Lesson Mode reporting (docs/architecture/17-lesson-modes.md) ──────────────
+
+
+@pytest.mark.unit
+def test_agentic_summary_defaults_to_executable_mode_with_no_plan(tmp_path: Path) -> None:
+    """No plan artifact on disk (e.g. a state built directly in a test) → the
+    conservative default 'executable', with its own verification note."""
+    from forged.deliverables import write_agentic_summary
+
+    state = create_initial_state().with_terminal("Acceptable", ok=True)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    write_agentic_summary(run_dir, state, 5.0)
+
+    summary = (run_dir / "SUMMARY.md").read_text(encoding="utf-8")
+    assert "## Lesson Mode" in summary
+    assert "executable" in summary
+    assert "Cells were executed and checked for real output." in summary
+
+
+@pytest.mark.unit
+def test_agentic_summary_reports_artifact_mode_from_plan(tmp_path: Path) -> None:
+    """A plan declaring 'artifact' mode is reflected in SUMMARY.md, with the
+    artifact-appropriate verification note (not the executable one)."""
+    from forged.deliverables import write_agentic_summary
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "lesson_plan_v0.md").write_text(
+        "# Plan\n\n```lesson-mode\nartifact\n```\n", encoding="utf-8"
+    )
+
+    state = (
+        create_initial_state()
+        .with_output(
+            StageOutput(stage=PipelineStage.PLANNER, artifact_name="lesson_plan_v0", iteration=0)
+        )
+        .with_terminal("Acceptable", ok=True)
+    )
+
+    write_agentic_summary(run_dir, state, 5.0)
+
+    summary = (run_dir / "SUMMARY.md").read_text(encoding="utf-8")
+    assert "## Lesson Mode" in summary
+    assert "**Mode**: artifact" in summary
+    assert "Artifacts were built and validated by cells that ran for real." in summary
+    assert "Cells were executed and checked for real output." not in summary
+
+
+@pytest.mark.unit
+def test_agentic_summary_reports_conceptual_mode_honestly(tmp_path: Path) -> None:
+    """A plan declaring 'conceptual' mode states plainly that no code ran."""
+    from forged.deliverables import write_agentic_summary
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "lesson_plan_v0.md").write_text(
+        "# Plan\n\n```lesson-mode\nconceptual\n```\n", encoding="utf-8"
+    )
+
+    state = (
+        create_initial_state()
+        .with_output(
+            StageOutput(stage=PipelineStage.PLANNER, artifact_name="lesson_plan_v0", iteration=0)
+        )
+        .with_terminal("Acceptable", ok=True)
+    )
+
+    write_agentic_summary(run_dir, state, 5.0)
+
+    summary = (run_dir / "SUMMARY.md").read_text(encoding="utf-8")
+    assert "**Mode**: conceptual" in summary
+    assert "No code was executed" in summary
+
+
+@pytest.mark.unit
+def test_agentic_summary_reports_default_when_plan_names_unrecognized_mode(
+    tmp_path: Path,
+) -> None:
+    """An unrecognized declared mode falls back to the conservative default,
+    consistent with extract_lesson_mode's contract."""
+    from forged.deliverables import write_agentic_summary
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "lesson_plan_v0.md").write_text(
+        "# Plan\n\n```lesson-mode\nsomething-weird\n```\n", encoding="utf-8"
+    )
+
+    state = (
+        create_initial_state()
+        .with_output(
+            StageOutput(stage=PipelineStage.PLANNER, artifact_name="lesson_plan_v0", iteration=0)
+        )
+        .with_terminal("Acceptable", ok=True)
+    )
+
+    write_agentic_summary(run_dir, state, 5.0)
+
+    summary = (run_dir / "SUMMARY.md").read_text(encoding="utf-8")
+    assert "**Mode**: executable" in summary
+
+
 @pytest.mark.unit
 def test_agentic_cli_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
     """The agentic command loads pipeline config and passes it into run_pipeline()."""
