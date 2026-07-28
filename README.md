@@ -48,6 +48,13 @@ surfaced in the run's `SUMMARY.md`:
   capability at run time is handed back to the planner as a fresh follow-on module and run — so the
   course grows to cover the overflow instead of losing it (bounded by `--max-modules` and `--max-depth`).
   (`docs/architecture/13-curriculum-planner.md`)
+- **Never force-fit code — or fake the self-check.** Not every technical topic is compute-and-show
+  Python; "working with agentic AI" is really agent definitions, persona files, framework wiring and
+  scaffolding. The planner **infers a lesson mode** and the run states which check it earned:
+  `executable` (cells compute and are executed — the default), `artifact` (cells *build and validate*
+  the deliverable — parse/lint/mocked dry-run — so the self-check still runs, only its target
+  changes), or `conceptual` (prose/diagrams, and `SUMMARY.md` says plainly that no code was executed).
+  Mode is inferred, never a flag. (`docs/architecture/17-lesson-modes.md`)
 - **Never spend before you agree.** `forged learn` (the front door) always shows the proposed
   plan and a rough cost/time estimate and runs nothing paid until you confirm; plan tweaks are
   applied deterministically, so an interactive round never costs an expensive re-plan.
@@ -137,7 +144,8 @@ Output lands in `./runs/<timestamp>_<pipeline>/` (or the `--run-dir` you pass to
 - `requirements.txt` — the pip-installable dependencies the lesson actually needs, derived
   from the plan (the same list used to provision the run's environment)
 - `SUMMARY.md` — per-stage status + timing, total runtime, any execution failures or
-  silent degradations, the acceptance verdict, and plan + feedback inline
+  silent degradations, the acceptance verdict, the lesson mode + which verification it earned
+  (executed / built-and-validated / none), and plan + feedback inline
 - `manifest.json` — provenance (what was produced and pruned) plus per-stage timings
 - `usage.json` / `USAGE.md` — per-call token usage for the run (input / output / cached /
   reasoning tokens) broken down by stage, so you can see exactly where the cost went
@@ -199,8 +207,9 @@ forged agentic --topic "..." --run-dir ./runs/my-lesson \
 End-to-end validated with OpenAI. Features:
   - **Real executor**: runs the notebook in a kernel and detects code failures
   - **Honest signals**: a failed grader is its own signal (never a fake score), silent
-    fallbacks are recorded as *degradations* in SUMMARY.md, and a deterministic structural
-    gate refuses a notebook that executes green but demonstrates nothing (anti-hollow)
+    fallbacks are recorded as *degradations* in SUMMARY.md, and a deterministic, **mode-aware**
+    structural gate refuses a hollow notebook — one that executes green but demonstrates nothing
+    (`executable`), or claims artifacts it never built and validated (`artifact`)
   - **Schema-locked critics**: Student and Reviewer use OpenAI JSON Schema structured
     outputs for `quality_score`/`rubric`/`blockers`/`findings`, with lenient parsing kept
     only as a fallback for local/non-structured providers
