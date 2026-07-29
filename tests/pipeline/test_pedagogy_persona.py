@@ -39,6 +39,21 @@ def test_code_author_requires_ascii_pipeline_map() -> None:
 
 
 @pytest.mark.unit
+def test_code_author_fences_the_pipeline_map() -> None:
+    """The map must sit in a fenced code block, not bare markdown.
+
+    Markdown collapses newlines and runs of spaces, so an unfenced ASCII diagram
+    renders as unreadable mush — boxes and arrows dissolve into one paragraph.
+    """
+    persona = _read("code_author.md")
+    map_section = persona.split("pipeline map", 1)[1][:1200]
+    assert "fenced code block" in map_section, (
+        "the pipeline map must be mandated inside a fenced code block, "
+        "otherwise markdown collapses the ASCII art into unreadable prose"
+    )
+
+
+@pytest.mark.unit
 def test_code_author_requires_cell_brief_that_decodes_parameters() -> None:
     """Dense/new-construct cells get a short brief that decodes the parameters."""
     persona = _read("code_author.md")

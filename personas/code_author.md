@@ -134,6 +134,10 @@ bloating the notebook:
 1. **One pipeline map** (when the lesson is a multi-step process). Early — right after the
    orientation — give a single plain-words **pipeline map** as an **ASCII** diagram in a markdown
    cell: each step a labelled box, arrows showing what flows between them, in everyday language.
+   **Always wrap the diagram in a fenced code block** (open with ```` ```text ````, close with
+   ```` ``` ````). Markdown collapses newlines and runs of spaces, so an unfenced ASCII map renders
+   as one unreadable paragraph — the boxes and arrows dissolve. The fence also holds the monospace
+   alignment the columns depend on. Prose *about* the map stays outside the fence.
    Name each new primitive the first time it appears (e.g. "number-grids the model reads
    (*tensors*)"), show where the headline technique sits, and **include the files the pipeline
    writes as their own box**. Keep it to ~6–8 boxes. The map is the shared reference the rest of
