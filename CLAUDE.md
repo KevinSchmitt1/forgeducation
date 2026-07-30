@@ -152,6 +152,11 @@ Folded from the retired `DEVELOPMENT.md`; kept current here.
   before debugging "lost" changes.
 - **`runs/` is gitignored** — run artifacts (and any venvs/grade reports written there) won't show in
   `git status`. Don't expect them in commits.
+- **A `<stamp>_course_<slug>/` run dir does NOT mean `forged course` produced it.** `learn` names its
+  N-module output identically (`_build_confirmed` in `cli.py` vs `_cmd_course` — same
+  `{stamp}_course_{topic-slug}` format), so the prefix tells you the run had multiple modules, not
+  which command was typed. Only a 1-module `learn` run gets `{stamp}_{module-title-slug}`. Don't
+  infer the entry point from the directory name — ask, or check `pipeline.log`.
 - **Provisioning has a hardcoded 600s install timeout** (`provisioning.py`, no override yet). A cold
   `torch` build can exceed it on a slow link. Workarounds: pre-warm pip's cache, or `--no-provision`
   against an existing `runs/.venv-cache/*` venv. (Making the timeout configurable is a known nice-to-have.)
