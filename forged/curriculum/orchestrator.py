@@ -134,6 +134,16 @@ def _seed_module_store(
     store = ArtifactStore(run_dir)
     store.put(Artifact(name="brief", kind="text", content=module.spec.title))
     context = build_context_block(profile, module.spec)
+    # A mode decided upstream (course planner, or the operator at the plan gate) is
+    # binding — hand it down so the lesson planner honors it instead of re-inferring and
+    # drifting back to `executable` (doc 18, D2/D3). None means undecided: say nothing.
+    if module.lesson_mode is not None:
+        directive = (
+            f"\n\n### Lesson mode (already decided — binding)\n"
+            f"This module's mode is `{module.lesson_mode}`. Plan within it; do not "
+            f"re-infer it.\n"
+        )
+        context = f"{context}{directive}" if context else directive.lstrip()
     if context:
         store.put(Artifact(name="lesson_context", kind="text", content=context))
     store.put(

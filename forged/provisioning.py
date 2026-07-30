@@ -65,6 +65,11 @@ DEFAULT_ALLOWED_PACKAGES: frozenset[str] = frozenset(
         "ipykernel", "ipython", "ipywidgets", "tqdm", "plotly", "altair",
         "requests", "beautifulsoup4", "lxml", "pyyaml", "rich", "tabulate",
         "openpyxl", "polars", "pyarrow", "nltk", "spacy", "gensim",
+        # agent / LLM stack (doc 18, D5 — absent entirely, killed module 1's
+        # openai/faiss-cpu/pytest provisioning)
+        "openai", "anthropic", "faiss-cpu", "langchain", "langchain-core",
+        "langchain-community", "langgraph", "chromadb", "tiktoken", "pytest",
+        "python-dotenv", "gitpython", "httpx",
     }
 )
 
@@ -151,6 +156,19 @@ def provision_environment(
     allowed = allowed_packages if allowed_packages is not None else DEFAULT_ALLOWED_PACKAGES
     rhash = requirement_set.requirements_hash
     reqs = requirement_set.requirements
+
+    # A malformed requirements block (doc 18, D4/D6) must fail honestly and loudly —
+    # never silently treated as "no dependencies needed" (it has no requirements
+    # either, so it would otherwise fall into the empty-set branch below) and never
+    # phrased as a policy/allow-list violation, which is what hid a parser bug behind
+    # a security-sounding message for two days.
+    if requirement_set.source == "malformed":
+        return ProvisionResult(
+            ok=False,
+            requirements_hash=rhash,
+            kernel_name=None,
+            error=requirement_set.error or "The plan's requirements block is malformed.",
+        )
 
     # No third-party deps → nothing to build; run on the base kernel.
     if not reqs:

@@ -41,6 +41,9 @@ class PackageContext:
     topic: str
     learner_name: str = "the learner"
     learner_description: str = ""
+    # Set by forged.deliverables.write_learner_package on a HARD failure (no
+    # acceptable notebook — doc 18, D6). None means the run shipped normally.
+    failure_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +106,50 @@ def render_learner_requirements(requirement_set: RequirementSet) -> str:
 # ── README ───────────────────────────────────────────────────────────────────────
 
 
+def _failure_banner(reason: str) -> str:
+    """Top-of-README banner for a HARD failure (doc 18, D6): a reader must learn
+    *why* this module shipped no notebook without opening SUMMARY.md."""
+    return (
+        "## ⚠ This module did not complete\n\n"
+        f"{reason}\n\n"
+        "No `lesson.ipynb` was produced. See `FAILED.md` for what was refused or "
+        "missing, `SUMMARY.md` for the full pipeline log, and any "
+        "`lesson_notebook_v*.ipynb` files in this directory for what was attempted."
+    )
+
+
+def _run_steps(slug: str, display_name: str, *, failed: bool) -> str:
+    """Setup + run instructions. Environment setup is still useful on a HARD
+    failure (e.g. to inspect a raw `lesson_notebook_v*.ipynb` by hand); the final
+    step differs because there is no `lesson.ipynb` to open."""
+    setup = (
+        "1. Create and activate a virtual environment:\n"
+        "   ```bash\n"
+        "   python -m venv .venv\n"
+        "   source .venv/bin/activate      # Windows: .venv\\Scripts\\activate\n"
+        "   ```\n"
+        "2. Install dependencies:\n"
+        "   ```bash\n"
+        "   pip install -r requirements.txt\n"
+        "   ```\n"
+        "3. Register this environment as a Jupyter kernel so your editor can find it:\n"
+        "   ```bash\n"
+        f"   python -m ipykernel install --user --name {slug} --display-name \"{display_name}\"\n"
+        "   ```\n"
+    )
+    if failed:
+        return setup + (
+            "4. There is no `lesson.ipynb` for this module (see the failure banner "
+            "above) — inspect the raw `lesson_notebook_v*.ipynb` attempts instead, "
+            f"selecting the `{display_name}` kernel if you open one."
+        )
+    return setup + (
+        "4. Open `lesson.ipynb` (run `jupyter notebook lesson.ipynb`, or open it in VS Code) "
+        f"and **select the `{display_name}` kernel** you just registered.\n"
+        "5. Run the cells from top to bottom."
+    )
+
+
 def build_readme(
     plan_markdown: str, ctx: PackageContext, requirement_set: RequirementSet
 ) -> str:
@@ -110,7 +157,9 @@ def build_readme(
 
     Pulls "what this teaches" from the plan's ``## Learning objectives`` and the setup
     prose from ``## Prerequisites``; falls back to sensible defaults when a section is
-    missing, so the document is always usable.
+    missing, so the document is always usable. When ``ctx.failure_reason`` is set (a
+    HARD failure — doc 18, D6), a banner naming why is inserted right after the title
+    and the run steps stop pointing at a `lesson.ipynb` that does not exist.
     """
     objectives = _extract_section(plan_markdown, "Learning objectives")
     prerequisites = _extract_section(plan_markdown, "Prerequisites")
@@ -127,24 +176,8 @@ def build_readme(
 
     slug = _kernel_slug(ctx.topic)
     display_name = f"Python ({slug})"
-    run_steps = (
-        "1. Create and activate a virtual environment:\n"
-        "   ```bash\n"
-        "   python -m venv .venv\n"
-        "   source .venv/bin/activate      # Windows: .venv\\Scripts\\activate\n"
-        "   ```\n"
-        "2. Install dependencies:\n"
-        "   ```bash\n"
-        "   pip install -r requirements.txt\n"
-        "   ```\n"
-        "3. Register this environment as a Jupyter kernel so your editor can find it:\n"
-        "   ```bash\n"
-        f"   python -m ipykernel install --user --name {slug} --display-name \"{display_name}\"\n"
-        "   ```\n"
-        "4. Open `lesson.ipynb` (run `jupyter notebook lesson.ipynb`, or open it in VS Code) "
-        f"and **select the `{display_name}` kernel** you just registered.\n"
-        "5. Run the cells from top to bottom."
-    )
+    failed = ctx.failure_reason is not None
+    run_steps = _run_steps(slug, display_name, failed=failed)
     troubleshooting = (
         "## If the kernel doesn't show up\n\n"
         "A newly registered kernel only appears after the editor rescans:\n"
@@ -154,9 +187,17 @@ def build_readme(
         f"You can confirm it was registered with `jupyter kernelspec list` (look for `{slug}`)."
     )
 
-    sections = [
-        f"# {ctx.topic}",
-        "> Auto-generated learner guide. Open `lesson.ipynb` and run the cells top to bottom.",
+    subtitle = (
+        "> Auto-generated learner guide. This module did not complete — see the "
+        "failure banner below."
+        if failed
+        else "> Auto-generated learner guide. Open `lesson.ipynb` and run the cells top to bottom."
+    )
+
+    sections = [f"# {ctx.topic}", subtitle]
+    if ctx.failure_reason is not None:
+        sections.append(_failure_banner(ctx.failure_reason))
+    sections += [
         "## What this teaches",
         objectives or f"A hands-on lesson on **{ctx.topic}**.",
         "## Who this is for",

@@ -1,9 +1,55 @@
 # 18 — Mode-selection bias and run honesty (findings from the 2026-07-28 course run)
 
-**Status:** 🔎 DIAGNOSED — scoped, ready to implement (2026-07-30). No code written yet. This doc is
-the design of record for the remediation; it supersedes nothing, and it is the first end-to-end
-*observed* validation of the lesson-mode machinery designed in
+**Status:** ✅ IMPLEMENTED (2026-07-30) on `feat/mode-selection-debias` — D1–D6 all landed, three CI
+gates green locally. **Not yet validated on a live paid run**: whether the debiased planner actually
+emits a *mix* of modes is the open question, and it can only be answered by the re-run described
+under [Validation](#validation). This doc is the design of record for the remediation; it is also the
+first end-to-end *observed* validation of the lesson-mode machinery designed in
 [`17-lesson-modes.md`](17-lesson-modes.md).
+
+**Implementation notes (what differed from the design):**
+
+- **D4** — the prose miner was removed outright, so the "stopword check on every token" hardening
+  became moot: there is no surviving prose-mining path for it to guard. A new
+  `RequirementSet.source == "malformed"` distinguishes *"the planner's block was garbage"* from
+  *"the planner declared no dependencies"*, and `provision_environment` checks it **before** the
+  "no requirements → base kernel" branch (a malformed block also has zero requirements and would
+  otherwise have been silently treated as "nothing needed").
+- **D4 residual risk** — the unfenced-heading regex matches any line whose sole content is
+  `requirements` (optionally `##`-prefixed). A plan using `## Requirements` as an ordinary *prose*
+  section would now be read as a dependency block and likely reported malformed. Accepted as narrow
+  given the planner's observed convention (`## Prerequisites` as the parent section, bare
+  `requirements` as the embedded machine block), but it is the known sharp edge here.
+- **D6** — the hard-vs-degraded distinction keys off `state.is_terminal and state.terminal_ok`,
+  which `PipelineState.terminal_ok`'s own docstring already defined; it is the same condition
+  `write_agentic_summary` used for its ✓/✗ line, now factored into a shared helper. `COURSE.md`
+  reads the reason from the module's `FAILED.md` stub rather than plumbing a new `ModuleResult`
+  field, keeping the reason single-sourced.
+- **D3** — the interactive gate already existed (doc 16) but was wired only into `learn`. `course`
+  ran ungated, which is *why* the 2026-07-28 run spent four paid module builds nobody had reviewed.
+  Phase 5 wired it; `course` now requires `--yes` on a non-TTY, exactly as `learn` has since doc 16.
+  This is a **behavior change** for scripted `course` invocations.
+- **D3** — mode override rides in the existing `AdjustmentIntent` (`op="set_mode"`, one target) with
+  the mode word parsed deterministically from the learner's sentence, rather than widening the
+  adjuster's JSON schema. No second LLM call to read one word. `set_mode` is therefore the one
+  carve-out from the adjuster's "echo the sentence verbatim" rule: its `instruction` carries the
+  *resolved* mode word alone, so "less code in the last one — just explain it" resolves to
+  `conceptual` instead of being rejected for containing no literal mode word.
+
+**Fixed during review of this change (all three were live defects, not hypotheticals):**
+
+- **Silent truncation in the unfenced block.** `_parse_body` skips `#` comment lines the way
+  requirements.txt does, but the heading scan *terminated* on the first one — so
+  `requirements / numpy / # core lib / pandas` silently yielded `numpy` alone, with no error and no
+  `malformed` flag. Exactly the silent-drop class D4 exists to eliminate, reintroduced by D4 itself.
+  Only a markdown **section** heading (`##`+) ends the block now; a single `#` is a comment.
+- **Negation inverted the mode override.** `re.findall(r"[a-z_]+", …)` splits on `-`, so
+  "make module 2 non-executable" tokenized to `{non, executable}` and confidently applied
+  `executable` — the opposite of the request, with no crash and no re-prompt. Negated modes now
+  raise and re-prompt.
+- **Persona self-contradiction.** `plan_adjuster.md` cited "less code in the last one — just explain
+  it" as valid `set_mode` phrasing while the global rule told the model to echo sentences verbatim;
+  the deterministic parser would then have rejected that very example. Resolved by the carve-out above.
 
 > **Headline:** the lesson-mode machinery works and its critics are fair. The planner never uses it —
 > it declared `executable` **8 out of 8 times**, correctly fenced, including for a module whose stated

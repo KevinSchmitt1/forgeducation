@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Iterable, Sequence
+from typing import cast
+
+from forged.pipeline.mode import LessonMode
 
 from .model import CourseSpec, ModuleSpec
 
@@ -40,6 +43,25 @@ def _validate_index(course: CourseSpec, index: int) -> None:
         raise ValueError(
             f"module index {index} out of range (valid range 0..{count - 1})"
         )
+
+
+# Mode strictness, most executable first. A merged module inherits both parts'
+# deliverables, so it needs the mode whose rigor covers both (doc 18, Phase 3):
+# `executable` demands a computed result, `artifact` a built-and-validated file,
+# `conceptual` neither.
+_MODE_STRICTNESS: dict[str, int] = {"conceptual": 0, "artifact": 1, "executable": 2}
+
+
+def _merge_modes(modes: Iterable[LessonMode | None]) -> LessonMode | None:
+    """The mode a module merged from `modes` should carry.
+
+    Returns the most executable of them. `None` (undecided) propagates: merging must
+    never invent a decision nobody made — the lesson planner still infers that case.
+    """
+    collected = list(modes)
+    if any(mode is None for mode in collected):
+        return None
+    return max(collected, key=lambda mode: _MODE_STRICTNESS[str(mode)])
 
 
 def _renumber(modules: Sequence[ModuleSpec]) -> tuple[ModuleSpec, ...]:
@@ -109,6 +131,7 @@ def merge_modules(course: CourseSpec, first: int, second: int) -> CourseSpec:
                 if p not in old_titles
             )
         ),
+        lesson_mode=_merge_modes((early.lesson_mode, late.lesson_mode)),
     )
 
     rename = {early.spec.title: merged_title, late.spec.title: merged_title}
@@ -164,8 +187,36 @@ def force_single(course: CourseSpec) -> CourseSpec:
             pre for m in course.modules for pre in m.spec.prerequisites
         ),
     )
-    single_module = ModuleSpec(spec=single_spec, order=0, module_prerequisites=())
+    single_module = ModuleSpec(
+        spec=single_spec,
+        order=0,
+        module_prerequisites=(),
+        lesson_mode=_merge_modes(m.lesson_mode for m in course.modules),
+    )
     return dataclasses.replace(course, modules=(single_module,))
+
+
+def set_mode(course: CourseSpec, target: int, mode: str) -> CourseSpec:
+    """Set one module's lesson mode, leaving every other module untouched.
+
+    The operator's override at the plan gate (doc 18, D3). Unlike the structural ops this
+    changes nothing about ordering or capabilities — only how the module will be taught —
+    so no renumbering or prerequisite remapping is needed.
+
+    Raises ValueError for an out-of-range module or an unrecognized mode word; the gate
+    turns both into a re-prompt rather than a crash.
+    """
+    _validate_index(course, target)
+    if mode not in _MODE_STRICTNESS:
+        known = ", ".join(sorted(_MODE_STRICTNESS))
+        raise ValueError(f"unknown lesson mode {mode!r}; expected one of: {known}")
+    validated = cast(LessonMode, mode)
+
+    rebuilt = tuple(
+        dataclasses.replace(module, lesson_mode=validated) if position == target else module
+        for position, module in enumerate(course.modules)
+    )
+    return dataclasses.replace(course, modules=rebuilt)
 
 
 def reorder_modules(course: CourseSpec, new_order: tuple[int, ...]) -> CourseSpec:

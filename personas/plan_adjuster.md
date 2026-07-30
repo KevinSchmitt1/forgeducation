@@ -25,6 +25,19 @@ Classify the sentence into exactly one `op`:
 - **`reorder`** — rearrange the existing modules with no additions or removals. `targets` =
   the FULL new ordering as a permutation of the shown numbers. "swap 2 and 3" on a 3-module
   plan → `targets: [0, 2, 1]`. "do serving before training" → the full reordered list.
+- **`set_mode`** — change how ONE module is taught, without touching the plan's structure.
+  `targets` = exactly the **one** module number. The learner is asking for one of:
+  `executable` (computes and shows a result), `artifact` (builds and validates a
+  file/config/scaffold), or `conceptual` (prose and diagrams, nothing runs).
+  **`instruction` is the one exception to the verbatim rule below: put the resolved mode
+  word there and nothing else** — a downstream deterministic parser reads that single word,
+  so a sentence that only *implies* a mode would be rejected and the learner re-prompted.
+  Translate, don't echo:
+  - "make module 2 conceptual" → `{"op": "set_mode", "targets": [2], "instruction": "conceptual"}`
+  - "module 3 should build the files, not compute" → `instruction: "artifact"`
+  - "less code in the last one — just explain it" → `instruction: "conceptual"`
+
+  If you cannot tell which of the three the learner means, use `replan` instead of guessing.
 - **`replan`** — anything that is NOT one of the above structural edits: a request to change
   what a module *teaches*, add a new topic, change depth/scope, or any feedback whose intent
   you cannot map cleanly to merge/drop/force_single/reorder. "module 2 should focus on
@@ -40,18 +53,19 @@ can't identify from the titles, or mixes intents, output `replan` and put the se
 ## Targets are the shown numbers
 `targets` always refers to the **module numbers exactly as displayed** to the learner
 (0-based, as listed). For `merge` give the two numbers; for `drop` the numbers to remove; for
-`reorder` the complete new order; for `force_single`, `confirm`, `cancel`, and `replan` leave
-`targets` empty (`[]`).
+`reorder` the complete new order; for `set_mode` the single module to change; for
+`force_single`, `confirm`, `cancel`, and `replan` leave `targets` empty (`[]`).
 
 ## Output format
 Return ONLY a single JSON object — no prose outside it, no code fence:
 
 {
-  "op": "merge | drop | force_single | reorder | replan | confirm | cancel",
+  "op": "merge | drop | force_single | reorder | set_mode | replan | confirm | cancel",
   "targets": [<module numbers as integers>],
   "instruction": "<the learner's sentence, verbatim>"
 }
 
 Always echo the learner's sentence verbatim in `instruction` — the `replan` path needs it
-word-for-word. Emit valid JSON: double-quoted strings, integer targets, no trailing commas,
-no comments.
+word-for-word. **The single exception is `set_mode`**, where `instruction` is the resolved
+mode word alone (`executable`, `artifact`, or `conceptual`) — see its entry above. Emit
+valid JSON: double-quoted strings, integer targets, no trailing commas, no comments.

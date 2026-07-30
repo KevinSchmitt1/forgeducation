@@ -448,6 +448,27 @@ def _cmd_course(args) -> int:
         print("\n  ✓ course-fidelity check passed — every requested capability is covered")
         return EXIT_OK
 
+    # The gate: confirm before spending, and let the operator retarget a module's lesson
+    # mode first (doc 18, D3). `learn` has gated since doc 16; `course` did not, which is
+    # how the 2026-07-28 run spent four paid module builds nobody had seen the shape of.
+    if args.yes:
+        print("\n▶ --yes given: building without the interactive gate.")
+    elif not sys.stdin.isatty():
+        print(
+            "✗ the interactive plan gate needs a TTY; pass --yes to run non-interactively",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    else:
+        confirmed = _run_plan_gate(
+            course, list(topic_capabilities(topic_spec)), Path(args.personas), planner,
+            topic, learner_profile, topic_spec,
+        )
+        if confirmed is None:
+            print("\nNothing was run.")
+            return EXIT_OK  # a deliberate 'no' is a success, not an error
+        course = confirmed
+
     # Phase 2: run each module through the lesson pipeline.
     from datetime import datetime
 
@@ -888,6 +909,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--plan-only", action="store_true",
         help="Produce and check the course plan without running any module (zero LLM "
              "run cost). Omit to also run each module through the lesson pipeline.",
+    )
+    course.add_argument(
+        "--yes", action="store_true",
+        help="Skip the interactive plan gate and build the proposed plan as-is "
+             "(required when stdin is not a TTY).",
     )
     course.add_argument(
         "--config", default=str(DEFAULT_CONFIG),
