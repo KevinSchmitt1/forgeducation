@@ -109,12 +109,12 @@ course modules actually run) and `--no-provision` (skip per-lesson virtualenv bu
 ### Advanced & development commands
 
 You do **not** need these for normal use — `forged learn` composes them for you. They exist for
-scripting, testing, and development, and skip the plan-first confirmation gate:
+scripting, testing, and development:
 
 | Command | What it's for |
 |---|---|
 | `forged agentic --topic … --run-dir …` | Run the agentic engine directly on **one** lesson — what `learn` calls under the hood for a single notebook. No plan gate. |
-| `forged course --topic … [--plan-only]` | Decompose a topic into a course and run it directly. `--plan-only` prints/saves the decomposition without running anything (cheap: one planner call). |
+| `forged course --topic … [--plan-only]` | Decompose a topic into a course and run it. **Gated like `learn`:** the plan is shown for confirmation before any paid build, so a script must pass `--yes` (a non-TTY without it is a usage error). `--plan-only` prints/saves the decomposition without running anything (cheap: one planner call). |
 | `forged build --topic …` | The older **linear** engine (fixed single pass, no failure re-routing). Kept for deterministic/offline runs; not actively developed. Add `--config config/pipeline.skeleton.yaml` for a cheaper pass, or point the YAML at Ollama to stay fully local. |
 | `forged pipelines` | List the bundled pipeline configs. |
 | `forged clean --keep N` | Prune old run directories (asks before deleting). |

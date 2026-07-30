@@ -29,6 +29,7 @@ _VALID_OPS = {
     "drop",
     "force_single",
     "reorder",
+    "set_mode",
     "replan",
     "confirm",
     "cancel",

@@ -93,6 +93,40 @@ def test_package_outside_allow_list_is_refused_without_installing(tmp_path):
     assert runner.calls == []  # refused before any subprocess ran
 
 
+def test_agent_stack_packages_are_on_the_allow_list():
+    # Doc 18 / E3: module 1 died provisioning `openai, faiss-cpu, pytest` — the allow
+    # list was curated for the ML-topic era and had none of the agent stack.
+    from forged.provisioning import DEFAULT_ALLOWED_PACKAGES
+
+    for name in (
+        "openai", "anthropic", "faiss-cpu", "langchain", "langchain-core",
+        "langchain-community", "langgraph", "chromadb", "tiktoken", "pytest",
+        "python-dotenv", "gitpython", "httpx",
+    ):
+        assert name in DEFAULT_ALLOWED_PACKAGES, name
+
+
+# ── Malformed requirements (D4/D6): a parser problem, not a policy violation ─────
+
+
+def test_malformed_requirements_block_reports_malformed_not_allow_list_violation(tmp_path):
+    # Doc 18 / E4: a parser bug hid behind a security-sounding "outside the
+    # allow-list" message for two days. A malformed block must say so plainly and
+    # must never be silently treated as "no dependencies" (empty requirements).
+    malformed = RequirementSet(
+        requirements=(),
+        source="malformed",
+        error="The plan's requirements block is malformed: nothing parseable.",
+    )
+    runner = FakeRunner()
+    result = _provision(malformed, tmp_path / "cache", runner=runner)
+    assert result.ok is False
+    assert result.error is not None
+    assert "malformed" in result.error.lower()
+    assert "allow-list" not in result.error.lower()
+    assert runner.calls == []  # refused before any subprocess ran
+
+
 # ── Cache miss → build, install, register kernel ────────────────────────────────
 
 

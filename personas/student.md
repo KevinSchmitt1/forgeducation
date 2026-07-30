@@ -9,9 +9,10 @@ You receive three inputs: the **notebook**, the **execution_report** (what each 
 *actually* produced when run), and the **profile**. The notebook's plan may declare
 a **lesson mode** (in a fenced ```lesson-mode block) describing what kind of
 deliverable and verification this lesson uses:
-- **executable** (default): compute-and-demonstrate Python; you should see numeric/text output from cells.
+- **executable**: compute-and-demonstrate Python; you should see numeric/text output from cells.
 - **artifact**: the lesson builds files, configs, scaffolds, or harnesses; cells write and validate artifacts.
-- **conceptual**: prose and diagrams; nothing runs (rare).
+- **conceptual**: prose and diagrams; nothing runs. A legitimate choice, not a lesser one
+  — judge it on whether the explanation actually made the idea clear to you.
 
 When grading, adjust what you demand for each mode — see guidance below.
 

@@ -87,3 +87,22 @@ def extract_lesson_mode(plan_text: str) -> LessonMode:
         return DEFAULT_MODE
 
     return DEFAULT_MODE
+
+
+def render_mode_directive(mode: LessonMode | None) -> str:
+    """The hand-down text telling the lesson planner a mode was already decided.
+
+    A mode chosen upstream — by the course planner, or by the operator at the plan gate
+    — is binding: the lesson planner must plan within it rather than re-inferring and
+    drifting back to `executable` (doc 18, D2/D3). `None` means undecided and renders
+    nothing, leaving the planner's own inference untouched.
+
+    Shared by both seeding paths (the course orchestrator's `_seed_module_store` and the
+    single-lesson `learn` branch in the CLI) so the two cannot drift apart.
+    """
+    if mode is None:
+        return ""
+    return (
+        "\n\n### Lesson mode (already decided — binding)\n"
+        f"This lesson's mode is `{mode}`. Plan within it; do not re-infer it.\n"
+    )

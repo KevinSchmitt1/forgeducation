@@ -14,14 +14,27 @@ tested with scripted `StringIO` conversations and zero real TTY.
 
 from __future__ import annotations
 
+import re
 import textwrap
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TextIO
+from typing import TextIO, get_args
+
+from forged.pipeline.mode import LessonMode
 
 from .fidelity import assess_course_fidelity
 from .model import CourseSpec
-from .operations import drop_module, force_single, merge_modules, reorder_modules
+from .operations import (
+    drop_module,
+    force_single,
+    merge_modules,
+    reorder_modules,
+    set_mode,
+)
+
+# The mode words the operator can name at the gate, in strictness order so the error
+# message reads sensibly (doc 18, D3).
+_MODE_WORDS: tuple[str, ...] = tuple(sorted(get_args(LessonMode)))
 
 # The gate is bounded so a misfiring classifier or an indecisive learner cannot loop
 # forever; hitting the cap cancels safely (nothing has been spent).
@@ -74,6 +87,8 @@ def render_plan(course: CourseSpec, original_capabilities: Sequence[str]) -> str
                 for title in module.module_prerequisites
             )
             header += f"  (builds on {refs})"
+        if module.lesson_mode is not None:
+            header += f"  · mode: {module.lesson_mode}"
         lines.append(header)
         for objective in module.spec.learning_objectives or ["(no objectives stated)"]:
             lines.append(_wrap_bullet(objective))
@@ -81,7 +96,28 @@ def render_plan(course: CourseSpec, original_capabilities: Sequence[str]) -> str
 
     lines.append(_render_estimate(count))
     lines.append(_render_fidelity(course, original_capabilities))
+    homogeneous = _render_homogeneous_mode_warning(course)
+    if homogeneous:
+        lines.append(homogeneous)
     return "\n".join(lines)
+
+
+def _render_homogeneous_mode_warning(course: CourseSpec) -> str:
+    """Warn when every module landed on the same mode.
+
+    A well-planned course is normally mixed — foundations that compute, a build module
+    that produces artifacts, an architecture module that is conceptual. The 2026-07-28
+    run shipped 4x `executable`, including a module about file layout, and nobody could
+    see it (doc 18, E1). Sameness is not an error, so this is a prompt to look, not a block.
+    """
+    modes = {module.lesson_mode for module in course.modules}
+    if len(course.modules) < 2 or len(modes) != 1 or None in modes:
+        return ""
+    only = next(iter(modes))
+    return (
+        f"  ⚠ Every module has the same mode ({only}). Courses are usually mixed — "
+        f"say e.g. 'make module 2 conceptual' to change one."
+    )
 
 
 def _wrap_bullet(text: str) -> str:
@@ -167,7 +203,9 @@ def run_gate(
 
         # Structural ops: apply deterministically; a bad target re-prompts (counts a round).
         try:
-            course, warning = _apply_structural(course, intent.op, intent.targets)
+            course, warning = _apply_structural(
+                course, intent.op, intent.targets, intent.instruction
+            )
         except ValueError as exc:
             emit(f"Could not apply that change: {exc}")
             continue
@@ -178,8 +216,37 @@ def run_gate(
     return GateOutcome(confirmed=False, course=course, rounds_used=rounds)
 
 
+def _mode_from_sentence(sentence: str) -> str:
+    """Pull the mode word out of the learner's own sentence ("make module 2 conceptual").
+
+    The adjuster's intent schema carries only op/targets/instruction, so the mode rides in
+    the instruction. Deterministic on purpose — no second LLM call to read one word. An
+    unrecognized sentence raises, which the gate turns into a re-prompt.
+
+    A *negated* mode ("non-executable", "not executable") also raises rather than
+    resolving: the naive word scan would read the mode word out of the negation and apply
+    the exact opposite of what was asked, silently and confidently. Re-prompting on an
+    ambiguous sentence is cheap; applying the wrong mode is not.
+    """
+    lowered = sentence.lower()
+    words = set(re.findall(r"[a-z_]+", lowered))
+    named = [mode for mode in _MODE_WORDS if mode in words]
+    if len(named) != 1:
+        raise ValueError(
+            "name exactly one mode to switch to — "
+            f"{', '.join(_MODE_WORDS)} (e.g. 'make module 2 conceptual')"
+        )
+    mode = named[0]
+    if re.search(rf"\b(?:not|non|no|never|without)[\s-]+(?:\w+[\s-]+)?{mode}\b", lowered):
+        raise ValueError(
+            f"'{sentence.strip()}' negates {mode} — say which mode you DO want "
+            f"({', '.join(_MODE_WORDS)})"
+        )
+    return mode
+
+
 def _apply_structural(
-    course: CourseSpec, op: str, targets: tuple[int, ...]
+    course: CourseSpec, op: str, targets: tuple[int, ...], instruction: str = ""
 ) -> tuple[CourseSpec, str]:
     """Apply one structural op, returning the new course and an optional learner warning.
 
@@ -187,6 +254,13 @@ def _apply_structural(
     capabilities; a force_single packing everything into one lesson) so the choice is
     informed, never silent. Merge/reorder preserve all capabilities and need no warning.
     """
+    if op == "set_mode":
+        if len(targets) != 1:
+            raise ValueError(
+                f"say which single module to change, got {list(targets)}"
+            )
+        return set_mode(course, targets[0], _mode_from_sentence(instruction)), ""
+
     if op == "merge":
         if len(targets) != 2:
             raise ValueError(f"merge needs exactly two module numbers, got {list(targets)}")

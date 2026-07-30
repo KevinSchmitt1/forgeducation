@@ -56,6 +56,15 @@ SEE it work" mean for this lesson. Read it before anything else below.
    as reference ("illustrative — not run here"), and reference cells must never be the
    only cells in the sequence.
 
+   **Stand-ins must announce themselves.** Any class or function you define to stand in
+   for a real service — a fake model, a canned API client, a dummy data source — must be
+   *named* as one (`FakeLLM`, `StubSearchClient`, `DemoStore`; never a name a learner
+   could mistake for a real library or model), and the markdown that introduces it must
+   say in one plain sentence what it is and why it exists: that you wrote it here in this
+   notebook, that it is not a real model/service/package, and what it imitates. A learner
+   who cannot tell your local fake from a real dependency cannot tell which parts of the
+   lesson they could reproduce — and will go looking for a package that does not exist.
+
 3. **Include a worked example with REAL output.** After defining the machinery, add
    a cell that runs it on the plan's concrete sample inputs and `print`s the result
    (and/or asserts an invariant, e.g. a probability vector sums to 1, a sorted list

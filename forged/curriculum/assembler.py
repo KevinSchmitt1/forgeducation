@@ -18,6 +18,12 @@ what a learner actually navigates:
 Always reads `result.course` — the GROWN spec (base modules plus any Phase-4
 remediation modules), never the original pre-run plan — so a reactively-added module
 is never missing from the deliverable.
+
+A failed module's status is never a bare ``✗`` (doc 18, D6): when its `run_dir`
+carries a `FAILED.md` (written by `forged.deliverables._write_failure_stub` on a
+HARD failure), this layer reads that stub's `**Reason**:` line and inlines it into
+both the course index and the course report — no new `ModuleResult` field needed,
+and no duplicating deliverables.py's own reason text.
 """
 
 from __future__ import annotations
@@ -48,6 +54,29 @@ def assemble_course(
     _write_module_navs(result)
 
 
+def _read_failure_reason(run_dir: Path) -> str | None:
+    """Extract the one-line reason from a module's FAILED.md, when present.
+
+    None when the file is absent — a module that never got far enough to write
+    one, or a synthetic/test ModuleResult. Never fabricates a reason.
+    """
+    failed_path = run_dir / "FAILED.md"
+    if not failed_path.is_file():
+        return None
+    for line in failed_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("**Reason**:"):
+            return line.removeprefix("**Reason**:").strip()
+    return None
+
+
+def _status_line(module_result: ModuleResult) -> str:
+    """`Status: ✓` or, on failure, `Status: ✗ — <reason>` when a reason is known."""
+    if module_result.terminal_ok:
+        return "Status: ✓"
+    reason = _read_failure_reason(Path(module_result.run_dir))
+    return f"Status: ✗ — {reason}" if reason else "Status: ✗"
+
+
 def _render_course_index(result: CourseResult) -> str:
     """Ordered index of every module in the grown course, one entry per module."""
     course = result.course
@@ -60,8 +89,7 @@ def _render_course_index(result: CourseResult) -> str:
         if module_result is None:
             lines.append("_(not run)_")
         else:
-            mark = "✓" if module_result.terminal_ok else "✗"
-            lines.append(f"Status: {mark}")
+            lines.append(_status_line(module_result))
         if module.module_prerequisites:
             lines.append(f"Builds on: {', '.join(module.module_prerequisites)}")
         if module.remediation_for:
@@ -112,13 +140,19 @@ def _render_course_report(
 
 def _render_module_report_section(module_result: ModuleResult) -> list[str]:
     mark = "✓" if module_result.terminal_ok else "✗"
-    dirname = Path(module_result.run_dir).name
+    run_dir = Path(module_result.run_dir)
+    dirname = run_dir.name
     section = [f"## {mark} [{module_result.module.order}] {module_result.module.spec.title}", ""]
 
     if module_result.notebook_path:
         section.append(f"- Notebook: [lesson.ipynb]({dirname}/lesson.ipynb)")
     else:
-        section.append("- Notebook: (no notebook)")
+        detail = ""
+        if not module_result.terminal_ok:
+            reason = _read_failure_reason(run_dir)
+            if reason:
+                detail = f" — {reason} (see [FAILED.md]({dirname}/FAILED.md))"
+        section.append(f"- Notebook: (no notebook{detail})")
 
     dropped = [cap for signal in module_result.topic_fidelity for cap in signal.missing]
     if dropped:

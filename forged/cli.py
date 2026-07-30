@@ -45,6 +45,7 @@ from .deliverables import (
 )
 from .models import LearnerProfile, TopicSpecification
 from .orchestrator import MANIFEST_FILE, Orchestrator
+from .pipeline.mode import render_mode_directive
 from .progress import Spinner
 from .usage import write_usage_report
 
@@ -261,6 +262,7 @@ def _run_agentic_lesson(
     run_dir: Path,
     provision: bool,
     debug: bool,
+    lesson_mode=None,
 ) -> int:
     """Run one lesson through the agentic pipeline and write its deliverables.
 
@@ -268,6 +270,10 @@ def _run_agentic_lesson(
     front door's 1-module branch (doc 16): given a resolved topic spec + learner profile,
     it provisions, runs the pipeline, writes lesson.ipynb / SUMMARY.md / the learner
     package / usage, and returns an honest exit code (0 only on an acceptable notebook).
+
+    `lesson_mode`, when set, is a mode already decided upstream (the operator at the plan
+    gate) and is handed down as binding — this branch bypasses the course orchestrator, so
+    without it a 1-module plan would silently drop the override (doc 18, D3).
     """
     import asyncio
     import logging
@@ -301,6 +307,11 @@ def _run_agentic_lesson(
         # The shared learner + topic context block; every LLM agent reads this
         # (see forged.context, forged.pipeline.agents.Agent._context_prefix).
         context_block = build_context_block(learner_profile, topic_spec)
+        directive = render_mode_directive(lesson_mode)
+        if directive:
+            context_block = (
+                f"{context_block}{directive}" if context_block else directive.lstrip()
+            )
         if context_block:
             store.put(Artifact(name="lesson_context", kind="text", content=context_block))
         # Structured counterpart to lesson_context: the requested capabilities as
@@ -447,6 +458,27 @@ def _cmd_course(args) -> int:
             _persist_course(Path(args.out), course, report)
         print("\n  ✓ course-fidelity check passed — every requested capability is covered")
         return EXIT_OK
+
+    # The gate: confirm before spending, and let the operator retarget a module's lesson
+    # mode first (doc 18, D3). `learn` has gated since doc 16; `course` did not, which is
+    # how the 2026-07-28 run spent four paid module builds nobody had seen the shape of.
+    if args.yes:
+        print("\n▶ --yes given: building without the interactive gate.")
+    elif not sys.stdin.isatty():
+        print(
+            "✗ the interactive plan gate needs a TTY; pass --yes to run non-interactively",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    else:
+        confirmed = _run_plan_gate(
+            course, list(topic_capabilities(topic_spec)), Path(args.personas), planner,
+            topic, learner_profile, topic_spec,
+        )
+        if confirmed is None:
+            print("\nNothing was run.")
+            return EXIT_OK  # a deliberate 'no' is a success, not an error
+        course = confirmed
 
     # Phase 2: run each module through the lesson pipeline.
     from datetime import datetime
@@ -726,6 +758,7 @@ def _build_confirmed(
             run_dir=run_dir,
             provision=provision,
             debug=args.debug,
+            lesson_mode=module.lesson_mode,
         )
 
     report = assess_course_fidelity(list(original_capabilities), course)
@@ -888,6 +921,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--plan-only", action="store_true",
         help="Produce and check the course plan without running any module (zero LLM "
              "run cost). Omit to also run each module through the lesson pipeline.",
+    )
+    course.add_argument(
+        "--yes", action="store_true",
+        help="Skip the interactive plan gate and build the proposed plan as-is "
+             "(required when stdin is not a TTY).",
     )
     course.add_argument(
         "--config", default=str(DEFAULT_CONFIG),

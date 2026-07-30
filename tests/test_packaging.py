@@ -155,3 +155,43 @@ def test_package_coexists_with_a_written_notebook(tmp_path):
         README_FILE,
         REQUIREMENTS_FILE,
     }
+
+
+# ── build_readme: failure banner (doc 18, D6) ────────────────────────────────────
+
+
+def test_readme_has_no_failure_banner_by_default():
+    from forged.pipeline.dependencies import extract_requirements
+
+    readme = build_readme(_PLAN, _CTX, extract_requirements(_PLAN))
+    assert "did not complete" not in readme.lower()
+    # The default, non-failed run steps still point at lesson.ipynb.
+    assert "Open `lesson.ipynb`" in readme
+
+
+def test_readme_surfaces_failure_reason_when_context_carries_one():
+    from dataclasses import replace
+
+    from forged.pipeline.dependencies import extract_requirements
+
+    ctx = replace(_CTX, failure_reason="Environment provisioning failed: openai not allowed")
+    readme = build_readme(_PLAN, ctx, extract_requirements(_PLAN))
+
+    assert "did not complete" in readme.lower()
+    assert "Environment provisioning failed: openai not allowed" in readme
+    # A reader must learn why without opening SUMMARY.md — but SUMMARY.md is
+    # still named as where to look for the full detail.
+    assert "SUMMARY.md" in readme
+    assert "FAILED.md" in readme
+
+
+def test_readme_failure_banner_does_not_point_at_a_nonexistent_lesson_notebook():
+    from dataclasses import replace
+
+    from forged.pipeline.dependencies import extract_requirements
+
+    ctx = replace(_CTX, failure_reason="boom")
+    readme = build_readme(_PLAN, ctx, extract_requirements(_PLAN))
+
+    assert "Open `lesson.ipynb`" not in readme
+    assert "lesson_notebook_v" in readme

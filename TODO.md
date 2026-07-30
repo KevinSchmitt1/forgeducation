@@ -6,11 +6,41 @@
 
 ---
 
-## 🎯 NEXT UP — PAID VALIDATION RUNS
+## 🎯 NEXT UP — THE DOC-18 VALIDATION RE-RUN
 
-**Two runs to execute + qualitatively compare against the earlier output.**
+**Run B already happened** (2026-07-28, `runs/20260728-145848_course_teach_me_how_to_work_with_ai_a`)
+and it **failed the way doc 17 predicted it might**: the planner declared `executable` for all four
+modules — correctly fenced, so a judgment failure, not a parse bug — including a module about file
+layout. Kevin's feedback (that run's `feedback.md`) plus the full diagnosis is
+[`docs/architecture/18-mode-selection-bias-and-run-honesty.md`](docs/architecture/18-mode-selection-bias-and-run-honesty.md).
 
-### Run A — regression re-run (compare to first runs)
+The remediation (D1–D6) is **implemented** on `feat/mode-selection-debias`. What is *not* yet known
+is whether the debiased planner actually produces a mixed course — no test can prove an LLM's
+judgment. That needs one paid re-run of the **same** topic:
+
+```bash
+.venv/bin/python -m forged.cli course \
+  --topic "Teach me how to work with AI agents: how to build them, build harnesses for them, and optimize agentic workflows. At the same time, teach me how to optimize my own workflow with AI and make my AI setup learn together with me — meaning how I manage all the files and data on my machine, and how the architecture of that should look." \
+  --learner-profile templates/examples/kevin_learner.yaml \
+  --runs runs
+```
+
+`course` is now gated: the plan gate prints each module's mode before spending, warns if every
+module shares one, and takes "make module 2 conceptual" as a deterministic override. Check the
+gate output *first* — the mode mix is visible there for free, before any paid build.
+
+Success criteria, in order:
+1. The planner emits a **mix** of modes (not 4×`executable`).
+2. The gate shows them and a mode can be overridden without re-planning.
+3. The subject stays concrete about the named tool instead of drifting to computable proxies.
+4. Code share drops from the 76–89% band that run produced.
+5. All four modules provision (the allow-list now carries the agent stack).
+
+> Criteria 1–3 passing would confirm doc 18's causal chain (mode → abstraction → code-heaviness) and
+> retire the topic-fidelity-routing question. **Criterion 1 passing while 3 fails** would prove
+> fidelity drift is an independent defect and re-open it as its own doc.
+
+### Also still open — Run A (regression re-run)
 
 Same input as the original "local LLMs" runs, to check the program improved.
 
@@ -31,36 +61,11 @@ Same input as the original "local LLMs" runs, to check the program improved.
 - **"Did it improve" checks:** fewer/zero degradations, **no fidelity drop**, plus qualitative
   notebook quality.
 
-### Run B — complex, low-code topic (qualitative classification test)
-
-Goal: check whether the program **detects a conceptual / low-code topic on its own** and reflects
-that in the output (light code, more prose) — **without being told** it's not code-heavy.
-
-```bash
-.venv/bin/python -m forged.cli learn \
-  --topic "How to structure a project so a team can work effectively with AI coding agents" \
-  --learner-profile templates/examples/kevin_learner.yaml \
-  --run-dir runs/agents-workflow
-```
-
-- Use `learn` (not `agentic`): its plan gate shows the sizing decision (single lesson vs course)
-  **before** spending on the paid build — inspect that first to keep cost bounded.
-- **Now the primary test of lesson modes** (shipped on `feat/lesson-modes`, see below). Check the
-  plan gate output for the `lesson-mode` block: does the planner infer `artifact` (build agents /
-  personas / scaffold, validated by cells) rather than force-fitting compute code? SUMMARY.md now
-  carries a `## Lesson Mode` line stating what verification ran.
-- **Success signal = planner picks `artifact` and the notebook builds+validates artifacts.**
-  If it still force-fits runnable compute cells or picks `executable`, that's the *finding* to report.
-- **Watch:** course decomposition inflates cost (multiple gpt-5 passes); artifact-validation cells
-  that call LLM APIs need keys → prefer MOCKED validation (read the SUMMARY degradations section).
-- Alt framings if wanted: "How to design a multi-agent AI workflow for a software project"
-  (some code) · "How to build an AI assistant that adapts to a user's needs over time"
-  (higher risk of going code-heavy).
-
-> **Lesson modes shipped (2026-07-28, PR #25, merged to `master`)** — planner-inferred `executable` /
-> `artifact` / `conceptual`; artifact lessons build-and-validate artifacts instead of computing.
-> Green in tests (631 passed, 92.8% cov) but **not yet observed on a live paid run** — Run B above
-> is that validation. Design: `docs/architecture/17-lesson-modes.md`.
+> **Lesson modes shipped (2026-07-28, PR #25, merged to `master`)**, and were **observed failing
+> to fire** on the very next paid run — see the doc-18 section at the top of this file. The
+> machinery and its critics are fine; the planner's mode-selection text was the defect. Designs:
+> `docs/architecture/17-lesson-modes.md` (the modes),
+> `docs/architecture/18-mode-selection-bias-and-run-honesty.md` (why they never fired).
 
 ---
 

@@ -85,46 +85,140 @@ def test_empty_structured_block_yields_no_requirements_but_is_structured():
     assert result.source == "structured"
 
 
-# ── Prose fallback (no structured block) ────────────────────────────────────────
+# ── Unfenced `requirements` heading block (secondary structured path) ───────────
+#
+# The pip-install prose miner is gone (doc 18, D4): it was the sole source of
+# fabricated packages and was never the intended contract. A plan that skips the
+# fence but still emits a bare `requirements` heading is now parsed directly.
 
 
-def test_falls_back_to_pip_install_lines_when_no_block():
+def test_unfenced_heading_block_is_parsed_as_structured():
     plan = """## Prerequisites
-Install Hugging Face and helpers:
-   - pip install transformers>=4.30 datasets>=2.12 accelerate>=0.20 huggingface_hub
+Some prose about hardware.
+
+requirements
+numpy>=1.26
+pandas
+
+## Learning objectives
+- do things
 """
     result = extract_requirements(plan)
-    assert result.source == "prose"
-    assert {r.name for r in result.requirements} == {
-        "transformers",
-        "datasets",
-        "accelerate",
-        "huggingface-hub",
-    }
+    assert result.source == "structured"
+    assert [r.name for r in result.requirements] == ["numpy", "pandas"]
 
 
-def test_prose_fallback_handles_python_m_pip_and_drops_flags():
-    plan = "Setup: python -m pip install --upgrade rich==13.7 typer\n"
+def test_unfenced_heading_block_accepts_leading_hashes():
+    plan = "## requirements\nrich==13.7\ntyper\n\nMore prose.\n"
     result = extract_requirements(plan)
+    assert result.source == "structured"
     assert {r.name for r in result.requirements} == {"rich", "typer"}
-    assert result.requirement_for("rich").specifier == "==13.7"
 
 
-def test_prose_fallback_ignores_sentence_embedded_pip_install_decoys():
-    # Real localLLM plan: a genuine install line plus a prose sentence that happens to
-    # contain "pip install". Only the real packages should survive — no "the"/"packages".
-    plan = """## Prerequisites
-   - pip install transformers>=4.30 datasets>=2.12 huggingface_hub sentencepiece
+def test_unfenced_heading_block_stops_at_next_heading_with_no_blank_line():
+    plan = "requirements\nnumpy>=1.26\n## Learning objectives\n- foo\n"
+    result = extract_requirements(plan)
+    assert [r.name for r in result.requirements] == ["numpy"]
 
-If you must use pip-only, follow the PyTorch docs then pip install the HF packages above.
+
+def test_unfenced_heading_block_immediately_blank_is_explicit_empty():
+    plan = "## Prerequisites\n\nrequirements\n\nNo packages needed for this lesson.\n"
+    result = extract_requirements(plan)
+    assert result.source == "structured"
+    assert result.requirements == ()
+    assert result.error is None
+
+
+def test_fenced_block_takes_precedence_over_unfenced_heading():
+    # Belt-and-suspenders: if a plan somehow carries both, the machine-readable fence
+    # still wins (mirrors precedence over the old prose miner).
+    plan = """requirements
+decoy-from-heading>=1.0
+
+```requirements
+chosen-from-fence>=2.0
+```
 """
     result = extract_requirements(plan)
-    assert {r.name for r in result.requirements} == {
-        "transformers",
-        "datasets",
-        "huggingface-hub",
-        "sentencepiece",
+    assert result.source == "structured"
+    assert [r.name for r in result.requirements] == ["chosen-from-fence"]
+
+
+# ── The real regression: module 3's unfenced block + adjacent decoy prose ───────
+
+
+def test_real_unfenced_plan_extracts_real_packages_and_never_fabricates_from_prose():
+    """Doc 18 / E4: module 3's `lesson_plan_v3.md` fenced `lesson-mode` correctly but
+    left `requirements` unfenced. The old fence-only parser missed it entirely and
+    fell through to a prose miner that scanned the sentence four lines below —
+    `(If you plan to run DVC flows, install dvc separately: `pip install dvc` — not
+    required for the core demo.)` — fabricating `not`, `required`, `for`, `the`,
+    `core` as "packages" (all four besides `for` are real, live, installable PyPI
+    packages: a genuine arbitrary-code-execution vector, not a cosmetic bug).
+
+    With the prose miner removed and the unfenced heading form parsed directly, the
+    six real requirements must come back — and none of the fabricated tokens.
+    """
+    plan = """## Prerequisites
+Environment notes:
+- CPU-only; small embedding model (all-MiniLM-L6-v2) downloads during run.
+- Git initialized in the working directory for optional Git artifact checks
+  (GitPython used).
+- DVC is optional; the lesson demonstrates a local hashing workflow and shows DVC
+  commands as notes. Installing dvc lets learners try real DVC flows.
+
+requirements
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+scikit-learn>=1.2
+numpy>=1.24
+GitPython>=3.1
+python-dotenv>=1.0
+
+(If you plan to run DVC flows, install dvc separately: `pip install dvc` — not
+required for the core demo.)
+
+## Learning objectives
+- Design a scalable local project layout for agent projects and validate it
+  programmatically.
+"""
+    result = extract_requirements(plan)
+    assert result.source == "structured"
+    names = {r.name for r in result.requirements}
+    assert names == {
+        "sentence-transformers",
+        "faiss-cpu",
+        "scikit-learn",
+        "numpy",
+        "gitpython",
+        "python-dotenv",
     }
+    fabricated = {"not", "required", "for", "the", "core", "dvc"}
+    assert names.isdisjoint(fabricated)
+
+
+# ── Malformed blocks (distinct from "none" and from explicit empty) ─────────────
+
+
+def test_fenced_block_with_no_parseable_packages_is_malformed():
+    plan = "```requirements\ngit+https://example.com/pkg.git only this junk\n```\n"
+    result = extract_requirements(plan)
+    assert result.source == "malformed"
+    assert result.requirements == ()
+    assert result.error is not None
+    assert "malformed" in result.error.lower()
+    # Must read as a parser problem, never as a policy/allow-list violation.
+    assert "allow-list" not in result.error.lower()
+    assert "policy" not in result.error.lower()
+
+
+def test_unfenced_heading_block_with_no_parseable_lines_is_malformed():
+    plan = "## Prerequisites\n\nrequirements\nnot a real requirement line at all\n\nMore prose.\n"
+    result = extract_requirements(plan)
+    assert result.source == "malformed"
+    assert result.requirements == ()
+    assert result.error is not None
+    assert "malformed" in result.error.lower()
 
 
 def test_no_requirements_anywhere_is_empty_with_none_source():
@@ -200,4 +294,39 @@ def test_non_package_tokens_in_block_are_dropped():
     # URLs / VCS refs are not plain name[extras][specifier] tokens — ignored, not guessed.
     plan = "```requirements\ngit+https://example.com/pkg.git\nnumpy>=1.26\n```\n"
     result = extract_requirements(plan)
+    assert [r.name for r in result.requirements] == ["numpy"]
+
+
+# ── Review follow-ups: silent truncation inside the unfenced heading form ─────────
+
+
+def test_unfenced_block_keeps_packages_after_a_requirements_txt_comment() -> None:
+    """A `# comment` inside the block is a comment, not a terminator.
+
+    `_parse_body` has always skipped `#` lines the way requirements.txt does, but the
+    heading scan used to *stop* at the first one — silently dropping every package
+    below it, with no error and no `malformed` flag. That is the exact silent-drop
+    class doc 18 (D4) exists to eliminate.
+    """
+    # Arrange
+    plan = "requirements\nnumpy\n# core forecasting lib\npandas\n"
+
+    # Act
+    result = extract_requirements(plan)
+
+    # Assert
+    assert [r.name for r in result.requirements] == ["numpy", "pandas"]
+    assert result.source == "structured"
+
+
+def test_unfenced_block_still_stops_at_the_next_markdown_section() -> None:
+    # Arrange — a real `##` heading ends the block; prose below must never be swept in.
+    plan = (
+        "requirements\nnumpy\n## Learning objectives\n- teach pandas and scikit-learn\n"
+    )
+
+    # Act
+    result = extract_requirements(plan)
+
+    # Assert
     assert [r.name for r in result.requirements] == ["numpy"]

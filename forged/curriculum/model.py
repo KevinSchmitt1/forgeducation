@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from forged.models import TopicSpecification
+from forged.pipeline.mode import LessonMode
 from forged.pipeline.state import TopicFidelitySignal
 
 
@@ -45,12 +46,19 @@ class ModuleSpec:
     whole round's overflow union, not per-module-attributed capability sets — so the
     course assembly (Phase 3) can flag a reactively-added module honestly without
     claiming false precision about which module dropped which capability.
+
+    `lesson_mode` is the module's *provisional* mode, decided at decomposition time so
+    the plan gate can show it and the operator can change it before anything paid runs
+    (doc 18, D2/D3). `None` means "undecided here" — the lesson planner infers it as it
+    always has, which is what keeps the single-lesson path unchanged. When it is set,
+    the lesson planner treats it as binding rather than re-inferring.
     """
 
     spec: TopicSpecification
     order: int
     module_prerequisites: tuple[str, ...] = ()
     remediation_for: tuple[str, ...] = ()
+    lesson_mode: LessonMode | None = None
 
     @property
     def capabilities(self) -> tuple[str, ...]:

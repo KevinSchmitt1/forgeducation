@@ -15,10 +15,11 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from forged.context import build_context_block
 from forged.models import LearnerProfile, TopicSpecification
+from forged.pipeline.mode import LessonMode
 
 from .model import CourseSpec, ModuleSpec
 
@@ -26,6 +27,10 @@ _LOG = logging.getLogger(__name__)
 
 _VALID_SCOPES = {"fundamentals", "implementation", "optimization", "usage"}
 _VALID_DEPTHS = {"beginner", "intermediate", "advanced"}
+# The provisional per-module lesson mode (doc 18, D2). Mirrors forged.pipeline.mode's
+# LessonMode; an unrecognized word degrades to None ("undecided") rather than passing an
+# invented mode to the gate or the lesson planner.
+_VALID_MODES = set(get_args(LessonMode))
 
 # Curriculum planning is a reasoning task, not a code-generation one. Default to the
 # same cheap reasoning model the lesson planner/critics use (gpt-5-mini) rather than the
@@ -42,6 +47,7 @@ _MODULE_SCHEMA = {
         "prerequisites": {"type": "array", "items": {"type": "string"}},
         "focus_areas": {"type": "array", "items": {"type": "string"}},
         "module_prerequisites": {"type": "array", "items": {"type": "string"}},
+        "lesson_mode": {"type": "string", "enum": sorted(_VALID_MODES)},
     },
     "required": [
         "title",
@@ -51,6 +57,7 @@ _MODULE_SCHEMA = {
         "prerequisites",
         "focus_areas",
         "module_prerequisites",
+        "lesson_mode",
     ],
     "additionalProperties": False,
 }
@@ -176,10 +183,16 @@ class CurriculumPlanner:
             depth=depth,
             focus_areas=_str_list(module.get("focus_areas")),
         )
+        # Provisional mode (doc 18, D2). Unknown/absent degrades to None — "undecided" —
+        # so the lesson planner infers it rather than receiving an invented word.
+        raw_mode = module.get("lesson_mode")
+        lesson_mode = raw_mode if raw_mode in _VALID_MODES else None
+
         return ModuleSpec(
             spec=spec,
             order=order,
             module_prerequisites=tuple(_str_list(module.get("module_prerequisites"))),
+            lesson_mode=lesson_mode,
         )
 
 

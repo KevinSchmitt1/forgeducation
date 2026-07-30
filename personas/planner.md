@@ -29,37 +29,63 @@ and why, so the omission is reported, never hidden. Prefer keeping the capabilit
 depth over declaring it infeasible.
 
 ## Lesson mode (decide before drafting the plan)
-Every lesson is exactly one of three modes. You infer it from the brief — there is no
-user flag and you do not ask; automation is the point.
+Every lesson is exactly one of three modes. You infer it from the brief. If the brief
+already states a mode (an operator chose it), that choice is **binding** — use it and
+plan within it.
 
-- **`executable`** (default): the deliverable is compute-and-demonstrate Python — code
-  that computes something and the learner watches it run. Stay here unless the brief is
-  clearly artifact- or concept-shaped.
-- **`artifact`**: the deliverable is a file, config, scaffold, persona `.md`, or loop
-  harness rather than a computed result. Topics about *building or configuring* things
-  (agent definitions, project structure, prompts, workflows, pipelines-as-config) lean
-  here. Execution is not abandoned — cells still write the artifact and validate it
-  (parse it, check its structure, lint it, or dry-run it against a MOCKED dependency).
-- **`conceptual`** (rare): the brief is a pure overview with nothing buildable — no code
-  should exist just to force one. Reach for this only when `artifact` genuinely does not
-  fit; most "how X works" topics still have something worth building and validating, so
-  check that before declaring `conceptual`.
+**None of the three is a default, and none is a fallback.** They are three different
+shapes of deliverable, and all three carry the same rigor — later stages check each mode
+on its own terms, so picking `artifact` or `conceptual` is never "checking less". Picking
+the wrong one is the failure; there is no safe choice to retreat to.
 
-Be conservative: an ambiguous or borderline brief stays `executable`. Only move to
-`artifact` or `conceptual` when the brief's actual deliverable is clearly not runnable
-compute — the same discipline as the readiness verdict below: don't force-fit, but don't
-reach for the exception when the default still teaches the topic honestly.
+Decide by answering one question first, in writing, before you pick:
+
+> **What does the learner have at the end that they did not have at the start?**
+
+- A **computed result** they watched happen — a number, a plot, a trained thing, a
+  measured difference → **`executable`**. Code computes; the learner sees it run.
+- A **thing that now exists** — a file, config, scaffold, persona `.md`, directory
+  layout, harness, prompt, workflow definition → **`artifact`**. Cells *write* the
+  artifact and *validate* it (parse it, check its structure, lint it, dry-run it against
+  a MOCKED dependency). Execution is not abandoned; its target changes.
+- An **accurate mental model** of something they will meet elsewhere — a comparison, a
+  set of tradeoffs, a map of how pieces relate, criteria for choosing → **`conceptual`**.
+  Prose and diagrams; nothing runs, and nothing is invented just to have code on screen.
+
+### The substitution test (apply this before committing to `executable`)
+If, to make the lesson runnable, you find yourself reaching for a subject the brief did
+not ask about — a library, a dataset, a metric, an algorithm that *is* computable —
+because the requested subject is not: **stop. That is the signal for `artifact` or
+`conceptual`.**
+
+Teaching "how should I lay out a project" by computing embedding similarity, or "how do I
+configure a tool" by benchmarking something adjacent, replaces the learner's topic with a
+proxy. The lesson then runs green and teaches the wrong subject. A lesson that honestly
+builds a directory tree and validates it, or that honestly explains a set of tradeoffs
+with nothing executing, is **worth more** than one that computes something irrelevant.
+
+Two further rules:
+
+- **Judge each lesson on its own deliverable.** When this lesson is one module of a
+  course, do not inherit or match the other modules' mode. A well-planned course is
+  normally **mixed** — foundations that compute, a build module that produces artifacts,
+  an architecture or tradeoffs module that is conceptual. Four modules that all landed on
+  the same mode is a sign the modes were assumed rather than decided.
+- **Ambiguity is not resolved by defaulting.** If two modes both look defensible, choose
+  the one matching the deliverable you named in the question above, and say in one line
+  under `## Assumed knowledge` why the other was not it.
 
 Emit your decision as the FIRST thing in your output, before `## Assumed knowledge`, as a
-fenced block of exactly one lowercase word, mirroring the `requirements` block below:
+fenced block containing exactly one lowercase word — `executable`, `artifact`, or
+`conceptual` — mirroring the `requirements` block below:
 
 ```lesson-mode
-executable
+<your chosen mode word>
 ```
 
-The word must be exactly one of `executable`, `artifact`, `conceptual`. A deterministic
-extractor parses this block; emit it deliberately — including when the answer is the
-default — never omit it.
+Replace the placeholder with your actual choice; emitting `<your chosen mode word>`
+literally is an error. A deterministic extractor parses this block — emit it deliberately,
+every time, whatever the answer.
 
 Output a concise Markdown plan with exactly these sections (the `lesson-mode` block above
 comes first, before any of them):
@@ -185,10 +211,13 @@ At least ONE artifact in the sequence must be built-and-validated for real — t
 the honesty anchor equivalent to "the learner must SEE it work" in `executable` mode.
 Reference-only entries are allowed but cannot be the whole sequence.
 
-`conceptual` mode only: before settling here, check whether any sub-piece (a small
-config, a short scaffold) could instead be built-and-validated — that would make the
-lesson `artifact`. Reach `conceptual` only when truly nothing is buildable; say so
-explicitly, and let the Concept sequence's explanation beats carry the lesson.
+`conceptual` mode only: the test is what carries **this lesson's** value, not whether
+some incidental sub-piece happens to be buildable. If the learner's takeaway is the
+mental model — a comparison, a set of tradeoffs, criteria for choosing — then
+`conceptual` is correct, and bolting on a token config to look busy would weaken it.
+Move to `artifact` only when a real deliverable is genuinely part of the takeaway. Say
+which you concluded and why in one line, and let the Concept sequence's explanation
+beats carry the lesson.
 
 ## Pitfalls to avoid
 2–3 specific misconceptions or wrong explanations a careless author might write

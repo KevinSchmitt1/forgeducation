@@ -7,11 +7,29 @@ localLLM run shipped a lesson whose payload sat behind ``if HAVE_DEPS:`` guards 
 silently skipped (see docs/architecture/10-output-quality-remediation.md, P6/P0).
 
 extract_requirements() turns the plan into a normalized requirement set plus a stable
-content-addressed hash, with no LLM and no network. Two sources, in priority order:
+content-addressed hash, with no LLM and no network. Two structured sources, checked in
+priority order, both machine-readable and both trusted:
 
-  1. A fenced ```requirements block the planner now emits — the machine-readable
-     contract. Parsed verbatim; must be pip-installable.
-  2. Regex-on-prose fallback for older plans: scan ``pip install ...`` lines.
+  1. A fenced ```requirements block — the planner's preferred, unambiguous contract.
+  2. An unfenced ``requirements`` heading (bare, or ``## requirements``) on its own
+     line, followed by requirement-shaped lines and terminated by a blank line or the
+     next markdown heading. The planner emits this format sporadically even though it
+     fences other blocks correctly in the same document (see
+     docs/architecture/18-mode-selection-bias-and-run-honesty.md, E4) — so this parser
+     tolerates the format instead of relying on persona instruction alone.
+
+There is deliberately no third, prose-mining source anymore. An earlier ``pip
+install ...`` regex fallback was the sole source of fabricated package names: it once
+matched a decoy sentence near a genuine (but unfenced, therefore unread) requirements
+block and turned English function words — several of which are real, live, installable
+PyPI packages — into "dependencies" to install. A missing dependency should fail
+loudly; a fabricated one fails confusingly and dangerously. See doc 18, D4.
+
+A structured block (fenced or heading) that contains content but yields zero
+parseable requirements is reported as ``source="malformed"`` with a human-readable
+``error`` — never silently treated as "no dependencies needed" and never phrased as an
+allow-list/policy violation (that conflation is exactly what hid the parser bug behind
+a security-sounding message in doc 18's E4).
 
 The requirements hash is the key Phase 5's content-addressed venv/wheel cache will use,
 so heavy deps are downloaded once and reused. It is computed over the requirement
@@ -34,27 +52,17 @@ from dataclasses import dataclass
 # only the first block is taken; case-insensitive tag for robustness.
 _FENCE_RE = re.compile(r"```requirements[^\n]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 
-# pip-install invocations in prose: `pip install ...`, `pip3 install ...`,
-# `python -m pip install ...`. Captures the remainder of the line (the packages).
-_PIP_INSTALL_RE = re.compile(
-    r"(?:python\s+-m\s+)?pip[0-9]*\s+install\s+(?P<args>[^\n]+)",
-    re.IGNORECASE,
-)
+# The secondary structured contract: a bare `requirements` line (optionally prefixed
+# with up to 6 `#`s, i.e. a markdown heading), alone on its own line. Whitespace-only
+# padding is tolerated; anything else on the line disqualifies it (it's prose, not a
+# block marker).
+_HEADING_RE = re.compile(r"^[ \t]*#{0,6}[ \t]*requirements[ \t]*$", re.IGNORECASE | re.MULTILINE)
 
-# Prose contains decoy "pip install ..." phrases ("then pip install the HF packages
-# above."). A real install command leads with a package name; an English clause leads
-# with an article/verb. When the first token after `pip install` is one of these
-# function words, the match is prose, not a command — skip it rather than mine the
-# sentence for fake packages. Conservative by design: the structured block is the
-# trustworthy path, so a missed legacy dep beats a fabricated one.
-_PROSE_LEAD_WORDS = frozenset(
-    {
-        "the", "a", "an", "and", "or", "then", "above", "below", "following",
-        "package", "packages", "using", "use", "via", "with", "from", "for",
-        "your", "you", "these", "those", "this", "that", "all", "any", "official",
-        "instructions", "them", "it",
-    }
-)
+# What ends an unfenced requirements block: a markdown *section* heading, i.e. two or more
+# hashes, which is how the planner writes its plan sections (`## Learning objectives`). A
+# single `#` is a requirements.txt comment and must NOT terminate the block — see
+# `_unfenced_heading_lines`.
+_SECTION_HEADING_RE = re.compile(r"^[ \t]*#{2,6}[ \t]+\S")
 
 # One requirement token: a PEP 503-ish name, optional [extras], optional version
 # specifier(s). Anything past a `#`/`;` (comment / environment marker) is ignored.
@@ -89,14 +97,23 @@ class Requirement:
 class RequirementSet:
     """The lesson's resolved dependencies plus how they were found.
 
-    ``source`` records provenance for the audit trail: ``"structured"`` (the planner's
-    fenced block, even if empty), ``"prose"`` (regex fallback), or ``"none"`` (nothing
-    declared). The requirements tuple preserves first-seen order; rendering and hashing
-    sort by name so neither depends on declaration order.
+    ``source`` records provenance for the audit trail:
+
+    - ``"structured"`` — a fenced or unfenced heading block, parsed successfully. This
+      includes a deliberately empty block (an explicit "no deps" is authoritative).
+    - ``"malformed"`` — a structured block was found and had content, but none of its
+      lines parsed as an installable requirement. ``error`` explains why; the caller
+      must treat this as a parser failure, never as "no dependencies" and never as a
+      policy/allow-list violation.
+    - ``"none"`` — no requirements block of either shape was found anywhere.
+
+    The requirements tuple preserves first-seen order; rendering and hashing sort by
+    name so neither depends on declaration order.
     """
 
     requirements: tuple[Requirement, ...]
     source: str
+    error: str | None = None
 
     @property
     def requirements_hash(self) -> str:
@@ -161,31 +178,64 @@ def _dedupe(requirements: list[Requirement]) -> tuple[Requirement, ...]:
     return tuple(by_name.values())
 
 
-def _parse_block(body: str) -> list[Requirement]:
-    """Parse the lines of a structured requirements block, skipping blanks/comments."""
+def _parse_body(body_lines: list[str]) -> tuple[list[Requirement], bool]:
+    """Parse requirement-shaped lines, skipping blanks/comments.
+
+    Returns ``(parsed, had_content)``. ``had_content`` is True when at least one
+    non-blank, non-comment line was present, regardless of whether it parsed — it is
+    how the caller distinguishes an explicit "no packages" block (no content at all)
+    from a malformed one (content present, nothing usable came out of it).
+    """
     parsed: list[Requirement] = []
-    for line in body.splitlines():
+    had_content = False
+    for line in body_lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
+        had_content = True
         req = _parse_token(stripped)
         if req is not None:
             parsed.append(req)
-    return parsed
+    return parsed, had_content
 
 
-def _parse_prose(plan_markdown: str) -> list[Requirement]:
-    """Scan every ``pip install ...`` line for package tokens, skipping prose decoys."""
-    parsed: list[Requirement] = []
-    for match in _PIP_INSTALL_RE.finditer(plan_markdown):
-        tokens = [_parse_token(t) for t in match.group("args").split()]
-        candidates = [req for req in tokens if req is not None]
-        if not candidates or candidates[0].name in _PROSE_LEAD_WORDS:
-            # Leads with an article/verb (or nothing parseable) → an English clause,
-            # not an install command. Don't fabricate packages from a sentence.
-            continue
-        parsed.extend(candidates)
-    return parsed
+def _unfenced_heading_lines(plan_markdown: str) -> list[str] | None:
+    """Body lines of an unfenced ``requirements`` heading block, or None if absent.
+
+    The block starts on the line after the heading and runs until the first blank
+    line or the next markdown *section* heading, whichever comes first — deliberately
+    narrow so unrelated prose elsewhere in the plan is never swept in.
+
+    A section heading means two or more hashes (`## Learning objectives`), matching how
+    the planner actually writes its plans. A single-hash line is a requirements.txt-style
+    comment (`# core forecasting lib`) and is passed through to `_parse_body`, which skips
+    it — terminating there instead would silently drop every package below the comment,
+    with no error and no `malformed` flag.
+    """
+    match = _HEADING_RE.search(plan_markdown)
+    if match is None:
+        return None
+    # `split("\n")` (not splitlines()) so index 0 is always the (empty) remainder of
+    # the heading line itself; real content starts at index 1.
+    rest = plan_markdown[match.end() :].split("\n")[1:]
+    lines: list[str] = []
+    for line in rest:
+        if not line.strip() or _SECTION_HEADING_RE.match(line):
+            break
+        lines.append(line)
+    return lines
+
+
+def _malformed(kind: str) -> RequirementSet:
+    return RequirementSet(
+        (),
+        source="malformed",
+        error=(
+            f"The plan's {kind} is malformed: none of its lines could be parsed as "
+            "installable package requirements. This is a plan-formatting problem — "
+            "fix the plan's requirements block."
+        ),
+    )
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────────
@@ -199,16 +249,24 @@ def extract_requirements(plan_markdown: str) -> RequirementSet:
             where dependencies live, but the whole document is scanned).
 
     Returns:
-        A RequirementSet. The structured ```requirements block wins when present (even
-        if empty — an explicit "no deps" is authoritative); otherwise the prose pip
-        fallback is used; otherwise an empty set with source ``"none"``.
+        A RequirementSet. The fenced ```requirements block wins when present;
+        otherwise an unfenced ``requirements`` heading block is used; otherwise an
+        empty set with source ``"none"``. Either structured source reports
+        ``source="malformed"`` instead of an empty/"none" result when it has content
+        that yields no usable requirements.
     """
     fence = _FENCE_RE.search(plan_markdown)
     if fence is not None:
-        return RequirementSet(_dedupe(_parse_block(fence.group(1))), source="structured")
+        body_lines = fence.group(1).splitlines()
+        kind = "fenced requirements block"
+    else:
+        heading_lines = _unfenced_heading_lines(plan_markdown)
+        if heading_lines is None:
+            return RequirementSet((), source="none")
+        body_lines = heading_lines
+        kind = "requirements heading block"
 
-    prose = _parse_prose(plan_markdown)
-    if prose:
-        return RequirementSet(_dedupe(prose), source="prose")
-
-    return RequirementSet((), source="none")
+    parsed, had_content = _parse_body(body_lines)
+    if had_content and not parsed:
+        return _malformed(kind)
+    return RequirementSet(_dedupe(parsed), source="structured")

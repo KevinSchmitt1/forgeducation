@@ -167,7 +167,7 @@ def test_course_without_plan_only_invokes_orchestrator(monkeypatch, tmp_path) ->
     captured = _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
 
     assert code == cli.EXIT_OK
@@ -183,7 +183,7 @@ def test_course_run_writes_post_run_readme_and_course_md(monkeypatch, tmp_path) 
     _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
 
     assert code == cli.EXIT_OK
@@ -203,7 +203,7 @@ def test_course_threads_max_modules_and_no_provision(monkeypatch, tmp_path) -> N
     captured = _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
 
     cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path),
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes",
          "--max-modules", "1", "--no-provision"]
     )
 
@@ -218,7 +218,7 @@ def test_course_with_failed_module_exits_runtime(monkeypatch, tmp_path) -> None:
     _patch_run_course(monkeypatch, _module_result(course, terminal_ok=False))
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
     assert code == cli.EXIT_RUNTIME
 
@@ -239,7 +239,7 @@ def test_course_fidelity_failure_blocks_orchestration(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(orch, "run_course", _fake)
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
     assert code == cli.EXIT_RUNTIME
     assert ran["called"] is False
@@ -265,7 +265,7 @@ def test_redecompose_routes_to_reactive_loop_and_threads_max_depth(monkeypatch, 
     monkeypatch.setattr(cli, "_make_remediation_planner", lambda personas_dir: object())
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path),
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes",
          "--redecompose", "--max-depth", "3"]
     )
 
@@ -281,8 +281,31 @@ def test_without_redecompose_uses_sequential_run_course(monkeypatch, tmp_path) -
     captured = _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
 
     assert code == cli.EXIT_OK
     assert "max_depth" not in captured["kwargs"]  # sequential path, no reactive kwargs
+
+
+# ── The course path gates before spending (doc 18, D3/Phase 5) ────────────────────
+
+
+@pytest.mark.unit
+def test_course_without_yes_on_a_non_tty_is_a_usage_error(monkeypatch, tmp_path, capsys):
+    """`course` used to spend on module builds with no confirmation at all — the
+    2026-07-28 run built four paid modules nobody had reviewed (doc 18, E5)."""
+    # Arrange
+    import sys as _sys
+
+    _patch_planner(monkeypatch, _faithful_course())
+    monkeypatch.setattr(_sys.stdin, "isatty", lambda: False)
+
+    # Act
+    code = cli.main(
+        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+    )
+
+    # Assert — no TTY and no --yes means nothing paid runs.
+    assert code == cli.EXIT_USAGE
+    assert "--yes" in capsys.readouterr().err

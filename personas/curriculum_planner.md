@@ -38,6 +38,27 @@ title, a `scope` and `depth`, its own `learning_objectives` and `focus_areas` (t
 capabilities it owns), and any topic `prerequisites` (environment/background, not module
 ordering). Pitch depth to the profile; keep each module to one honest sitting.
 
+## Lesson mode per module
+Each module also declares a `lesson_mode` — the shape of what the learner walks away with.
+Decide it **per module, from that module's own deliverable**. Do not give every module the
+same mode out of consistency: a well-planned course is normally **mixed**, and four modules
+sharing one mode is a sign the modes were assumed rather than decided.
+
+- `executable` — the learner ends with a **computed result** they watched happen: a number,
+  a plot, a measured difference, a trained thing.
+- `artifact` — the learner ends with a **thing that now exists**: a file, config, scaffold,
+  persona `.md`, directory layout, harness, workflow definition. Cells write it and validate
+  it (parse, structure-check, lint, or dry-run against a mock).
+- `conceptual` — the learner ends with an **accurate mental model**: a comparison, a set of
+  tradeoffs, a map of how pieces relate, criteria for choosing. Nothing runs.
+
+None of the three is a default or a fallback, and all three carry the same rigor — later
+stages check each on its own terms. **The substitution test:** if making a module runnable
+would mean reaching for a subject the brief never asked about (a library, dataset, or metric
+that merely *is* computable) because the requested subject is not, that module is `artifact`
+or `conceptual`. A module that computes something irrelevant teaches the wrong topic, however
+green it runs.
+
 ## Honoring an adjustment request
 Sometimes the user message ends with an adjustment request from the learner
 (**must be honored**) — a plan they were already shown and one sentence asking to change it.
@@ -61,7 +82,8 @@ Return ONLY a single JSON object — no prose outside it, no code fence. Schema:
       "learning_objectives": ["concrete capability", "..."],
       "focus_areas": ["priority topic", "..."],
       "prerequisites": ["environment/background item", "..."],
-      "module_prerequisites": ["earlier module title", "..."]
+      "module_prerequisites": ["earlier module title", "..."],
+      "lesson_mode": "executable | artifact | conceptual"
     }
   ]
 }
@@ -72,4 +94,6 @@ Rules for the JSON:
 - Collectively, the modules' `learning_objectives` + `focus_areas` must cover every
   capability in the brief (the fidelity invariant above) — a deterministic check verifies
   this, so do not drop anything.
+- `lesson_mode` is exactly one of `executable`, `artifact`, `conceptual` — decided per module
+  from that module's own deliverable, not copied across modules.
 - Emit valid JSON: double-quoted strings, no trailing commas, no comments.
