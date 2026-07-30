@@ -45,6 +45,7 @@ from .deliverables import (
 )
 from .models import LearnerProfile, TopicSpecification
 from .orchestrator import MANIFEST_FILE, Orchestrator
+from .pipeline.mode import render_mode_directive
 from .progress import Spinner
 from .usage import write_usage_report
 
@@ -261,6 +262,7 @@ def _run_agentic_lesson(
     run_dir: Path,
     provision: bool,
     debug: bool,
+    lesson_mode=None,
 ) -> int:
     """Run one lesson through the agentic pipeline and write its deliverables.
 
@@ -268,6 +270,10 @@ def _run_agentic_lesson(
     front door's 1-module branch (doc 16): given a resolved topic spec + learner profile,
     it provisions, runs the pipeline, writes lesson.ipynb / SUMMARY.md / the learner
     package / usage, and returns an honest exit code (0 only on an acceptable notebook).
+
+    `lesson_mode`, when set, is a mode already decided upstream (the operator at the plan
+    gate) and is handed down as binding — this branch bypasses the course orchestrator, so
+    without it a 1-module plan would silently drop the override (doc 18, D3).
     """
     import asyncio
     import logging
@@ -301,6 +307,11 @@ def _run_agentic_lesson(
         # The shared learner + topic context block; every LLM agent reads this
         # (see forged.context, forged.pipeline.agents.Agent._context_prefix).
         context_block = build_context_block(learner_profile, topic_spec)
+        directive = render_mode_directive(lesson_mode)
+        if directive:
+            context_block = (
+                f"{context_block}{directive}" if context_block else directive.lstrip()
+            )
         if context_block:
             store.put(Artifact(name="lesson_context", kind="text", content=context_block))
         # Structured counterpart to lesson_context: the requested capabilities as
@@ -747,6 +758,7 @@ def _build_confirmed(
             run_dir=run_dir,
             provision=provision,
             debug=args.debug,
+            lesson_mode=module.lesson_mode,
         )
 
     report = assess_course_fidelity(list(original_capabilities), course)

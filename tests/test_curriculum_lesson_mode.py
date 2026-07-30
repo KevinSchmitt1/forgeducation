@@ -16,8 +16,10 @@ one whose rigor covers both.
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
+from pathlib import Path
 
 import pytest
 
@@ -479,3 +481,48 @@ def test_a_plain_mode_word_still_parses() -> None:
 
     assert _mode_from_sentence("make module 2 conceptual") == "conceptual"
     assert _mode_from_sentence("artifact") == "artifact"
+
+
+# ── The single-lesson `learn` branch must not drop a gate-set mode ────────────────
+
+
+def test_render_mode_directive_is_shared_by_both_seeding_paths() -> None:
+    # Arrange / Act — one wording, used by the course orchestrator and the 1-module
+    # `learn` branch, so they cannot drift.
+    from forged.pipeline.mode import render_mode_directive
+
+    directive = render_mode_directive("conceptual")
+
+    # Assert
+    assert "conceptual" in directive
+    assert "lesson mode" in directive.lower()
+    assert render_mode_directive(None) == ""
+
+
+def test_single_module_learn_forwards_the_gate_set_mode(monkeypatch) -> None:
+    """`learn` on a 1-module plan calls `_run_agentic_lesson` directly, bypassing the
+    course orchestrator that carries the mode — the override must survive that path."""
+    # Arrange
+    import forged.cli as cli
+
+    captured: dict = {}
+
+    def _fake_run_agentic_lesson(**kwargs):
+        captured.update(kwargs)
+        return cli.EXIT_OK
+
+    monkeypatch.setattr(cli, "_run_agentic_lesson", _fake_run_agentic_lesson)
+
+    course = _course(_module("Project layout", 0, "artifact"))
+    args = argparse.Namespace(
+        runs="runs", no_provision=True, debug=False, max_modules=None
+    )
+
+    # Act
+    cli._build_confirmed(
+        args, course, _profile(), "project layout",
+        pipeline=object(), personas_dir=Path("personas"), original_capabilities=[],
+    )
+
+    # Assert — the mode the operator chose at the gate reaches the lesson planner.
+    assert captured["lesson_mode"] == "artifact"

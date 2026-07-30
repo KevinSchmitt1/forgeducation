@@ -26,9 +26,18 @@ first end-to-end *observed* validation of the lesson-mode machinery designed in
   reads the reason from the module's `FAILED.md` stub rather than plumbing a new `ModuleResult`
   field, keeping the reason single-sourced.
 - **D3** — the interactive gate already existed (doc 16) but was wired only into `learn`. `course`
-  ran ungated, which is *why* the 2026-07-28 run spent four paid module builds nobody had reviewed.
-  Phase 5 wired it; `course` now requires `--yes` on a non-TTY, exactly as `learn` has since doc 16.
-  This is a **behavior change** for scripted `course` invocations.
+  ran ungated; Phase 5 wired it, and `course` now requires `--yes` on a non-TTY exactly as `learn`
+  has since doc 16. This is a **behavior change** for scripted `course` invocations.
+
+  **Correction:** an earlier draft of this doc claimed the 2026-07-28 run itself went through that
+  ungated path. It did not — Kevin ran `learn`. The `course_` run-directory prefix is *not* evidence
+  of the command: `_build_confirmed` (the `learn` N-module branch,
+  [`cli.py`](../../forged/cli.py)) and `_cmd_course` both name their output
+  `{stamp}_course_{topic-slug}`. So that run **was** gated and confirmed. What the gate could not
+  show was how each module would be *taught*: modes did not exist on `ModuleSpec` and were inferred
+  per module by the lesson planner only after the build began. The gate had nothing to display and
+  the operator nothing to veto — which is what D3 fixes. Wiring `course` to the gate remains a real
+  hole worth closing; it just was not this run's hole.
 - **D3** — mode override rides in the existing `AdjustmentIntent` (`op="set_mode"`, one target) with
   the mode word parsed deterministically from the learner's sentence, rather than widening the
   adjuster's JSON schema. No second LLM call to read one word. `set_mode` is therefore the one
@@ -150,6 +159,12 @@ signal that anything was wrong was an `ImportError` at their own keyboard.
 
 Course-level plan-fidelity reported `⚠ DROPPED` **for the entire raw topic**, printed at the bottom
 of `COURSE.md` after the money was spent, and routed nowhere.
+
+Note this run was launched with `learn`, so the doc-16 plan gate *did* run and the plan *was*
+confirmed. Everything above happened downstream of that confirmation: the gate showed module titles
+and objectives, but nothing about how each module would be taught, and the failures surfaced only
+after the build. Gating is necessary but was not sufficient — the gate has to display the decision
+that actually goes wrong.
 
 ### E6 — Unrelated degradations surfaced (not in the learner's feedback)
 
