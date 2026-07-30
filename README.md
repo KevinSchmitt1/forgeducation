@@ -162,7 +162,10 @@ notebook against it — so the lesson's cells execute for real instead of skippi
 `if HAVE_DEPS:` guards. If the required packages can't be installed, the run **fails
 honestly** (it never ships a green-but-empty notebook). Pass `--no-provision` to skip the
 venv and run on the base kernel (fast/offline when the deps are already importable).
-Provisioning only installs from a vetted package allow-list.
+Provisioning installs what the lesson plan declares, bounded by an install timeout and an
+environment size cap. (There is no package allow-list: requirements come only from the
+planner's machine-readable `requirements` block, never mined from prose, so an invented
+package name cannot reach `pip` — see `docs/architecture/18-*.md`.)
 
 ### Exit codes
 

@@ -7,7 +7,7 @@ lesson's environment from the planner's prerequisites (Phase 3) and **provision 
 real** before execution, so cells run instead of skipping.
 
 provision_environment() takes a resolved RequirementSet and:
-  1. refuses anything outside a package allow-list (security),
+  1. optionally refuses anything outside a caller-supplied allow-list (off by default),
   2. reuses a content-addressed venv keyed by the requirements hash + interpreter
      version (heavy deps download once, reused across runs — the key cost lever),
   3. otherwise builds the venv, pip-installs under a timeout, enforces a size cap,
@@ -18,10 +18,14 @@ caller writes a failing execution report, caught by the Phase-2 gate), never a
 green-but-hollow environment.
 
 Security posture: every external call is a subprocess with an **argument list** (never
-a shell string), so package names/specifiers cannot inject commands; the allow-list is
-the primary control against installing arbitrary or malicious packages; timeout and
-size cap bound resource abuse. The subprocess runner and size probe are injectable so
-the logic is unit-tested with no real venv, pip, or network.
+a shell string), so package names/specifiers cannot inject commands. The primary control
+against installing a *fabricated* package is upstream, in dependencies.py: requirements
+come only from the planner's structured block, never mined from prose (doc 18, D4) — that
+is what closed the arbitrary-code-execution path. Timeout and size cap bound resource
+abuse. There is deliberately no default package allow-list; see the note on
+DEFAULT_ALLOWED_PACKAGES for why curating one cost more than it protected. The subprocess
+runner and size probe are injectable so the logic is unit-tested with no real venv, pip,
+or network.
 """
 
 from __future__ import annotations
@@ -47,9 +51,25 @@ DEFAULT_INSTALL_TIMEOUT_SECONDS = 600  # pip install ceiling (heavy wheels like 
 DEFAULT_VENV_TIMEOUT_SECONDS = 120
 DEFAULT_MAX_ENV_SIZE_MB = 4096  # torch ~2 GB; leave headroom but cap runaway installs
 
-# Conservative allow-list: the pip packages a teaching notebook may install. Anything
-# outside this set is refused — a deliberate security control, not an exhaustive index.
-# Extend intentionally; do not widen to "anything" without a review.
+# NOT a default policy any more — kept as a convenience set a caller may opt into via
+# `provision_environment(..., allowed_packages=...)`, and used by the tests.
+#
+# Why the default gate was removed (2026-07-30): its real job was stopping *fabricated*
+# package names from reaching `pip install`, which is a genuine arbitrary-code-execution
+# vector — the planner once emitted `not`, `required`, `for`, `the`, `core`, four of which
+# are live PyPI packages whose `setup.py` would have run. That vector was closed at the
+# source when doc 18's D4 deleted the prose miner: requirements can now only come from the
+# planner's structured block, so a fabricated name cannot get here at all.
+#
+# What remained was a hand-curated list vetoing packages the planner *deliberately chose*,
+# and it could not keep up. It killed paid modules on `openai`, `faiss-cpu`, `pytest`,
+# then — one day after being widened for those — on `pydantic`, `jinja2`, `structlog`,
+# `prometheus-client`, `respx` and `jsonschema`. Every miss costs a real paid build, and
+# no curator anticipates every topic a learner might ask about. Refusing what the planner
+# asked for is not safety here; it is a guaranteed recurring outage.
+#
+# Remaining guards are the ones that need no curation: the install timeout and the
+# environment size cap above.
 DEFAULT_ALLOWED_PACKAGES: frozenset[str] = frozenset(
     {
         # core scientific / data
@@ -83,7 +103,8 @@ class ProvisionResult:
         kernel" (an empty requirement set needs no venv).
     cache_hit: True when an existing content-addressed venv was reused.
     installed: the rendered requirement lines that define the env.
-    rejected: requirement names refused by the allow-list (security).
+    rejected: requirement names refused by a caller-supplied allow-list (empty by
+        default, since no allow-list is imposed).
     error: human-readable failure cause when ok is False; None on success.
     """
 
@@ -142,8 +163,8 @@ def provision_environment(
         cache_root: directory holding content-addressed venvs (shared across runs).
         python_executable: interpreter used to create the venv (defaults to the
             running interpreter).
-        allowed_packages: PEP 503-normalized names permitted; defaults to
-            DEFAULT_ALLOWED_PACKAGES. Anything else is refused.
+        allowed_packages: optional policy. None (the default) installs whatever the
+            plan asked for; a set restricts to those PEP 503-normalized names.
         install_timeout_seconds / venv_timeout_seconds: subprocess ceilings.
         max_env_size_mb: reject an installed env larger than this.
         runner / size_probe: injectable seams for testing.
@@ -153,7 +174,10 @@ def provision_environment(
         cache entry behind, so a failed build is rebuilt (or re-fails) next time.
     """
     python_executable = python_executable or sys.executable
-    allowed = allowed_packages if allowed_packages is not None else DEFAULT_ALLOWED_PACKAGES
+    # No curated allow-list by default: `allowed_packages=None` means "install what the
+    # plan asked for". See the note on DEFAULT_ALLOWED_PACKAGES for why the default gate
+    # was removed. A caller that genuinely wants a policy can still pass a set.
+    allowed = allowed_packages
     rhash = requirement_set.requirements_hash
     reqs = requirement_set.requirements
 
@@ -174,8 +198,8 @@ def provision_environment(
     if not reqs:
         return ProvisionResult(ok=True, requirements_hash=rhash, kernel_name=None)
 
-    # Security gate: refuse anything outside the allow-list before touching the system.
-    rejected = tuple(r.name for r in reqs if r.name not in allowed)
+    # Optional policy gate: only when a caller explicitly supplied an allow-list.
+    rejected = () if allowed is None else tuple(r.name for r in reqs if r.name not in allowed)
     if rejected:
         return ProvisionResult(
             ok=False,

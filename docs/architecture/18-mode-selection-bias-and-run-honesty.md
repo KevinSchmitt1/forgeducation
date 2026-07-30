@@ -358,6 +358,48 @@ A short topic stays assessable, so genuine drop detection still works (covered b
 should not be read as such in this doc. The per-module `⚠ still dropped` lists are different — those
 come from the R1 detector against each module's own spec — and remain real signal.
 
+## Second validation attempt (2026-07-30 22:40) — and the end of the allow-list
+
+Run: `runs/20260730-224009_course_teach_me_how_to_work_with_ai_a`. **0/2 modules built.**
+Both died in provisioning, on the allow-list:
+
+- module 0 — `pydantic, respx, structlog, prometheus-client, jinja2`
+- module 1 — `jsonschema`
+
+Every one of those is mainstream, and the list had been widened for the agent stack (D5) **one day
+earlier**. That is the curation-lag failure mode this doc named, recurring immediately, at the cost
+of two paid module builds.
+
+**The allow-list is removed as a default.** The reasoning that justified it no longer holds:
+
+- Its real job was stopping *fabricated* names reaching `pip install` — a genuine
+  arbitrary-code-execution vector, since the planner once emitted `not`/`required`/`for`/`the`/`core`
+  and four of those are live PyPI packages whose `setup.py` would have run.
+- **D4 closed that vector at the source.** Requirements now come only from the planner's structured
+  block; the prose miner is gone, so a fabricated name cannot reach provisioning at all.
+- What remained was a hand-curated list vetoing packages the planner *deliberately chose*. It cannot
+  anticipate every topic, and each miss costs a real paid build. That is not safety; it is a
+  guaranteed recurring outage.
+
+`allowed_packages` survives as an opt-in parameter for a caller that genuinely wants a policy (and
+for the tests). The remaining guards need no curation: the install timeout and the environment size
+cap. An earlier, more elaborate proposal (PyPI existence/maturity checks plus interactive consent)
+stays rejected as over-engineered — see D4's rejected-alternative note.
+
+### What this run did confirm
+
+Everything downstream of the mode fix is working:
+
+- **Modes stayed mixed** (a harness build + a personal-workflow architecture module), and module 1's
+  dependencies were `pyyaml`, `jsonschema`, `numpy` — a light, artifact-shaped set, not the
+  FAISS-and-embeddings force-fit of 2026-07-28. The debias holds across runs.
+- **`FAILED.md` and `pipeline.log` were written for both modules**, with the reason inline in
+  `COURSE.md` — the crash-diagnostics work landed and does its job.
+- **`ⓘ not assessed`** replaced the false `⚠ DROPPED` fidelity line.
+
+Criteria 3–5 remain **unmeasured**: no module has yet produced a notebook, so nothing can be said
+about concreteness or code share. That is what the next run is for.
+
 ## Deferred
 
 - Topic-fidelity **routing** (DROP → replan). Gated on validation step 3 above.

@@ -6,40 +6,60 @@
 
 ---
 
-## 🎯 NEXT UP — THE DOC-18 VALIDATION RE-RUN
+## 🎯 NEXT UP — RE-RUN THE DOC-18 VALIDATION (criteria 3–5 still unmeasured)
 
-**Run B already happened** (2026-07-28, `runs/20260728-145848_course_teach_me_how_to_work_with_ai_a`)
-and it **failed the way doc 17 predicted it might**: the planner declared `executable` for all four
-modules — correctly fenced, so a judgment failure, not a parse bug — including a module about file
-layout. Kevin's feedback (that run's `feedback.md`) plus the full diagnosis is
-[`docs/architecture/18-mode-selection-bias-and-run-honesty.md`](docs/architecture/18-mode-selection-bias-and-run-honesty.md).
-
-The remediation (D1–D6) is **implemented** on `feat/mode-selection-debias`. What is *not* yet known
-is whether the debiased planner actually produces a mixed course — no test can prove an LLM's
-judgment. That needs one paid re-run of the **same** topic:
+**Status as of 2026-07-30, end of session.** The lesson-mode debias **works** and is proven across
+two runs. What is *not* yet known is whether the resulting notebooks are actually better, because
+**no module has produced a notebook yet** — the last two attempts died in environment provisioning,
+not in the pipeline. That blocker is now fixed (allow-list removed, PR #31). The next action is
+simply to run it again.
 
 ```bash
 .venv/bin/python -m forged.cli learn \
   --topic "Teach me how to work with AI agents: how to build them, build harnesses for them, and optimize agentic workflows. At the same time, teach me how to optimize my own workflow with AI and make my AI setup learn together with me — meaning how I manage all the files and data on my machine, and how the architecture of that should look." \
-  --learner-profile templates/examples/kevin_learner.yaml \
-  --runs runs
+  --learner-profile templates/examples/kevin_learner.yaml
 ```
 
-Use `learn` — the same front door as the 2026-07-28 run, so the comparison is like-for-like.
-The plan gate prints each module's mode before spending, warns if every
-module shares one, and takes "make module 2 conceptual" as a deterministic override. Check the
-gate output *first* — the mode mix is visible there for free, before any paid build.
+Use `learn` (the same front door as the 2026-07-28 baseline, so it is like-for-like). The plan gate
+shows each module's mode **before** any spend, warns when every module shares one mode, and takes
+`make module 2 conceptual` as a deterministic override that costs no re-plan.
 
-Success criteria, in order:
-1. The planner emits a **mix** of modes (not 4×`executable`).
-2. The gate shows them and a mode can be overridden without re-planning.
-3. The subject stays concrete about the named tool instead of drifting to computable proxies.
-4. Code share drops from the 76–89% band that run produced.
-5. All four modules provision (the allow-list now carries the agent stack).
+### Criteria — where they stand
 
-> Criteria 1–3 passing would confirm doc 18's causal chain (mode → abstraction → code-heaviness) and
-> retire the topic-fidelity-routing question. **Criterion 1 passing while 3 fails** would prove
-> fidelity drift is an independent defect and re-open it as its own doc.
+| # | Criterion | Status |
+|---|---|---|
+| 1 | Planner emits a **mix** of modes (not all `executable`) | ✅ **PASS**, twice |
+| 2 | Gate shows modes; a mode can be overridden without re-planning | ✅ works |
+| 3 | Subject stays concrete instead of drifting to computable proxies | ⬜ **unmeasured** — no notebook yet |
+| 4 | Code share drops from the 76–89% band | ⬜ **unmeasured** — needs a built mixed course |
+| 5 | All modules provision | ⬜ blocked twice by the allow-list; should now pass |
+
+> **Read the notebooks, not just the gate.** Criterion 1 is settled. The open question is Kevin's
+> original complaint: does an `artifact` lesson on personal workflow architecture hand him a scaffold
+> he would keep, and does it stay concrete about Claude Code rather than drifting to generic tooling?
+> Criterion 1 passing while 3 fails would prove fidelity drift is an **independent** defect and
+> re-open it as its own doc.
+
+### The two runs so far
+
+| Run | Modes | Outcome |
+|---|---|---|
+| `20260728-145848_course_…` | 4 × `executable` | the finding that produced doc 18 |
+| `20260730-215250_course_…` | `executable` + **`artifact`** | debias confirmed; module 1 crashed, and destroyed its own evidence → PR #29 |
+| `20260730-224009_course_…` | mixed again, light deps | **0/2** — both modules refused by the package allow-list → PR #31 removed it |
+
+Full diagnosis, decisions, and corrections:
+[`docs/architecture/18-mode-selection-bias-and-run-honesty.md`](docs/architecture/18-mode-selection-bias-and-run-honesty.md).
+
+### Known loose ends (neither blocking)
+
+- **CI never invokes the CLI the way a user does.** Tests `import forged.cli`; users run
+  `python -m forged.cli`. A NameError shipped to `master` through 700 green tests, ruff and mypy
+  because of exactly this (#30). A smoke test asserting `learn --topic "   "` exits with the usage
+  error would close it — no network, no spend. A structural test now guards the specific
+  "defined after the `__main__` guard" mistake, but not the general hole.
+- **`personas/code_author.md:22`** still calls `conceptual` "(rare)" — a leftover anchor stripped
+  from `planner.md`, `reviewer.md` and `student.md` when the mode selection was debiased.
 
 ### Also still open — Run A (regression re-run)
 
@@ -115,6 +135,21 @@ Same input as the original "local LLMs" runs, to check the program improved.
   - see `docs/architecture/17-lesson-modes.md`
 
 ### ✅ Recently Completed
+
+- **Lesson-mode debias + run honesty (doc 18) — PRs #28, #29, #30, #31 (2026-07-30).** The
+  2026-07-28 course run declared `executable` for all four modules, and everything Kevin complained
+  about (code-heavy, not practical, broken modules) traced to that one biased persona section. The
+  mode machinery from doc 17 and its critics were checked and found *fine* — no new agents were
+  needed. Shipped: planner/curriculum-planner personas debiased around "what does the learner have
+  at the end?" plus a substitution test; per-module `lesson_mode` on `ModuleSpec`, shown at the plan
+  gate with a deterministic `set_mode` override and a homogeneous-mode warning; `course` wired to the
+  gate (now needs `--yes` on a non-TTY); the `pip install` prose miner deleted and the unfenced
+  `requirements` heading parsed; crash diagnostics (`FAILED.md` + per-module `pipeline.log`) so a
+  module that raises can no longer destroy its own evidence; the false `⚠ DROPPED` fidelity line
+  replaced by a third outcome, `ⓘ not assessed`; and the package allow-list removed as a default.
+  **Confirmed on two live runs: the planner now emits a mix of modes.** See
+  `docs/architecture/18-mode-selection-bias-and-run-honesty.md` for the full causal chain, the
+  rejected alternatives, and two corrections to its own earlier evidence.
 
 - **Structured (JSON-schema) grader outputs.** Student and Reviewer now request OpenAI
   `response_format={"type": "json_schema", ...}` via `LLMClient.complete(...)` instead of relying on
