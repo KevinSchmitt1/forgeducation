@@ -300,6 +300,64 @@ paid re-run of this same topic**, checking in order:
 Success on 1–3 would confirm the causal chain and retire the fidelity-routing question. Failure on 3
 while 1 passes would prove fidelity is an independent defect and re-open it as its own doc.
 
+## Validation result (2026-07-30 re-run)
+
+Run: `runs/20260730-215250_course_teach_me_how_to_work_with_ai_a`, same topic, same learner profile,
+via `learn`, unconstrained.
+
+**Criterion 1 — PASS.** The course planner emitted a **mix**, and assigned `artifact` to precisely
+the module that had FAISS force-fitted into it before:
+
+| Module | Mode |
+|---|---|
+| 0 — Implementing and Evaluating AI Agents and Harnesses | `executable` |
+| 1 — Designing an AI-First Personal Workflow and Continuous Co-Learning | **`artifact`** |
+
+It also sized down from four modules to two. The hand-down worked end to end: module 1's
+`lesson_context.md` carries the binding `artifact` directive. After 8/8 `executable`, the persona
+debias (D1) is confirmed to change real behavior.
+
+**Criteria 3–5 — unmeasurable**, because module 1 crashed (below) and criterion 4's signal lived in
+that module. Module 0 is 80% code, which is *legitimate* for an `executable` lesson — the code-share
+metric only means something across a mixed course.
+
+### Two defects this run exposed
+
+**F1 — a crashed module destroyed its own evidence.** Module 1 raised inside `run_pipeline`. Two
+independent gaps meant nothing survived:
+
+- `_run_one_module`'s `except` path returns **before** `_write_module_deliverables`, so neither
+  `SUMMARY.md` nor D6's `FAILED.md` was written. D6 only ever covered "completed but unacceptable";
+  "raised" is a different path and was never handled.
+- `setup_logging` is called only in `_run_agentic_lesson` (the *single-lesson* CLI path). The course
+  orchestrator configured no logging at all, so `_LOG.exception(...)` went to a handler-less logger
+  and the traceback was **discarded**.
+
+The module left only its seed files, and the cause is permanently unknowable. Fixed: the orchestrator
+now calls `setup_logging` per module (each gets its own `pipeline.log`) and writes a crash stub via
+`write_crash_stub` carrying the exception type, message, and full traceback.
+
+**F2 — the course-level fidelity check was structurally incapable of passing on a free-text topic,
+and this doc cited its output as evidence.** E5 above notes the `⚠ DROPPED` line for the whole raw
+topic. That is an **artifact, not drift**. Demonstrated: feeding a haystack that plainly covers the
+topic still returns `0 covered, 2 missing`. Two compounding causes:
+
+1. `_default_topic_spec` put the raw topic into **both** `learning_objectives`
+   (`f"Understand {topic}"`) and `focus_areas` (`topic`). Distinctive terms are computed *among* the
+   requested set, so the near-duplicate pair cancelled to the single term `understand` — a word no
+   module title contains. Fixed: `focus_areas` no longer repeats the topic.
+2. Term-coverage assumes a **capability statement** ("train a LoRA adapter"), not a 60-word brief,
+   whose distinctive-term set is dominated by connective words no module title carries. Fixed:
+   `assessable_capabilities` (`MAX_ASSESSABLE_CAPABILITY_WORDS = 30`) filters paragraph-shaped
+   entries, and the verdict gained a third outcome — **`ⓘ not assessed`** — because claiming a drop
+   that was never measured, or a ✓ that was never earned, are both dishonest.
+
+A short topic stays assessable, so genuine drop detection still works (covered by test).
+
+**Correction to E5 above:** the course-level `⚠ DROPPED` line is *not* evidence of subject drift and
+should not be read as such in this doc. The per-module `⚠ still dropped` lists are different — those
+come from the R1 detector against each module's own spec — and remain real signal.
+
 ## Deferred
 
 - Topic-fidelity **routing** (DROP → replan). Gated on validation step 3 above.

@@ -19,13 +19,14 @@ is whether the debiased planner actually produces a mixed course — no test can
 judgment. That needs one paid re-run of the **same** topic:
 
 ```bash
-.venv/bin/python -m forged.cli course \
+.venv/bin/python -m forged.cli learn \
   --topic "Teach me how to work with AI agents: how to build them, build harnesses for them, and optimize agentic workflows. At the same time, teach me how to optimize my own workflow with AI and make my AI setup learn together with me — meaning how I manage all the files and data on my machine, and how the architecture of that should look." \
   --learner-profile templates/examples/kevin_learner.yaml \
   --runs runs
 ```
 
-`course` is now gated: the plan gate prints each module's mode before spending, warns if every
+Use `learn` — the same front door as the 2026-07-28 run, so the comparison is like-for-like.
+The plan gate prints each module's mode before spending, warns if every
 module shares one, and takes "make module 2 conceptual" as a deterministic override. Check the
 gate output *first* — the mode mix is visible there for free, before any paid build.
 

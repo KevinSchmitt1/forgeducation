@@ -34,7 +34,7 @@ from pathlib import Path
 from .config import load_pipeline
 from .context import build_context_block, topic_spec_to_json
 from .curriculum.assembler import assemble_course
-from .curriculum.fidelity import assess_course_fidelity
+from .curriculum.fidelity import assess_course_fidelity, assessable_capabilities
 from .curriculum.model import topic_capabilities
 from .curriculum.planner import CurriculumPlanner
 from .curriculum.readiness import ReadinessAssessor
@@ -441,7 +441,7 @@ def _cmd_course(args) -> int:
         print(f"\n✗ Curriculum planning failed: {exc}", file=sys.stderr)
         return EXIT_RUNTIME
 
-    report = assess_course_fidelity(list(topic_capabilities(topic_spec)), course)
+    report = assess_course_fidelity(list(_requested_capabilities(topic_spec)), course)
     _print_course(course)
 
     # A decomposition that dropped a capability is never run — fail honestly first.
@@ -472,7 +472,7 @@ def _cmd_course(args) -> int:
         return EXIT_USAGE
     else:
         confirmed = _run_plan_gate(
-            course, list(topic_capabilities(topic_spec)), Path(args.personas), planner,
+            course, list(_requested_capabilities(topic_spec)), Path(args.personas), planner,
             topic, learner_profile, topic_spec,
         )
         if confirmed is None:
@@ -628,7 +628,7 @@ def _cmd_learn(args) -> int:
         course, personas_dir, planner, topic, learner_profile, topic_spec
     )
 
-    original_capabilities = list(topic_capabilities(topic_spec))
+    original_capabilities = list(_requested_capabilities(topic_spec))
 
     # The gate: plan first, confirm before spending. --yes accepts as-is (still printed);
     # a non-TTY stdin without --yes is a usage error so a script opts into spending.
@@ -1061,7 +1061,18 @@ def _default_learner_profile() -> LearnerProfile:
 
 
 def _default_topic_spec(topic: str) -> TopicSpecification:
-    """Sensible defaults when no topic spec is provided."""
+    """Sensible defaults when no topic spec is provided.
+
+    `focus_areas` no longer repeats the topic. It used to, so a bare `--topic` produced
+    two near-duplicate pseudo-capabilities (`f"Understand {topic}"` and `topic`); because
+    distinctive terms are computed *among* the requested set, the pair cancelled each
+    other down to the single word "understand", which no module title ever contains. One
+    capability, not two restatements of one.
+
+    Whether that capability is *assessable* is a separate question, decided by
+    `forged.curriculum.fidelity.assessable_capabilities` — a one-line topic has a
+    distinctive-term signature, a 60-word paragraph does not.
+    """
     return TopicSpecification(
         title=topic,
         scope="implementation",
@@ -1069,7 +1080,7 @@ def _default_topic_spec(topic: str) -> TopicSpecification:
         prerequisites=[],
         constraints="",
         depth="intermediate",
-        focus_areas=[topic],
+        focus_areas=[],
     )
 
 
@@ -1114,3 +1125,14 @@ def _load_dotenv(path: Path) -> None:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _requested_capabilities(topic_spec) -> tuple[str, ...]:
+    """The capabilities the course-fidelity check can honestly measure.
+
+    `topic_capabilities` returns everything the spec asked for; this drops the entries
+    term-coverage cannot judge (a free-text brief is a paragraph, not a capability — see
+    `forged.curriculum.fidelity.assessable_capabilities`). Empty means the check is
+    reported as *not assessed*, never as passed or dropped.
+    """
+    return assessable_capabilities(topic_capabilities(topic_spec))

@@ -20,6 +20,28 @@ from forged.pipeline.fidelity import TopicFidelityReport, assess_capability_cove
 
 from .model import CourseSpec
 
+# Term-coverage assumes a *capability statement* — a short, distinctive phrase like
+# "train a LoRA adapter". A free-text brief ("Teach me how to work with AI agents: … and
+# how the architecture of that should look.") is a paragraph: its distinctive-term set is
+# large and full of connective words no module title will ever carry, so the check reports
+# a drop no matter how faithful the decomposition is. Observed on 2026-07-28 and again on
+# 2026-07-30 — both runs printed an identical, meaningless `⚠ DROPPED` for the whole topic.
+# Real capabilities in the shipped templates run ~3–15 words; 30 leaves generous headroom.
+MAX_ASSESSABLE_CAPABILITY_WORDS = 30
+
+
+def assessable_capabilities(capabilities: Sequence[str]) -> tuple[str, ...]:
+    """The subset of `capabilities` that term-coverage can honestly judge.
+
+    Filters out paragraph-shaped entries (see `MAX_ASSESSABLE_CAPABILITY_WORDS`). An empty
+    result means nothing discrete was requested — the caller must then report the check as
+    *not assessed* rather than as passed or dropped.
+    """
+    return tuple(
+        c for c in capabilities
+        if c and c.strip() and len(c.split()) <= MAX_ASSESSABLE_CAPABILITY_WORDS
+    )
+
 
 def assess_course_fidelity(
     original_capabilities: Sequence[str], course: CourseSpec

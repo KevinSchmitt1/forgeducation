@@ -25,6 +25,7 @@ import asyncio
 import dataclasses
 import logging
 import re
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -32,9 +33,11 @@ from forged.artifacts import Artifact, ArtifactStore
 from forged.context import build_context_block, topic_spec_to_json
 from forged.deliverables import (
     write_agentic_summary,
+    write_crash_stub,
     write_final_notebook,
     write_learner_package,
 )
+from forged.logging_config import setup_logging
 from forged.models import LearnerProfile
 from forged.pipeline.graph import run_pipeline
 from forged.pipeline.mode import render_mode_directive
@@ -159,6 +162,11 @@ def _run_one_module(
 ) -> ModuleResult:
     """Run one module through run_pipeline. Never raises: an exception becomes a
     terminal_ok=False result so the course loop continues."""
+    # Each module logs into its own run dir. Without this the course path had no logging
+    # handler at all, so a crashed module's traceback was written to nowhere and the
+    # failure could not be diagnosed afterwards (observed 2026-07-30).
+    setup_logging(debug=False, log_file=run_dir / "pipeline.log")
+
     store = _seed_module_store(run_dir, module, profile)
     state = create_initial_state(run_id=run_dir.name)
     try:
@@ -167,6 +175,9 @@ def _run_one_module(
         )
     except Exception as exc:  # noqa: BLE001 - record any failure, never abort the course
         _LOG.exception("Course module %s failed: %s", module.order, exc)
+        # Leave a diagnosis on disk. The course continues either way, but "(no notebook)"
+        # with no reason anywhere is the honesty gap this closes (doc 18, D6 — crash path).
+        write_crash_stub(run_dir, exc, traceback.format_exc())
         return ModuleResult(
             module=module, run_dir=str(run_dir), terminal_ok=False,
             notebook_path=None, topic_fidelity=(),
