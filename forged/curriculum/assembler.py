@@ -54,6 +54,25 @@ def assemble_course(
     _write_module_navs(result)
 
 
+def render_fidelity_verdict(fidelity: TopicFidelityReport, *, assessed: bool) -> str:
+    """The course-level plan-fidelity line.
+
+    Three outcomes, not two. `assessed=False` means no discrete capabilities were
+    requested — a bare `--topic` carries a sentence, not a capability list, and
+    term-coverage cannot measure one against a decomposition. Reporting that as a drop
+    was a false alarm on every bare-topic run; reporting it as ✓ would be the opposite
+    lie. Say what actually happened instead.
+    """
+    if not assessed:
+        return (
+            "ⓘ not assessed — no --topic-spec was given, so there are no discrete "
+            "capabilities to check the decomposition against"
+        )
+    if fidelity.is_faithful:
+        return "✓ covers every requested capability"
+    return "⚠ DROPPED: " + "; ".join(fidelity.missing)
+
+
 def _read_failure_reason(run_dir: Path) -> str | None:
     """Extract the one-line reason from a module's FAILED.md, when present.
 
@@ -128,12 +147,13 @@ def _render_course_report(
         lines += _render_module_report_section(module_result)
 
     if fidelity is not None:
-        verdict = (
-            "✓ covers every requested capability"
-            if fidelity.is_faithful
-            else "⚠ DROPPED: " + "; ".join(fidelity.missing)
-        )
-        lines += ["---", "", f"**Plan-fidelity:** {verdict}", ""]
+        assessed = bool(fidelity.covered or fidelity.missing)
+        lines += [
+            "---",
+            "",
+            f"**Plan-fidelity:** {render_fidelity_verdict(fidelity, assessed=assessed)}",
+            "",
+        ]
 
     return "\n".join(lines)
 

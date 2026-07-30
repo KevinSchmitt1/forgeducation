@@ -218,6 +218,32 @@ def _write_failure_stub(run_dir: Path, state) -> None:
     (run_dir / FAILED_STUB_FILE).write_text("".join(lines), encoding="utf-8")
 
 
+def write_crash_stub(run_dir: Path, error: BaseException, traceback_text: str) -> None:
+    """Write FAILED.md for a module whose pipeline *raised* rather than finishing.
+
+    `_write_failure_stub` covers the run that completed but was not acceptable; this
+    covers the run that never completed at all. Observed on 2026-07-30: a module raised,
+    the orchestrator recorded `terminal_ok=False`, and — because the exception path
+    returns before the deliverable writers — left nothing on disk but its seed files. The
+    traceback is included verbatim: a crash with no stack is not diagnosable, and the
+    whole point of this file is that the next reader does not have to re-run to find out.
+    """
+    lines = [
+        "# Module crashed\n\n",
+        f"**Reason**: the lesson pipeline raised `{type(error).__name__}`: {error}\n\n",
+        "This module never produced a plan or a notebook — it failed before finishing, "
+        "so there is no SUMMARY.md for it.\n\n",
+        "## Traceback\n\n```\n",
+        traceback_text,
+        "```\n\n",
+        "## Where to look\n\n",
+        "- `pipeline.log` in this directory (full stage-by-stage log).\n",
+        "- `lesson_context.md` / `topic_spec.json` — the inputs this module was given.\n",
+        "- Other modules were unaffected; a crash here never stops the rest of the course.\n",
+    ]
+    (run_dir / FAILED_STUB_FILE).write_text("".join(lines), encoding="utf-8")
+
+
 def write_learner_package(run_dir: Path, store, state, topic: str, learner_profile) -> None:
     """Write the self-contained deliverable (README.md + requirements.txt) from the
     latest lesson plan, so even a degraded-but-acceptable agentic run ships something
