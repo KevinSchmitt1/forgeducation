@@ -61,6 +61,43 @@ Use the project venv explicitly (the shell's active venv is often something else
 CI (`.github/workflows/ci.yml`) runs exactly those three on every PR. Run all three before claiming
 green — `pytest` passing does **not** catch ruff line-length (E501) failures.
 
+## Verification discipline (written 2026-07-30, after a bad session)
+
+The three gates are **necessary, not sufficient**, and treating them as sufficient caused every
+avoidable failure in the doc-18 work: a `NameError` that made the CLI unable to start reached
+`master` through 700 passing tests, clean ruff and clean mypy, because nothing in CI — and nobody —
+had ever started the program. Four norms, in order of how much they'd have prevented:
+
+1. **"Ready" means exercised, not green.** Before saying a change is ready, run the program the way
+   a user runs it (`python -m forged.cli …`), once. Most paths cost nothing: `--help`, `pipelines`,
+   an empty `--topic` (usage error). Tests `import forged.cli`; users run `-m`, where `main()`
+   executes at the `__main__` guard — a difference no unit test can see.
+2. **State which level of confidence you're handing over.** Three distinct things, never conflated:
+   *tests green* (proxies pass) · *exercised* (I ran it) · *validated* (a real run used it). Say
+   which one applies. "CI passed, ready to merge" that means only the first is how broken code gets
+   merged on a reasonable decision — the fix is precise reporting, not more scrutiny from the reader.
+3. **Batch merges against validation, not against CI.** The only test that means anything here is a
+   paid run. Merging as soon as CI is green buys nothing and fragments history: four PRs merged in
+   one afternoon, three of them fixing the previous one, none exercised by a run. Hold related
+   changes on one branch, do one run, merge what survives.
+4. **A repeated concern from the user is decisive.** If the same objection is raised twice, stop
+   defending the position: either do it their way, or lay out the tradeoff plainly for them to
+   decide. The package allow-list was questioned twice, defended twice, and cost two paid module
+   builds before being removed — the objection was right the first time.
+
+Two narrower habits, each the direct mechanism behind a real mistake here:
+
+- **When a change removes the *reason* for an existing safeguard, re-evaluate the safeguard in the
+  same change.** Deleting the requirements prose-miner removed the entire justification for the
+  package allow-list; the list was kept and widened in that very PR.
+- **Before citing a program's own output as evidence, test that the measurement is valid.** A
+  `⚠ DROPPED` fidelity line went into a design doc as proof of topic drift; a five-line script later
+  showed the check was structurally incapable of passing on a free-text topic. It was cheap to
+  verify and skipped because it confirmed what was already believed.
+
+Process degrades under momentum — that is exactly when these get skipped. Prefer a mechanical guard
+(a test that fails) over a norm whenever one is available.
+
 ## Conventions that matter here
 
 - **Immutability is enforced, not aspirational.** Never mutate `PipelineState` — go through its

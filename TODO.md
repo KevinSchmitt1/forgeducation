@@ -51,7 +51,33 @@ shows each module's mode **before** any spend, warns when every module shares on
 Full diagnosis, decisions, and corrections:
 [`docs/architecture/18-mode-selection-bias-and-run-honesty.md`](docs/architecture/18-mode-selection-bias-and-run-honesty.md).
 
+### Highest-value next change — validate provisioning BEFORE the expensive stage
+
+The graph runs `planner → code_author → executor`, and provisioning happens inside the **executor**.
+So the expensive gpt-5 `code_author` pass runs first, produces a notebook, and *then* provisioning
+may refuse — throwing the paid work away. That is exactly what both 2026-07-30 runs did.
+
+Move the provisioning attempt to immediately after the planner (cheap, gpt-5-mini) emits its
+`requirements` block. A bad environment then costs one mini call instead of a full gpt-5 notebook.
+This is the product-side version of the lesson in `CLAUDE.md`'s "Verification discipline": the
+expensive step should not run before the cheap check that can invalidate it.
+
 ### Known loose ends (neither blocking)
+
+- **CI smoke test for the entry point (started, not finished).** A `tests/test_entrypoint_smoke.py`
+  was drafted this session and deliberately **not committed** — 2 of its 7 tests were still failing
+  and half-working tests are worse than none. What it should assert, via `subprocess` on
+  `python -m forged.cli`: each command starts and rejects an empty `--topic` with exit 2 and no
+  traceback; `--help` and `pipelines` exit 0. All free, no network. This is the mechanical guard for
+  `CLAUDE.md` norm 1 — the class of bug that put a `NameError` on `master` past 700 green tests.
+  Note `agentic --topic "   "` did **not** behave like the others (its exit code differed); worth
+  understanding before writing the assertion.
+- **`setup_logging` accumulates handlers.** It adds a console + file handler on every call without
+  clearing existing ones. The course orchestrator now calls it once per module (doc 18 crash
+  diagnostics), so every earlier module's file handler stays attached and keeps receiving later
+  modules' records — visible in `runs/20260730-224009_…/module_0_…/pipeline.log`, which contains
+  module 1's provisioning failure. Fix: clear prior handlers (or attach a per-run handler and
+  detach it) before adding.
 
 - **CI never invokes the CLI the way a user does.** Tests `import forged.cli`; users run
   `python -m forged.cli`. A NameError shipped to `master` through 700 green tests, ruff and mypy
