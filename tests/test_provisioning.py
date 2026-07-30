@@ -276,3 +276,49 @@ def test_result_is_frozen():
     r = ProvisionResult(ok=True, requirements_hash="abc", kernel_name=None)
     with pytest.raises((AttributeError, TypeError)):
         r.ok = False  # type: ignore[misc]
+
+
+# ── No curated allow-list by default (2026-07-30) ─────────────────────────────────
+
+
+def test_any_real_package_provisions_by_default(tmp_path):
+    """The curated allow-list is gone.
+
+    It existed to stop *fabricated* package names reaching `pip install` — the real
+    arbitrary-code-execution vector, since `not`/`required`/`for`/`the`/`core` are all
+    live PyPI packages. That vector was closed at the parser (doc 18, D4 removed the
+    prose miner), so requirements can now only come from the planner's structured block.
+    What remained was a hand-curated list vetoing packages the planner deliberately
+    chose — and it could not keep up: paid modules died on `pydantic`, `jinja2`,
+    `structlog`, `prometheus-client`, `respx` and `jsonschema`, all mainstream. Every
+    miss costs a real paid build, and no curator anticipates every topic.
+    """
+    # Arrange — packages the old list refused, all entirely ordinary.
+    req_set = _reqs("pydantic>=2", "jinja2", "jsonschema", "structlog")
+
+    # Act — note: no allowed_packages passed, i.e. the shipped default.
+    result = provision_environment(
+        req_set, cache_root=tmp_path / "cache",
+        runner=FakeRunner(), size_probe=lambda _p: 10.0,
+    )
+
+    # Assert
+    assert result.ok is True, result.error
+    assert result.rejected == ()
+
+
+def test_an_explicit_allow_list_still_restricts_when_a_caller_asks(tmp_path):
+    # Arrange — the seam stays for a caller that genuinely wants a policy (and for the
+    # tests above); it is simply no longer imposed by default.
+    req_set = _reqs("numpy", "somethingelse")
+
+    # Act
+    result = provision_environment(
+        req_set, cache_root=tmp_path / "cache",
+        allowed_packages=frozenset({"numpy"}),
+        runner=FakeRunner(), size_probe=lambda _p: 10.0,
+    )
+
+    # Assert
+    assert result.ok is False
+    assert result.rejected == ("somethingelse",)
