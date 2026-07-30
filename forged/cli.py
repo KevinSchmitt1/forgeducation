@@ -1123,10 +1123,6 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
 def _requested_capabilities(topic_spec) -> tuple[str, ...]:
     """The capabilities the course-fidelity check can honestly measure.
 
@@ -1136,3 +1132,10 @@ def _requested_capabilities(topic_spec) -> tuple[str, ...]:
     reported as *not assessed*, never as passed or dropped.
     """
     return assessable_capabilities(topic_capabilities(topic_spec))
+
+
+# Nothing may be defined below this guard: `python -m forged.cli` executes main() here,
+# so a def placed after it does not exist yet when the command runs (import-based tests
+# still pass, which is exactly why this needs a comment and a test).
+if __name__ == "__main__":
+    raise SystemExit(main())

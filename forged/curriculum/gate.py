@@ -142,6 +142,19 @@ def _render_estimate(module_count: int) -> str:
 
 
 def _render_fidelity(course: CourseSpec, original_capabilities: Sequence[str]) -> str:
+    """The gate's fidelity line — three outcomes, not two.
+
+    An empty `original_capabilities` means nothing assessable was requested (a free-text
+    `--topic` is a brief, not a capability list — see
+    `forged.curriculum.fidelity.assessable_capabilities`). `missing` is then empty too,
+    which used to render as a ✓: a pass claimed for a check that never ran, shown at the
+    exact moment the operator decides whether to spend money.
+    """
+    if not [c for c in original_capabilities if c and c.strip()]:
+        return (
+            "  ⓘ Fidelity check: not assessed — no --topic-spec given, so there are no "
+            "discrete capabilities to check this plan against"
+        )
     report = assess_course_fidelity(original_capabilities, course)
     if not report.missing:
         return "  ✓ Fidelity check: every requested capability is covered"

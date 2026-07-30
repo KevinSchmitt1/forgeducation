@@ -229,3 +229,76 @@ def test_an_explicit_topic_spec_still_produces_capabilities() -> None:
         "train a LoRA adapter",
         "quantization",
     )
+
+
+# ── Nothing may be defined after the __main__ guard ───────────────────────────────
+
+
+def test_no_module_level_definitions_after_the_main_guard() -> None:
+    """`python -m forged.cli` executes `main()` at the guard, so anything defined below
+    it does not exist yet when a command runs — a NameError only at real invocation.
+
+    The whole test suite stayed green when this happened, because tests *import*
+    `forged.cli` (where every def executes before use). Only `python -m` broke, and CI
+    never runs the CLI that way. Hence a structural check.
+    """
+    # Arrange
+    import ast
+    from pathlib import Path
+
+    import forged.cli
+
+    source = Path(forged.cli.__file__).read_text(encoding="utf-8")
+
+    # Act
+    body = ast.parse(source).body
+    guard_index = next(
+        i for i, node in enumerate(body)
+        if isinstance(node, ast.If) and "__main__" in ast.dump(node.test)
+    )
+
+    # Assert
+    trailing = [type(n).__name__ for n in body[guard_index + 1:]]
+    assert trailing == [], (
+        f"{trailing} defined after the `if __name__ == '__main__'` guard — "
+        "unreachable when the CLI is run with `python -m forged.cli`"
+    )
+
+
+def test_the_plan_gate_does_not_claim_a_pass_it_never_measured() -> None:
+    """With a free-text topic there are no assessable capabilities, so `missing` is
+    empty — which the gate used to render as "✓ every requested capability is covered".
+    That is a false ✓ shown at the moment the operator decides whether to spend."""
+    # Arrange
+    from forged.curriculum.gate import _render_fidelity
+    from forged.curriculum.model import CourseSpec, ModuleSpec
+
+    course = CourseSpec(
+        title="Agents",
+        modules=(ModuleSpec(spec=_module().spec, order=0),),
+        rationale="",
+    )
+
+    # Act — no requested capabilities: nothing was checked.
+    rendered = _render_fidelity(course, [])
+
+    # Assert
+    assert "✓" not in rendered
+    assert "not assessed" in rendered.lower()
+
+
+def test_the_plan_gate_still_reports_a_real_pass_and_a_real_drop() -> None:
+    # Arrange — the check must keep working when capabilities ARE assessable.
+    from forged.curriculum.gate import _render_fidelity
+    from forged.curriculum.model import CourseSpec, ModuleSpec
+
+    spec = TopicSpecification(
+        title="Local LLMs", scope="implementation",
+        learning_objectives=["train a LoRA adapter"], prerequisites=[],
+        constraints="", depth="intermediate", focus_areas=[],
+    )
+    course = CourseSpec(title="c", modules=(ModuleSpec(spec=spec, order=0),), rationale="")
+
+    # Act / Assert
+    assert "✓" in _render_fidelity(course, ["train a LoRA adapter"])
+    assert "⚠" in _render_fidelity(course, ["serve the model over HTTP"])
