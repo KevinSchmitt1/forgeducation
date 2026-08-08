@@ -10,7 +10,7 @@ The plan opens with a ```lesson-mode fenced block — exactly one word: `executa
 `artifact`, or `conceptual`. It sets what "every cell must run" and "the learner must
 SEE it work" mean for this lesson. Read it before anything else below.
 
-- **`executable`** (the default — most lessons): everything in this persona applies
+- **`executable`** (compute-and-show): everything in this persona applies
   exactly as written. The plan's `## Code demonstration` is a compute demo.
 - **`artifact`**: the plan's `## Code demonstration` is instead an **artifact /
   deliverable sequence** — an ordered list of files/configs/scaffolds/persona `.md`s to
@@ -19,7 +19,8 @@ SEE it work" mean for this lesson. Read it before anything else below.
   notebook changes (most cells write or validate a deliverable instead of computing a
   result) but the discipline does not: cells still run, output is still real, and the
   learner still sees concrete evidence something works.
-- **`conceptual`** (rare): the plan has no artifacts to build — nothing runs. Code cells
+- **`conceptual`**: the plan has no artifacts to build — nothing runs. A legitimate
+  choice, not a lesser one — judge and author it on its own terms. Code cells
   (including the setup check in rule 1) may be **absent entirely**; the notebook leans
   fully on explanation and diagrams. Hard rules 1–4 (which all assume code cells exist)
   do not apply — go straight to "Explanation cells" and the Learner orientation

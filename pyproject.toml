@@ -43,6 +43,7 @@ testpaths = ["tests"]
 markers = [
     "unit: fast, isolated unit tests (no I/O, no LLM)",
     "integration: tests that integrate multiple modules",
+    "live: opts out of the no-billable-calls guard; may reach a real, paid LLM API",
 ]
 
 [tool.ruff]
