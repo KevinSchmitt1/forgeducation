@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from forged.artifacts import Artifact, ArtifactStore
+from forged.pipeline.failure import RUBRIC_DIMENSIONS
 from forged.pipeline.state import (
     PipelineStage,
     PipelineState,
@@ -64,20 +65,66 @@ def initial_state() -> PipelineState:
     return create_initial_state(run_id="test-run-001")
 
 
-@pytest.fixture
-def stub_llm_client():
-    """Offline LLM client returning a canned plan, so run() needs no API key.
+class _StubClient:
+    """Offline stand-in for LLMClient — returns a canned response, spends nothing.
 
-    PlannerAgent re-raises on LLM failure (unlike CodeAuthor/Student, which
-    degrade to fallbacks), so its run() tests must inject a client rather than
-    reach the network — these are unit tests, not live API calls.
+    Accepts and ignores `trace_context` / `response_format` so it satisfies every
+    caller's signature, including the schema-constrained graders.
     """
 
-    class _StubClient:
-        def complete(self, system_prompt: str, user_prompt: str, trace_context=None) -> str:
-            return "# Lesson Plan\n\n## Objectives\n- Understand the topic"
+    def __init__(self, response: str) -> None:
+        self._response = response
 
-    return _StubClient()
+    def complete(self, system_prompt: str, user_prompt: str, **kwargs: object) -> str:
+        return self._response
+
+
+@pytest.fixture
+def stub_llm_client() -> _StubClient:
+    """Canned plan for PlannerAgent.run(), so it needs no API key."""
+    return _StubClient("# Lesson Plan\n\n## Objectives\n- Understand the topic")
+
+
+@pytest.fixture
+def stub_code_author_client() -> _StubClient:
+    """Canned cell list for CodeAuthorAgent.run().
+
+    CodeAuthor degrades to a 2-cell stub when the LLM fails, so these tests used
+    to "pass" with no client at all — which meant they reached the real API
+    whenever a key was present, and silently exercised the degrade path when it
+    wasn't. A valid cell list pins them to the success path either way.
+    """
+    return _StubClient(
+        json.dumps(
+            {
+                "cells": [
+                    {"type": "markdown", "source": "# Start Here\n\nWhat this lesson does."},
+                    {"type": "code", "source": "print('hello')"},
+                ]
+            }
+        )
+    )
+
+
+@pytest.fixture
+def stub_student_client() -> _StubClient:
+    """Canned grade report satisfying the Student's JSON schema.
+
+    Same reasoning as `stub_code_author_client`: without it, a missing key sent
+    the grader down `_failed_report` (quality_score 0.0) and a present key sent
+    it to the real API.
+    """
+    return _StubClient(
+        json.dumps(
+            {
+                "quality_score": 82,
+                "rubric": dict.fromkeys(RUBRIC_DIMENSIONS, 82),
+                "verdict": "accept",
+                "blockers": [],
+                "findings": [],
+            }
+        )
+    )
 
 
 @pytest.fixture
@@ -365,13 +412,14 @@ def test_code_author_next_stage(personas_dir: Path) -> None:
 @pytest.mark.unit
 def test_code_author_run_updates_stage(
     personas_dir: Path,
+    stub_code_author_client: _StubClient,
     state_with_plan: PipelineState,
     artifact_store: ArtifactStore,
 ) -> None:
     """CodeAuthorAgent.run() returns a state with current_stage=EXECUTOR."""
     from forged.pipeline.agents.code_author import CodeAuthorAgent
 
-    agent = CodeAuthorAgent(personas_dir=personas_dir)
+    agent = CodeAuthorAgent(personas_dir=personas_dir, llm_client=stub_code_author_client)
     result = asyncio.get_event_loop().run_until_complete(
         agent.run(state_with_plan, artifact_store)
     )
@@ -381,13 +429,14 @@ def test_code_author_run_updates_stage(
 @pytest.mark.unit
 def test_code_author_run_adds_output(
     personas_dir: Path,
+    stub_code_author_client: _StubClient,
     state_with_plan: PipelineState,
     artifact_store: ArtifactStore,
 ) -> None:
     """CodeAuthorAgent.run() adds one output entry with a notebook artifact name."""
     from forged.pipeline.agents.code_author import CodeAuthorAgent
 
-    agent = CodeAuthorAgent(personas_dir=personas_dir)
+    agent = CodeAuthorAgent(personas_dir=personas_dir, llm_client=stub_code_author_client)
     result = asyncio.get_event_loop().run_until_complete(
         agent.run(state_with_plan, artifact_store)
     )
@@ -399,6 +448,7 @@ def test_code_author_run_adds_output(
 @pytest.mark.unit
 def test_code_author_run_is_immutable(
     personas_dir: Path,
+    stub_code_author_client: _StubClient,
     state_with_plan: PipelineState,
     artifact_store: ArtifactStore,
 ) -> None:
@@ -407,7 +457,7 @@ def test_code_author_run_is_immutable(
 
     original_stage = state_with_plan.current_stage
     original_outputs_count = len(state_with_plan.outputs)
-    agent = CodeAuthorAgent(personas_dir=personas_dir)
+    agent = CodeAuthorAgent(personas_dir=personas_dir, llm_client=stub_code_author_client)
     asyncio.get_event_loop().run_until_complete(
         agent.run(state_with_plan, artifact_store)
     )
@@ -544,13 +594,14 @@ def test_student_agent_next_stage(personas_dir: Path) -> None:
 @pytest.mark.unit
 def test_student_agent_run_updates_stage(
     personas_dir: Path,
+    stub_student_client: _StubClient,
     state_with_execution: PipelineState,
     artifact_store: ArtifactStore,
 ) -> None:
     """StudentAgent.run() returns a state with current_stage=REVISER."""
     from forged.pipeline.agents.student import StudentAgent
 
-    agent = StudentAgent(personas_dir=personas_dir)
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=stub_student_client)
     result = asyncio.get_event_loop().run_until_complete(
         agent.run(state_with_execution, artifact_store)
     )
@@ -560,13 +611,14 @@ def test_student_agent_run_updates_stage(
 @pytest.mark.unit
 def test_student_agent_run_adds_output(
     personas_dir: Path,
+    stub_student_client: _StubClient,
     state_with_execution: PipelineState,
     artifact_store: ArtifactStore,
 ) -> None:
     """StudentAgent.run() adds one output entry with a grade report artifact."""
     from forged.pipeline.agents.student import StudentAgent
 
-    agent = StudentAgent(personas_dir=personas_dir)
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=stub_student_client)
     result = asyncio.get_event_loop().run_until_complete(
         agent.run(state_with_execution, artifact_store)
     )
@@ -578,13 +630,14 @@ def test_student_agent_run_adds_output(
 @pytest.mark.unit
 def test_student_agent_run_grade_report_has_quality_score(
     personas_dir: Path,
+    stub_student_client: _StubClient,
     state_with_execution: PipelineState,
     artifact_store: ArtifactStore,
 ) -> None:
     """StudentAgent.run() writes a JSON grade report with a quality_score field."""
     from forged.pipeline.agents.student import StudentAgent
 
-    agent = StudentAgent(personas_dir=personas_dir)
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=stub_student_client)
     result = asyncio.get_event_loop().run_until_complete(
         agent.run(state_with_execution, artifact_store)
     )
@@ -598,6 +651,7 @@ def test_student_agent_run_grade_report_has_quality_score(
 @pytest.mark.unit
 def test_student_agent_run_is_immutable(
     personas_dir: Path,
+    stub_student_client: _StubClient,
     state_with_execution: PipelineState,
     artifact_store: ArtifactStore,
 ) -> None:
@@ -606,7 +660,7 @@ def test_student_agent_run_is_immutable(
 
     original_stage = state_with_execution.current_stage
     original_outputs_count = len(state_with_execution.outputs)
-    agent = StudentAgent(personas_dir=personas_dir)
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=stub_student_client)
     asyncio.get_event_loop().run_until_complete(
         agent.run(state_with_execution, artifact_store)
     )
@@ -1322,13 +1376,14 @@ def test_planner_output_stage_matches(
 @pytest.mark.unit
 def test_code_author_output_stage_matches(
     personas_dir: Path,
+    stub_code_author_client: _StubClient,
     state_with_plan: PipelineState,
     artifact_store: ArtifactStore,
 ) -> None:
     """CodeAuthorAgent output StageOutput.stage == PipelineStage.CODE_AUTHOR."""
     from forged.pipeline.agents.code_author import CodeAuthorAgent
 
-    agent = CodeAuthorAgent(personas_dir=personas_dir)
+    agent = CodeAuthorAgent(personas_dir=personas_dir, llm_client=stub_code_author_client)
     result = asyncio.get_event_loop().run_until_complete(
         agent.run(state_with_plan, artifact_store)
     )
@@ -1354,13 +1409,14 @@ def test_executor_output_stage_matches(
 @pytest.mark.unit
 def test_student_output_stage_matches(
     personas_dir: Path,
+    stub_student_client: _StubClient,
     state_with_execution: PipelineState,
     artifact_store: ArtifactStore,
 ) -> None:
     """StudentAgent output StageOutput.stage == PipelineStage.STUDENT."""
     from forged.pipeline.agents.student import StudentAgent
 
-    agent = StudentAgent(personas_dir=personas_dir)
+    agent = StudentAgent(personas_dir=personas_dir, llm_client=stub_student_client)
     result = asyncio.get_event_loop().run_until_complete(
         agent.run(state_with_execution, artifact_store)
     )
