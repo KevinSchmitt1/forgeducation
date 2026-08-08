@@ -14,25 +14,16 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import NamedTuple
 
 from forged.artifacts import Artifact, ArtifactStore
 from forged.config import StageConfig, StageType
 from forged.executor import DEFAULT_KERNEL, ExecutorStage
-from forged.pipeline.dependencies import extract_requirements
-from forged.pipeline.state import Degradation, PipelineStage, PipelineState, StageOutput
+from forged.pipeline.provision_gate import Provisioned, provision_for_state
+from forged.pipeline.state import PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
 
 logger = logging.getLogger(__name__)
-
-
-class _Provisioned(NamedTuple):
-    """Result of the provisioning step: the kernel to execute against, plus a terminal
-    state when provisioning failed (in which case run() returns it immediately)."""
-
-    kernel: str
-    terminal_state: PipelineState | None
 
 
 class ExecutorAgent(Agent[AgentOutput]):
@@ -110,60 +101,17 @@ class ExecutorAgent(Agent[AgentOutput]):
                 return output.artifact_name
         return f"lesson_notebook_v{state.iteration}"
 
-    def _latest_plan_name(self, state: PipelineState) -> str | None:
-        for output in reversed(state.outputs):
-            if output.stage == PipelineStage.PLANNER:
-                return output.artifact_name
-        return None
+    def _provision_kernel(self, state: PipelineState, store: ArtifactStore) -> Provisioned:
+        """Resolve the kernel to execute against, via the shared provisioning gate.
 
-    def _provision_kernel(self, state: PipelineState, store: ArtifactStore) -> _Provisioned:
-        """Provision a venv from the plan's requirements; pick the kernel to run against.
-
-        Returns the kernel name (or the base kernel when no deps are needed) on success.
-        On provisioning failure it records a Degradation, writes an honest failing
-        execution report, and returns a *terminal* state — a missing runtime cannot be
-        fixed by recoding or replanning, so the run ends honestly instead of looping or
-        shipping a green-but-hollow notebook.
+        The same attempt normally already ran in the graph's ``provision_gate`` node
+        right after the planner, so for an unchanged requirements set this is a
+        content-addressed cache hit (a marker-file check). It stays here because the
+        executor is also reachable without the gate — ``forged agentic`` composes the
+        agent directly in tests, and the content_reviser→executor edge re-enters
+        execution without passing the planner again.
         """
-        from forged.provisioning import provision_environment
-
-        plan_name = self._latest_plan_name(state)
-        plan = store.get(plan_name).content if plan_name and store.has(plan_name) else ""
-        requirement_set = extract_requirements(plan)
-
-        cache_root = self._cache_root or (store.run_dir.parent / ".venv-cache")
-        result = provision_environment(requirement_set, cache_root=cache_root)
-
-        if not result.ok:
-            logger.warning("Provisioning failed: %s", result.error)
-            artifact_name = f"execution_report_v{state.iteration}"
-            report = {"ok": False, "failed_cells": [], "error_summary": result.error}
-            store.put(Artifact(name=artifact_name, kind="json", content=json.dumps(report)))
-            new_state = state.with_output(
-                StageOutput(
-                    stage=PipelineStage.EXECUTOR,
-                    artifact_name=artifact_name,
-                    iteration=state.iteration,
-                )
-            ).with_degradation(
-                Degradation(
-                    stage=PipelineStage.EXECUTOR,
-                    kind="provision_failed",
-                    detail=result.error or "environment provisioning failed",
-                )
-            )
-            return _Provisioned(
-                kernel=DEFAULT_KERNEL,
-                terminal_state=new_state.with_terminal(
-                    f"Environment provisioning failed: {result.error}", ok=False
-                ),
-            )
-
-        if result.cache_hit:
-            logger.info("Provisioning cache hit: reusing kernel %s", result.kernel_name)
-        elif result.kernel_name:
-            logger.info("Provisioned new environment: kernel %s", result.kernel_name)
-        return _Provisioned(kernel=result.kernel_name or DEFAULT_KERNEL, terminal_state=None)
+        return provision_for_state(state, store, cache_root=self._cache_root)
 
     def _execute_real(
         self, notebook_name: str, store: ArtifactStore, state: PipelineState, kernel: str

@@ -51,16 +51,27 @@ shows each module's mode **before** any spend, warns when every module shares on
 Full diagnosis, decisions, and corrections:
 [`docs/architecture/18-mode-selection-bias-and-run-honesty.md`](docs/architecture/18-mode-selection-bias-and-run-honesty.md).
 
-### Highest-value next change — validate provisioning BEFORE the expensive stage
+### ✅ DONE (2026-08-08) — provisioning is validated BEFORE the expensive stage
 
-The graph runs `planner → code_author → executor`, and provisioning happens inside the **executor**.
-So the expensive gpt-5 `code_author` pass runs first, produces a notebook, and *then* provisioning
-may refuse — throwing the paid work away. That is exactly what both 2026-07-30 runs did.
+The graph ran `planner → code_author → executor` with provisioning inside the **executor**, so the
+expensive gpt-5 `code_author` pass produced a notebook and *then* provisioning could refuse —
+throwing the paid work away. That is exactly what both 2026-07-30 runs did.
 
-Move the provisioning attempt to immediately after the planner (cheap, gpt-5-mini) emits its
-`requirements` block. A bad environment then costs one mini call instead of a full gpt-5 notebook.
-This is the product-side version of the lesson in `CLAUDE.md`'s "Verification discipline": the
-expensive step should not run before the cheap check that can invalidate it.
+Shipped: a `provision_gate` node between `planner` and `code_author`, present only when provisioning
+is enabled (`forged/pipeline/provision_gate.py`). The attempt itself was extracted from
+`ExecutorAgent._provision_kernel` and is now shared by both callers, so failure behaviour is
+byte-identical — same `provision_failed` degradation, same honest `execution_report`, same terminal
+state — only *earlier*. The executor still calls it, because the `content_reviser → executor` edge
+re-enters execution without passing the planner; for unchanged requirements that call is a
+content-addressed cache hit (a marker-file check), so the happy path costs nothing extra.
+
+**This is a timing change, not a policy one.** The gate applies no allow-list and refuses no package
+(see `DEFAULT_ALLOWED_PACKAGES` — opt-in only since PR #31). It only moves *when* we discover pip
+cannot build what the plan asked for.
+
+Status: **test-green and exercised at the CLI entry point; not yet validated by a paid run.** The
+next real `learn` run is what proves it — a provisioning failure should now appear before any
+notebook exists.
 
 ### Known loose ends (neither blocking)
 
@@ -84,6 +95,9 @@ expensive step should not run before the cheap check that can invalidate it.
   because of exactly this (#30). A smoke test asserting `learn --topic "   "` exits with the usage
   error would close it — no network, no spend. A structural test now guards the specific
   "defined after the `__main__` guard" mistake, but not the general hole.
+  **Update 2026-08-08:** the blocker noted above is gone — `learn`, `agentic` and `course` all now
+  exit **2** on a whitespace-only `--topic`, so the assertion is uniform across commands and the
+  drafted test can be finished as-is. Verified by hand at the `-m` entry point, not yet automated.
 - **`personas/code_author.md:22`** still calls `conceptual` "(rare)" — a leftover anchor stripped
   from `planner.md`, `reviewer.md` and `student.md` when the mode selection was debiased.
 

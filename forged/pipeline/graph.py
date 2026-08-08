@@ -30,6 +30,7 @@ from forged.pipeline.agents.planner import PlannerAgent
 from forged.pipeline.agents.reviewer import ReviewerAgent
 from forged.pipeline.agents.reviser import RevisorAgent
 from forged.pipeline.agents.student import StudentAgent
+from forged.pipeline.provision_gate import GATE_NODE, provision_for_state
 from forged.pipeline.state import PipelineState
 
 
@@ -137,6 +138,16 @@ def build_pipeline_graph(
     async def content_reviser_node(state: PipelineState) -> PipelineState:
         return await content_reviser.run(state, store)
 
+    async def provision_gate_node(state: PipelineState) -> PipelineState:
+        """Preflight: build the plan's environment before the expensive author pass.
+
+        Returns the state unchanged on success (the executor re-resolves the same
+        kernel from the content-addressed cache), or a terminal state when the
+        environment cannot be built — so a dead run never reaches gpt-5.
+        """
+        outcome = provision_for_state(state, store)
+        return outcome.terminal_state if outcome.terminal_state is not None else state
+
     graph.add_node("planner", planner_node)
     graph.add_node("code_author", code_author_node)
     graph.add_node("executor", executor_node)
@@ -145,12 +156,19 @@ def build_pipeline_graph(
     graph.add_node("revisor", revisor_node)
     graph.add_node("content_reviser", content_reviser_node)
 
+    # The provisioning preflight only exists when provisioning is on. It sits between
+    # the cheap planner and the expensive code_author so an unbuildable environment
+    # costs one gpt-5-mini call instead of a full gpt-5 notebook (doc 18).
+    if provision:
+        graph.add_node(GATE_NODE, provision_gate_node)
+    after_planner = GATE_NODE if provision else "code_author"
+
     graph.add_edge(START, "planner")
-    # Every forward edge is conditional on the state not being terminal: an
-    # agent that fails hard (e.g. executor crash) marks the state terminal,
-    # and the pipeline must stop instead of spending LLM calls on a dead run.
-    for node, next_node in (
-        ("planner", "code_author"),
+
+    forward_edges = [("planner", after_planner)]
+    if provision:
+        forward_edges.append((GATE_NODE, "code_author"))
+    forward_edges += [
         ("code_author", "executor"),
         ("executor", "student"),
         # Two critics run in sequence before the deterministic router: the Student
@@ -161,7 +179,13 @@ def build_pipeline_graph(
         # The content reviser rewrites the notebook, then re-runs it: its rewrite
         # must be executed and re-graded for the loop to converge (or terminate).
         ("content_reviser", "executor"),
-    ):
+    ]
+
+    # Every forward edge is conditional on the state not being terminal: an
+    # agent that fails hard (e.g. executor crash) marks the state terminal,
+    # and the pipeline must stop instead of spending LLM calls on a dead run.
+    # The gate relies on this: it returns a terminal state, and the edge stops there.
+    for node, next_node in forward_edges:
         graph.add_conditional_edges(
             node,
             _continue_unless_terminal(next_node),
