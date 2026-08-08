@@ -73,6 +73,30 @@ Status: **test-green and exercised at the CLI entry point; not yet validated by 
 next real `learn` run is what proves it — a provisioning failure should now appear before any
 notebook exists.
 
+### ✅ DONE (2026-08-08) — one CLI front door; the linear engine deleted
+
+`build`, `agentic` and `course` are gone. `forged learn` is the only build command: it plans first
+and the CurriculumPlanner decides lesson-vs-course, which is what the CLAUDE.md note at the top of
+this repo asked for. Choosing a command meant pre-committing to a shape before anything had sized
+the topic — and getting that wrong is the origin of the over-large-lesson complaint.
+
+- `--plan-only` / `--out` moved from `course` onto `learn`, so the zero-cost "show me the plan"
+  path survives. `pipelines` and `clean` remain as utilities.
+- The **linear engine is deleted**: `orchestrator.py`, `agent.py`, `gate.py`, `report.py` and
+  `ledger.py` were reachable only from `build`. ~2,900 lines gone with `tests/test_pipeline.py`.
+  (`ledger.py` parsed the critics' old free-text `[SEVERITY] cell N — issue` format; the agentic
+  path has used JSON-schema grader output since doc 15, so nothing else referenced it.)
+  `notebook.py` stays — it is shared with the agentic agents.
+- **Coverage-preserving detail:** `tests/test_progress.py` recovers the two Spinner tests that
+  lived in the deleted `test_pipeline.py`. `forged/progress.py` survives (the CLI uses it) and had
+  fallen to 37% before they were restored.
+- Tests were retargeted, not dropped: `test_cli_agentic.py` → `test_single_lesson.py` (drives
+  `_run_agentic_lesson`, the surviving single-lesson lifecycle); `test_cli_course.py` →
+  `test_cli_course_path.py` (drives `learn` with a stubbed multi-module planner — the real way the
+  course path is now reached).
+- **Still to check on the next run:** nothing about the engines changed, but `learn` is now the only
+  path in, so any run exercises it by definition.
+
 ### Known loose ends (neither blocking)
 
 - **CI smoke test for the entry point (started, not finished).** A `tests/test_entrypoint_smoke.py`
@@ -81,8 +105,17 @@ notebook exists.
   `python -m forged.cli`: each command starts and rejects an empty `--topic` with exit 2 and no
   traceback; `--help` and `pipelines` exit 0. All free, no network. This is the mechanical guard for
   `CLAUDE.md` norm 1 — the class of bug that put a `NameError` on `master` past 700 green tests.
-  Note `agentic --topic "   "` did **not** behave like the others (its exit code differed); worth
-  understanding before writing the assertion.
+  Now smaller than when it was drafted: there are three commands to cover (`learn`, `pipelines`,
+  `clean`), not six.
+- **Nothing repo-wide stops a test from making a live paid call.** On 2026-08-08, retargeting a
+  course test from `course` to `learn` silently turned a plan-only assertion into two **real, paid
+  agentic runs** (243s and 634s, full planner→…→reviser with revision iterations) — because a
+  1-module plan routes to the single-lesson branch, which constructs real `LLMClient`s. It failed on
+  the assertion *after* spending. The same class of bug hit the doc-14 wiring pass. A local autouse
+  guard now covers `tests/test_cli_course_path.py`, but that is a per-file fix for a repo-wide hole.
+  **Suggested mechanical guard:** an autouse `conftest.py` fixture that raises if `LLMClient` (or
+  `ExecutorStage`) is constructed, with an explicit opt-in marker (e.g. `@pytest.mark.live`) for the
+  handful of tests that genuinely want a real run. Cost of not doing it is measured in paid runs.
 - **`setup_logging` accumulates handlers.** It adds a console + file handler on every call without
   clearing existing ones. The course orchestrator now calls it once per module (doc 18 crash
   diagnostics), so every earlier module's file handler stays attached and keeps receiving later
@@ -95,9 +128,9 @@ notebook exists.
   because of exactly this (#30). A smoke test asserting `learn --topic "   "` exits with the usage
   error would close it — no network, no spend. A structural test now guards the specific
   "defined after the `__main__` guard" mistake, but not the general hole.
-  **Update 2026-08-08:** the blocker noted above is gone — `learn`, `agentic` and `course` all now
-  exit **2** on a whitespace-only `--topic`, so the assertion is uniform across commands and the
-  drafted test can be finished as-is. Verified by hand at the `-m` entry point, not yet automated.
+  **Update 2026-08-08:** the blocker noted above is gone. `agentic`'s divergent exit code was the
+  open question, and that command no longer exists — the CLI is one front door, so the test only has
+  to assert `learn --topic "   "` exits 2 (verified by hand at the `-m` entry point, not automated).
 - **`personas/code_author.md:22`** still calls `conceptual` "(rare)" — a leftover anchor stripped
   from `planner.md`, `reviewer.md` and `student.md` when the mode selection was debiased.
 
@@ -106,12 +139,15 @@ notebook exists.
 Same input as the original "local LLMs" runs, to check the program improved.
 
 ```bash
-.venv/bin/python -m forged.cli agentic \
+.venv/bin/python -m forged.cli learn \
   --topic "How to setup and train local LLM's on apple silicon m1" \
   --learner-profile templates/examples/kevin_learner.yaml \
-  --run-dir runs/localLLM-rerun \
   --config config/pipeline.review-loop.yaml
 ```
+
+> Was a `forged agentic --run-dir …` invocation before the CLI was collapsed to one front door
+> (2026-08-08). `learn` will size this topic itself; force the single-lesson shape at the plan gate
+> ("just make it one notebook") if you want a like-for-like comparison with the old run.
 
 - **Topic (raw `--topic`):** `How to setup and train local LLM's on apple silicon m1`
 - **Learner profile:** `templates/examples/kevin_learner.yaml` (Kevin: Junior Data Scientist)
