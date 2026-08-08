@@ -42,7 +42,7 @@ surfaced in the run's `SUMMARY.md`:
   foundational and too deep for one honest lesson, the planner scopes down to a teachable
   beachhead and declares the rest as an honest fidelity gap — instead of dumping dense,
   unfollowable code. (`docs/architecture/14-code-explanation-and-readiness.md`)
-- **Never drop or re-teach across a course.** `forged course` decomposes an over-large topic into
+- **Never drop or re-teach across a course.** An over-large topic is decomposed into
   ordered modules whose union must cover every requested capability, folding earlier modules'
   objectives into later modules' prior knowledge. With `--redecompose`, a module that *still* drops a
   capability at run time is handed back to the planner as a fresh follow-on module and run — so the
@@ -106,18 +106,22 @@ Output lands in `./runs/<timestamp>_<slug>/` for a single lesson (or `./runs/<ti
 for a course): open `lesson.ipynb`, read `SUMMARY.md`. Cap cost with `--max-modules N` (limit how many
 course modules actually run) and `--no-provision` (skip per-lesson virtualenv building).
 
-### Advanced & development commands
+### Other commands
 
-You do **not** need these for normal use — `forged learn` composes them for you. They exist for
-scripting, testing, and development:
+There is **one** build command — `forged learn`. It plans first and decides for itself whether your
+topic is a single lesson or a course of modules, so there is nothing to choose between. The rest are
+utilities:
 
 | Command | What it's for |
 |---|---|
-| `forged agentic --topic … --run-dir …` | Run the agentic engine directly on **one** lesson — what `learn` calls under the hood for a single notebook. No plan gate. |
-| `forged course --topic … [--plan-only]` | Decompose a topic into a course and run it. **Gated like `learn`:** the plan is shown for confirmation before any paid build, so a script must pass `--yes` (a non-TTY without it is a usage error). `--plan-only` prints/saves the decomposition without running anything (cheap: one planner call). |
-| `forged build --topic …` | The older **linear** engine (fixed single pass, no failure re-routing). Kept for deterministic/offline runs; not actively developed. Add `--config config/pipeline.skeleton.yaml` for a cheaper pass, or point the YAML at Ollama to stay fully local. |
+| `forged learn --topic … --plan-only [--out DIR]` | Print the plan and its coverage verdict, then stop. Cheap (one planner call) and builds nothing — the way to see the shape of a course before spending on it. `--out` also saves `course_plan.json` + `COURSE.md`. |
 | `forged pipelines` | List the bundled pipeline configs. |
 | `forged clean --keep N` | Prune old run directories (asks before deleting). |
+
+> **Removed in 2026-08:** `forged build`, `forged agentic` and `forged course`. Picking between them
+> meant committing to "one lesson" or "a course" before anything had sized the topic — a judgement
+> the learner had no basis to make. `forged learn` makes it, shows you the result, and waits for
+> confirmation. The single-lesson and course engines are unchanged; only the way in is.
 
 ### Writing the two context files
 
@@ -155,11 +159,13 @@ success; failed runs keep everything **and still write a `SUMMARY.md`** for debu
 
 ### Environment provisioning
 
-By default every lesson build (`forged learn`, and `forged agentic`/`forged course` directly) reads the lesson's dependencies from the plan, builds a
+By default every lesson build reads the lesson's dependencies from the plan, builds a
 **per-run virtualenv** (cached and reused across runs by a content hash of the
 requirements, so heavy wheels download once), registers a Jupyter kernel, and runs the
 notebook against it — so the lesson's cells execute for real instead of skipping behind
-`if HAVE_DEPS:` guards. If the required packages can't be installed, the run **fails
+`if HAVE_DEPS:` guards. This happens **immediately after planning, before the notebook is
+written**, so an environment that can't be built costs one cheap planner call rather than a
+full authored notebook. If the required packages can't be installed, the run **fails
 honestly** (it never ships a green-but-empty notebook). Pass `--no-provision` to skip the
 venv and run on the base kernel (fast/offline when the deps are already importable).
 Provisioning installs what the lesson plan declares, bounded by an install timeout and an
@@ -187,25 +193,14 @@ forged clean --keep 10 --dry-run    # preview what would be removed
 forged clean --keep 10 --yes        # skip the prompt (required non-interactively)
 ```
 
-### Execution paths (under the hood)
+### The engine (under the hood)
 
-`forged learn` builds each lesson with the **agentic** engine — you don't pick this, it's what
-runs after you confirm. It's documented here for contributors and for the direct `forged agentic`
-command. There's also an older **linear** engine. Both accept the same `--learner-profile` and
-`--topic-spec` context files; the difference is how they iterate.
+`forged learn` builds each lesson with the **agentic** engine — you don't pick this, it's what runs
+after you confirm the plan. It's documented here for contributors.
 
-**Linear (`forged build`, simple + predictable):** runs every stage once in a fixed
-sequence — planner → code_author → executor → student → reviser — followed by a bounded
-revision loop. No failure classification; good when you want a deterministic single pass.
-
-**Agentic (`forged agentic`, the one `forged learn` uses):** a LangGraph pipeline that classifies
-failures, reroutes to the appropriate agent, and feeds structured feedback back in for
-intelligent iteration:
-
-```bash
-forged agentic --topic "..." --run-dir ./runs/my-lesson \
-    --learner-profile path/to/learner.yaml --topic-spec path/to/topic.yaml
-```
+It's a LangGraph pipeline that classifies failures, reroutes to the appropriate agent, and feeds
+structured feedback back in for intelligent iteration. A course is the same engine run once per
+module, with each module's objectives handed down to the next as prior knowledge.
 
 End-to-end validated with OpenAI. Features:
   - **Real executor**: runs the notebook in a kernel and detects code failures
@@ -273,8 +268,8 @@ what's already in hand. It only ever **keeps the best** version, never a regress
 | `forged/context.py` | Build the shared learner+topic context block threaded to every stage |
 | `forged/models.py` | Typed, validated learner profile + topic specification |
 | `forged/usage.py` | Per-call token ledger → `usage.json` + `USAGE.md` |
-| `forged/curriculum/` | Decompose an over-large topic into an ordered course of modules (`forged course`) |
-| `forged/cli.py` | `forged learn` (front door) / `build` / `agentic` / `course` / `pipelines` / `clean` |
+| `forged/curriculum/` | Decompose an over-large topic into an ordered course of modules |
+| `forged/cli.py` | `forged learn` (the front door) / `pipelines` / `clean` |
 
 The agentic pipeline lives under `forged/pipeline/` (state, failure classification, router,
 graph, the topic-fidelity detector, and the per-role agents incl. the content reviser); see

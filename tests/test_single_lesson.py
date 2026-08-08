@@ -1,10 +1,13 @@
-"""Tests for the agentic CLI subcommand (Phase 9).
+"""Tests for the single-lesson branch behind `forged learn`.
 
-Tests verify that `forged agentic` correctly:
-1. Parses arguments
-2. Invokes run_pipeline()
-3. Writes lesson.ipynb and SUMMARY.md
-4. Includes routing log in outputs
+`_run_agentic_lesson` is the shared lifecycle a 1-module plan runs through. It used to
+also back a separate `forged agentic` command; that command is gone (one front door
+decides lesson-vs-course), but the lifecycle it exercised is unchanged and still the
+thing under test here:
+
+1. Invokes run_pipeline() with the resolved pipeline config
+2. Writes lesson.ipynb and SUMMARY.md
+3. Includes the routing log in outputs
 """
 
 from __future__ import annotations
@@ -16,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from forged.artifacts import Artifact, ArtifactStore
-from forged.cli import _cmd_agentic
+from forged.cli import _default_learner_profile, _default_topic_spec, _run_agentic_lesson
 from forged.config import load_pipeline
 from forged.pipeline.state import (
     PipelineStage,
@@ -26,6 +29,21 @@ from forged.pipeline.state import (
 )
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
+
+
+def _run_lesson(topic: str, run_dir: Path, personas_dir: Path, config: str | None = None) -> int:
+    """Invoke the single-lesson branch with defaults, as `forged learn` does for a
+    1-module plan."""
+    return _run_agentic_lesson(
+        topic=topic,
+        learner_profile=_default_learner_profile(),
+        topic_spec=_default_topic_spec(topic),
+        pipeline=load_pipeline(config or str(CONFIG_DIR / "pipeline.review-loop.yaml")),
+        personas_dir=Path(personas_dir),
+        run_dir=Path(run_dir),
+        provision=True,
+        debug=False,
+    )
 
 
 @pytest.mark.integration
@@ -126,18 +144,6 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
     from forged.pipeline.agents.reviewer import ReviewerAgent
     from forged.pipeline.agents.student import StudentAgent
 
-    class MockArgs:
-        def __init__(self, run_dir_path, personas_path):
-            self.topic = "Test lesson brief"
-            self.config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
-            self.run_dir = run_dir_path
-            self.debug = False
-            self.personas = personas_path
-            self.learner_profile = None
-            self.topic_spec = None
-
-    args = MockArgs(run_dir, str(personas_dir))
-
     with (
         patch.object(PlannerAgent, "run", AsyncMock(side_effect=mock_planner)),
         patch.object(CodeAuthorAgent, "run", AsyncMock(side_effect=mock_code_author)),
@@ -145,7 +151,7 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
         patch.object(StudentAgent, "run", AsyncMock(side_effect=mock_student)),
         patch.object(ReviewerAgent, "run", AsyncMock(side_effect=mock_reviewer)),
     ):
-        result = _cmd_agentic(args)
+        result = _run_lesson("Test lesson brief", run_dir, personas_dir)
 
     assert result == 0, "CLI should return exit code 0 on success"
     assert (run_dir / "lesson.ipynb").is_file(), "Should write lesson.ipynb"
@@ -166,20 +172,24 @@ def test_agentic_cli_runs_pipeline(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_agentic_cli_rejects_missing_learner_profile(tmp_path: Path) -> None:
-    """A bad --learner-profile path is caught as usage error (exit 2) before any run."""
-    from forged.cli import _cmd_agentic
+def test_learn_rejects_missing_learner_profile(tmp_path: Path) -> None:
+    """A bad --learner-profile path is a usage error (exit 2) before anything paid runs.
 
-    class Args:
-        topic = "Teach me coroutines"
-        config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
-        run_dir = tmp_path / "run"
-        debug = False
-        personas = str(tmp_path / "personas")
-        learner_profile = tmp_path / "does-not-exist.yaml"
-        topic_spec = None
+    Input validation lives on the surviving front door; the check must happen before the
+    CurriculumPlanner is constructed, or a typo'd path costs an LLM call.
+    """
+    from forged import cli
 
-    assert _cmd_agentic(Args()) == 2
+    code = cli.main(
+        [
+            "learn",
+            "--topic", "Teach me coroutines",
+            "--learner-profile", str(tmp_path / "does-not-exist.yaml"),
+            "--runs", str(tmp_path / "runs"),
+        ]
+    )
+
+    assert code == cli.EXIT_USAGE
 
 
 @pytest.mark.integration
@@ -369,22 +379,14 @@ def test_agentic_summary_reports_default_when_plan_names_unrecognized_mode(
 
 
 @pytest.mark.unit
-def test_agentic_cli_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
-    """The agentic command loads pipeline config and passes it into run_pipeline()."""
+def test_single_lesson_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
+    """The single-lesson branch passes its resolved pipeline config into run_pipeline()."""
     personas_dir = tmp_path / "personas"
     personas_dir.mkdir()
     for name in ("planner", "code_author", "student", "reviewer", "reviser"):
         (personas_dir / f"{name}.md").write_text(f"Persona for {name}.", encoding="utf-8")
 
-    class Args:
-        topic = "Teach me stacks"
-        config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
-        run_dir = tmp_path / "run"
-        debug = False
-        personas = str(personas_dir)
-        learner_profile = None
-        topic_spec = None
-
+    config = str(CONFIG_DIR / "pipeline.review-loop.yaml")
     captured = {}
 
     async def fake_run_pipeline(state, store, pipeline, personas_dir_arg, provision=False):
@@ -394,10 +396,10 @@ def test_agentic_cli_passes_loaded_pipeline_to_runner(tmp_path: Path) -> None:
         return state.with_terminal("acceptable", ok=True)
 
     with patch("forged.pipeline.graph.run_pipeline", new=fake_run_pipeline):
-        result = _cmd_agentic(Args())
+        result = _run_lesson("Teach me stacks", tmp_path / "run", personas_dir, config)
 
     assert result == 0
-    assert captured["pipeline"].name == load_pipeline(Args.config).name
+    assert captured["pipeline"].name == load_pipeline(config).name
     # Provisioning is ON by default (D1) unless --no-provision is passed.
     assert captured["provision"] is True
     assert Path(captured["personas_dir"]) == personas_dir

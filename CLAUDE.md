@@ -7,15 +7,19 @@ captures what every cell really does, so explanations are checked against realit
 This file is repo-specific orientation + the conventions that aren't obvious from the code. General
 coding/testing/git style is assumed (see your global rules); this covers what's particular to here.
 
-#EDIT:
-This section above is outdated. We want to get to something where there are no differences in the cli calls anymore. So there is only on cli call of the forgeducation program, the workflow decides what flow to use, depending on the complexity and coverage of the topic.
-
 ## Architecture at a glance
 
-Two execution paths share the same agents, personas, and context block:
+**There is one command.** `forged learn --topic "…"` plans first, and the CurriculumPlanner — not
+the caller — decides whether the topic is one lesson or a course of modules. You confirm the plan at
+an interactive gate before anything paid runs. The old `build` / `agentic` / `course` commands were
+removed (2026-08-08): choosing between them asked the learner to pre-commit to a shape before
+anything had sized the topic, and getting it wrong is what produced over-large lessons. `pipelines`
+and `clean` remain as utilities.
 
-- **Agentic** (`forged agentic`, the one we ship) — a LangGraph pipeline that classifies failures
-  and reroutes. Flow:
+Both branches below are reached from `learn`, and share the same agents, personas, and context block:
+
+- **Single lesson** (1-module plan → `_run_agentic_lesson`) — a LangGraph pipeline that classifies
+  failures and reroutes. Flow:
   `planner → code_author → executor → student → reviewer → revisor → (content_reviser | replan | END)`
   - **Two critics** run before the deterministic router: **Student** (learner POV — "could I follow
     this?") and **Reviewer** (expert correctness/quality). The **Reviser** is *not* a critic — it's a
@@ -29,15 +33,23 @@ Two execution paths share the same agents, personas, and context block:
     reviser extracts it and threads it into `assess_structure()` + `classify()` so the anti-hollow gate
     is **mode-aware**; the grader personas judge artifact lessons on their terms. Purely inferred — no
     user flag, no state field. Executable behavior is unchanged.
-- **Linear** (`forged build`) — fixed single pass; still uses `reviewer.md` as a critic. We don't
-  actively develop it; don't "fix" its docs as part of agentic work. This is not used anymore.
+- **Course** (N-module plan → `forged/curriculum/orchestrator.py`) — runs each module through the
+  *unchanged* single-lesson pipeline, folding earlier modules' objectives into later modules'
+  `prior_knowledge` (the context hand-down), then assembles the index/COURSE.md/NAV.md deliverables.
+
+> The **linear** engine (`orchestrator.py`, `agent.py`, `gate.py`, `report.py`) was deleted with the
+> `build` command. If you find a doc or comment referring to a "linear path", it is stale.
 
 Agents are thin Python wrappers; their behavior lives in **`personas/*.md`** (planner, code_author,
 student, reviewer, reviser). Most quality/pedagogy changes are persona edits, not code.
 
-The executor **provisions a per-run venv** from the planner's `requirements` block (content-addressed
-cache under `runs/.venv-cache/`), registers a kernel, and runs the notebook in it. `--no-provision`
-skips that and runs in the base `python3` kernel.
+A `provision_gate` node **between the planner and the code author** builds a per-run venv from the
+planner's `requirements` block (content-addressed cache under `runs/.venv-cache/`) and registers a
+kernel, so an unbuildable environment costs one gpt-5-mini call instead of a full gpt-5 notebook. The
+executor re-resolves the same kernel (a cache hit) because `content_reviser → executor` re-enters
+execution without passing the planner. `--no-provision` skips both and runs in the base `python3`
+kernel. There is **no package allow-list** — any package the plan asks for is installed; only an
+install timeout and an environment size cap apply.
 
 ### Where things live
 - `forged/pipeline/` — agents, graph, state, router, failure classification, lesson-mode inference
@@ -189,11 +201,10 @@ Folded from the retired `DEVELOPMENT.md`; kept current here.
   before debugging "lost" changes.
 - **`runs/` is gitignored** — run artifacts (and any venvs/grade reports written there) won't show in
   `git status`. Don't expect them in commits.
-- **A `<stamp>_course_<slug>/` run dir does NOT mean `forged course` produced it.** `learn` names its
-  N-module output identically (`_build_confirmed` in `cli.py` vs `_cmd_course` — same
-  `{stamp}_course_{topic-slug}` format), so the prefix tells you the run had multiple modules, not
-  which command was typed. Only a 1-module `learn` run gets `{stamp}_{module-title-slug}`. Don't
-  infer the entry point from the directory name — ask, or check `pipeline.log`.
+- **A `<stamp>_course_<slug>/` run dir just means the plan had multiple modules.** A 1-module `learn`
+  run gets `{stamp}_{module-title-slug}` instead. (Historically this was ambiguous because `course`
+  and `learn` named their output identically; with one command it now only tells you the plan's
+  shape.) Check `pipeline.log` for what actually happened.
 - **Provisioning has a hardcoded 600s install timeout** (`provisioning.py`, no override yet). A cold
   `torch` build can exceed it on a slow link. Workarounds: pre-warm pip's cache, or `--no-provision`
   against an existing `runs/.venv-cache/*` venv. (Making the timeout configurable is a known nice-to-have.)

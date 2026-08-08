@@ -8,7 +8,7 @@ This directory contains templates and examples for providing rich input to forge
 Just provide a topic and let forged use defaults:
 
 ```bash
-forged build --topic "How hash maps work"
+forged learn --topic "How hash maps work"
 ```
 
 This uses sensible defaults for learner profile and topic specification.
@@ -17,7 +17,7 @@ This uses sensible defaults for learner profile and topic specification.
 Use templates to customize the learning experience:
 
 ```bash
-forged build \
+forged learn \
   --topic "How hash maps work" \
   --learner-profile templates/examples/learner-backend-junior.yaml \
   --topic-spec templates/examples/topic-hash-maps.yaml
@@ -107,7 +107,7 @@ Theoretical rigor — one of:
 
 3. **Use with forged:**
    ```bash
-   forged build --topic "..." --learner-profile my-profile.yaml
+   forged learn --topic "..." --learner-profile my-profile.yaml
    ```
 
 ## What Each Template Affects
@@ -136,7 +136,7 @@ cp templates/examples/learner-beginner.yaml my-learning/beginner.yaml
 cp templates/examples/topic-hash-maps.yaml my-learning/hash-maps.yaml
 
 # Generate content
-forged build \
+forged learn \
   --topic "Hash maps and how they work" \
   --learner-profile my-learning/beginner.yaml \
   --topic-spec my-learning/hash-maps.yaml
@@ -147,7 +147,7 @@ Result: Dense explanations, multiple examples, visual focus, slower pacing.
 ### Example 2: ML Engineer Learning Transformers
 
 ```bash
-forged build \
+forged learn \
   --topic "Transformer attention mechanisms" \
   --learner-profile templates/examples/learner-ml-practitioner.yaml \
   --topic-spec templates/examples/topic-transformers.yaml
@@ -187,7 +187,7 @@ background_context: "Goal: build end-to-end ML pipelines; coming from academia."
 
 Then use it:
 ```bash
-forged build --topic "..." --learner-profile templates/examples/learner-data-scientist-transition.yaml
+forged learn --topic "..." --learner-profile templates/examples/learner-data-scientist-transition.yaml
 ```
 
 ## FAQ

@@ -275,8 +275,10 @@ def test_max_modules_and_no_provision_threaded_to_run_course(monkeypatch, tmp_pa
     _patch_gate(monkeypatch, confirmed=True, course=course)
     course_ran = _patch_run_course(monkeypatch, course)
 
+    # Topic term must appear in the course, or the union-coverage gate blocks the build
+    # before any flag is threaded — this test is about flag threading, not fidelity.
     cli.main(
-        ["learn", "--topic", "x", "--runs", str(tmp_path),
+        ["learn", "--topic", "Setup", "--runs", str(tmp_path),
          "--max-modules", "1", "--no-provision"]
     )
 

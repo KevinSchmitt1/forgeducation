@@ -1,14 +1,21 @@
 """forged — build an executed, critiqued teaching notebook from a topic.
 
-Modes of Operation:
+There is one front door. `forged learn` plans first and decides for itself whether the
+topic is one lesson or a course of modules; you confirm the plan before anything paid
+runs. There is deliberately no separate "single lesson" vs "course" command — picking
+between them was a judgement the learner had no basis to make, and getting it wrong is
+what produced over-large lessons.
 
   1. MINIMAL INPUT (uses sensible defaults):
-    forged build --topic "How a hash map works"
+    forged learn --topic "How a hash map works"
 
   2. STRUCTURED INPUT (customize learner profile and topic):
-    forged build --topic "Hash maps" \
+    forged learn --topic "Hash maps" \
       --learner-profile templates/examples/learner-backend-junior.yaml \
       --topic-spec templates/examples/topic-hash-maps.yaml
+
+  3. SEE THE PLAN WITHOUT SPENDING ON MODULES:
+    forged learn --topic "Hash maps" --plan-only
 
 Other commands:
   forged pipelines            # list the bundled pipeline configs
@@ -26,7 +33,6 @@ environment or a local .env (OPENAI_API_KEY, or OLLAMA_BASE_URL for local infere
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import sys
 from pathlib import Path
@@ -44,7 +50,6 @@ from .deliverables import (
     write_learner_package,
 )
 from .models import LearnerProfile, TopicSpecification
-from .orchestrator import MANIFEST_FILE, Orchestrator
 from .pipeline.mode import render_mode_directive
 from .progress import Spinner
 from .usage import write_usage_report
@@ -67,98 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_clean(args)
     if args.command == "pipelines":
         return _cmd_pipelines(args)
-    if args.command == "agentic":
-        return _cmd_agentic(args)
-    if args.command == "course":
-        return _cmd_course(args)
-    if args.command == "learn":
-        return _cmd_learn(args)
-    return _cmd_build(args)
-
-
-def _cmd_build(args) -> int:
-    topic = (args.topic or "").strip()
-    if not topic:
-        print("✗ --topic must not be empty", file=sys.stderr)
-        return EXIT_USAGE
-
-    # Keys come from the environment or a local .env (current dir or package root).
-    _load_dotenv(Path.cwd() / ".env")
-    _load_dotenv(PACKAGE_ROOT / ".env")
-
-    try:
-        pipeline = load_pipeline(args.config)
-
-        # Load structured inputs (or use defaults)
-        learner_profile = (
-            LearnerProfile.from_yaml(args.learner_profile)
-            if args.learner_profile
-            else _default_learner_profile()
-        )
-
-        topic_spec = (
-            TopicSpecification.from_yaml(args.topic_spec)
-            if args.topic_spec
-            else _default_topic_spec(topic)
-        )
-    except (FileNotFoundError, ValueError, TypeError) as exc:
-        print(f"✗ {exc}", file=sys.stderr)
-        return EXIT_USAGE
-
-    orchestrator = Orchestrator(
-        pipeline=pipeline,
-        personas_dir=Path(args.personas),
-        runs_root=Path(args.runs),
-    )
-
-    profile_label = (
-        Path(args.learner_profile).name
-        if args.learner_profile
-        else "default"
-    )
-    print(_build_header(pipeline, profile_label))
-    reporter = _StageReporter()
-    try:
-        store = orchestrator.run(
-            brief=topic,
-            learner_profile=learner_profile,
-            topic_spec=topic_spec,
-            on_stage=reporter,
-        )
-    except Exception as exc:  # noqa: BLE001 — top-level: report cleanly, exit non-zero
-        reporter.abort()
-        # Flush the (block-buffered when piped) stdout header + stage lines before the
-        # unbuffered stderr error, so the failure message can't jump ahead of them.
-        sys.stdout.flush()
-        print(f"\n✗ pipeline failed: {exc}", file=sys.stderr)
-        if orchestrator.last_run_dir is not None:
-            print(f"  debug files: {orchestrator.last_run_dir}", file=sys.stderr)
-        return EXIT_RUNTIME
-
-    return _report_outcome(store)
-
-
-def _report_outcome(store) -> int:
-    """Translate the gate's verdict into the user-facing message + exit code, so the
-    CLI never reports success on a notebook the gate considers unusable."""
-    gate = json.loads(store.read_file(MANIFEST_FILE)).get("gate", {})
-    notebook = store.run_dir / "lesson.ipynb"
-    summary = store.run_dir / "SUMMARY.md"
-
-    if gate.get("crucial_open"):
-        print("\n⚠ shipped with crucial issue(s) still open — review before use.")
-        print(f"  open    {notebook}")
-        print(f"  summary {summary}")
-        return EXIT_RUNTIME
-    if not gate.get("satisfied", True):
-        print("\n⚠ done — below the quality bar; minor issues left for human review.")
-        print(f"  open    {notebook}")
-        print(f"  summary {summary}")
-        return EXIT_OK
-
-    print(f"\n✓ done — open {notebook}")
-    print(f"  summary {summary}")
-    return EXIT_OK
+    return _cmd_learn(args)
 
 
 def _cmd_clean(args) -> int:
@@ -210,47 +124,6 @@ def _confirm_delete(count: int, keep: int) -> bool:
         print("Aborted — nothing deleted.")
         return False
     return True
-
-
-def _cmd_agentic(args) -> int:
-    """Run the agentic pipeline with agent iteration and rerouting.
-
-    Invokes run_pipeline() with structured feedback loop so agents can
-    iterate on failures (Phase 8-9).
-    """
-    topic = (args.topic or "").strip()
-    if not topic:
-        print("✗ --topic must not be empty", file=sys.stderr)
-        return EXIT_USAGE
-
-    # Same structured-input contract as `forged build`: load the learner profile
-    # and topic spec (or sensible defaults), failing fast on bad input.
-    try:
-        pipeline = load_pipeline(args.config)
-        learner_profile = (
-            LearnerProfile.from_yaml(args.learner_profile)
-            if args.learner_profile
-            else _default_learner_profile()
-        )
-        topic_spec = (
-            TopicSpecification.from_yaml(args.topic_spec)
-            if args.topic_spec
-            else _default_topic_spec(topic)
-        )
-    except (FileNotFoundError, ValueError, TypeError) as exc:
-        print(f"✗ {exc}", file=sys.stderr)
-        return EXIT_USAGE
-
-    return _run_agentic_lesson(
-        topic=topic,
-        learner_profile=learner_profile,
-        topic_spec=topic_spec,
-        pipeline=pipeline,
-        personas_dir=Path(args.personas),
-        run_dir=Path(args.run_dir),
-        provision=not getattr(args, "no_provision", False),
-        debug=args.debug,
-    )
 
 
 def _run_agentic_lesson(
@@ -387,117 +260,6 @@ def _cmd_pipelines(args) -> int:
     return EXIT_OK
 
 
-def _build_header(pipeline, profile_label: str) -> str:
-    """A one-line, honest run header: advertise the real shape of the run, including
-    that a revision pipeline may add bounded extra rounds beyond its base stages."""
-    base = len(pipeline.stages)
-    if pipeline.revision is not None:
-        shape = (
-            f"{base} base stages + up to {pipeline.revision.max_iterations} "
-            "revision round(s)"
-        )
-    else:
-        shape = f"{base} stage(s)"
-    return f"▶ pipeline '{pipeline.name}' — {shape}\n  learner profile: {profile_label}\n"
-
-
-def _cmd_course(args) -> int:
-    """Decompose a topic into a course plan and check the union-coverage invariant.
-
-    Phase 1 is plan-only: it produces a CourseSpec and verifies the modules collectively
-    still cover the topic — no module runs (those arrive in Phase 2). A dropped capability
-    is an honest failure (non-zero exit), never a silent success.
-    """
-    topic = (args.topic or "").strip()
-    if not topic:
-        print("✗ --topic must not be empty", file=sys.stderr)
-        return EXIT_USAGE
-
-    _load_dotenv(Path.cwd() / ".env")
-    _load_dotenv(PACKAGE_ROOT / ".env")
-
-    try:
-        pipeline = load_pipeline(args.config)
-        learner_profile = (
-            LearnerProfile.from_yaml(args.learner_profile)
-            if args.learner_profile
-            else _default_learner_profile()
-        )
-        topic_spec = (
-            TopicSpecification.from_yaml(args.topic_spec)
-            if args.topic_spec
-            else _default_topic_spec(topic)
-        )
-    except (FileNotFoundError, ValueError, TypeError) as exc:
-        print(f"✗ {exc}", file=sys.stderr)
-        return EXIT_USAGE
-
-    try:
-        planner = CurriculumPlanner(personas_dir=Path(args.personas))
-        course = planner.plan(
-            brief=topic, learner_profile=learner_profile, topic_spec=topic_spec
-        )
-    except Exception as exc:
-        print(f"\n✗ Curriculum planning failed: {exc}", file=sys.stderr)
-        return EXIT_RUNTIME
-
-    report = assess_course_fidelity(list(_requested_capabilities(topic_spec)), course)
-    _print_course(course)
-
-    # A decomposition that dropped a capability is never run — fail honestly first.
-    if not report.is_faithful:
-        print(
-            "\n  ⚠ course-fidelity check FAILED — the decomposition dropped: "
-            + "; ".join(report.missing),
-            file=sys.stderr,
-        )
-        return EXIT_RUNTIME
-
-    if args.plan_only:
-        if args.out:
-            _persist_course(Path(args.out), course, report)
-        print("\n  ✓ course-fidelity check passed — every requested capability is covered")
-        return EXIT_OK
-
-    # The gate: confirm before spending, and let the operator retarget a module's lesson
-    # mode first (doc 18, D3). `learn` has gated since doc 16; `course` did not, which is
-    # how the 2026-07-28 run spent four paid module builds nobody had seen the shape of.
-    if args.yes:
-        print("\n▶ --yes given: building without the interactive gate.")
-    elif not sys.stdin.isatty():
-        print(
-            "✗ the interactive plan gate needs a TTY; pass --yes to run non-interactively",
-            file=sys.stderr,
-        )
-        return EXIT_USAGE
-    else:
-        confirmed = _run_plan_gate(
-            course, list(_requested_capabilities(topic_spec)), Path(args.personas), planner,
-            topic, learner_profile, topic_spec,
-        )
-        if confirmed is None:
-            print("\nNothing was run.")
-            return EXIT_OK  # a deliberate 'no' is a success, not an error
-        course = confirmed
-
-    # Phase 2: run each module through the lesson pipeline.
-    from datetime import datetime
-
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    course_dir = Path(args.runs) / f"{stamp}_course_{_dir_slug(topic)}"
-    course_dir.mkdir(parents=True, exist_ok=True)
-    _persist_course(course_dir, course, report)
-
-    total = len(course.modules)
-    n = total if args.max_modules is None else min(args.max_modules, total)
-    print(f"\n▶ Running {n} module lesson(s) into {course_dir} …")
-    result = _orchestrate_course(
-        course, learner_profile, course_dir,
-        pipeline=pipeline, personas_dir=Path(args.personas), args=args,
-    )
-    return _finalize_course(result, course_dir, report)
-
-
 def _finalize_course(result, course_dir: Path, fidelity) -> int:
     """Assemble the course deliverable (README/COURSE.md/NAV.md, doc 13 Phase 3) from
     the course's outcome, then print the per-module status report. Shared by
@@ -582,13 +344,14 @@ def _report_course_result(result, course_dir: Path) -> int:
 
 
 def _cmd_learn(args) -> int:
-    """One front door (doc 16): plan first, confirm, then build a lesson or a course.
+    """The front door (doc 16): plan first, confirm, then build a lesson or a course.
 
-    Always calls the CurriculumPlanner (the sizing authority): 1 module → single-lesson
-    branch (same lifecycle as `forged agentic`); N modules → course orchestration (same
-    as `forged course`). The interactive gate runs nothing paid until the learner confirms;
-    `--yes` skips it, and a non-TTY stdin without `--yes` is a usage error so a script must
-    opt into spending explicitly.
+    Always calls the CurriculumPlanner (the sizing authority): 1 module → the single-lesson
+    branch; N modules → course orchestration. Both branches are reached from here and only
+    from here — the old `agentic`/`course`/`build` commands made the caller pre-commit to a
+    shape before anything had sized the topic. The interactive gate runs nothing paid until
+    the learner confirms; `--yes` skips it, and a non-TTY stdin without `--yes` is a usage
+    error so a script must opt into spending explicitly. `--plan-only` stops after the plan.
     """
     topic = (args.topic or "").strip()
     if not topic:
@@ -630,6 +393,11 @@ def _cmd_learn(args) -> int:
 
     original_capabilities = list(_requested_capabilities(topic_spec))
 
+    # --plan-only: show the plan and the union-coverage verdict, then stop. Costs the
+    # planner (and the readiness pre-flight) only — no module is ever built.
+    if args.plan_only:
+        return _report_plan_only(course, original_capabilities, args.out)
+
     # The gate: plan first, confirm before spending. --yes accepts as-is (still printed);
     # a non-TTY stdin without --yes is a usage error so a script opts into spending.
     if args.yes:
@@ -655,6 +423,30 @@ def _cmd_learn(args) -> int:
         args, confirmed_course, learner_profile, topic, pipeline, personas_dir,
         original_capabilities,
     )
+
+
+def _report_plan_only(course, requested_capabilities: list[str], out: Path | None) -> int:
+    """Print the plan plus its union-coverage verdict; persist it when --out is given.
+
+    A decomposition that dropped a requested capability is an honest failure (non-zero
+    exit), never a silent success — the same invariant the build path enforces before it
+    spends, surfaced here for free.
+    """
+    report = assess_course_fidelity(requested_capabilities, course)
+    _print_course(course)
+
+    if not report.is_faithful:
+        print(
+            "\n  ⚠ course-fidelity check FAILED — the decomposition dropped: "
+            + "; ".join(report.missing),
+            file=sys.stderr,
+        )
+        return EXIT_RUNTIME
+
+    if out:
+        _persist_course(Path(out), course, report)
+    print("\n  ✓ course-fidelity check passed — every requested capability is covered")
+    return EXIT_OK
 
 
 def _apply_readiness_preflight(
@@ -762,6 +554,22 @@ def _build_confirmed(
         )
 
     report = assess_course_fidelity(list(original_capabilities), course)
+
+    # A decomposition that dropped a requested capability is never run — fail honestly
+    # first. This gate lived in the old `forged course` command; without it here, folding
+    # that command into `learn` would have quietly deleted the union-coverage guarantee
+    # the README promises. `original_capabilities` is already the *assessable* subset
+    # (`_requested_capabilities`), so a free-text paragraph topic yields an empty list and
+    # a vacuously faithful report — this blocks a real drop, never an unmeasurable one,
+    # and so agrees with the "ⓘ not assessed" verdict the plan gate prints.
+    if not report.is_faithful:
+        print(
+            "\n  ⚠ course-fidelity check FAILED — the decomposition dropped: "
+            + "; ".join(report.missing),
+            file=sys.stderr,
+        )
+        return EXIT_RUNTIME
+
     course_dir = Path(args.runs) / f"{stamp}_course_{_dir_slug(topic)}"
     course_dir.mkdir(parents=True, exist_ok=True)
     _persist_course(course_dir, course, report)
@@ -839,150 +647,28 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    build = sub.add_parser("build", help="Build a lesson notebook from a topic")
-    build.add_argument("--topic", required=True, help="The lesson topic or brief")
-    build.add_argument(
-        "--config", default=str(DEFAULT_CONFIG),
-        help="Pipeline YAML (default: bundled review-loop). "
-             "Run 'forged pipelines' to list bundled options.",
-    )
-    build.add_argument(
-        "--learner-profile",
-        type=Path,
-        help="Path to learner_profile.yaml. Describes learner background, learning style, "
-             "and material density. Copy from templates/examples/ or create your own. "
-             "Uses sensible default if omitted.",
-    )
-    build.add_argument(
-        "--topic-spec",
-        type=Path,
-        help="Path to topic_specification.yaml. Defines scope, learning objectives, "
-             "prerequisites, and depth. Copy from templates/examples/ or create your own. "
-             "Uses sensible default if omitted.",
-    )
-    build.add_argument(
-        "--runs", default=str(Path.cwd() / "runs"),
-        help="Root directory for run outputs (default: ./runs)",
-    )
-    # Internal: persona/system-prompt directory. Hidden — users should not change it.
-    build.add_argument("--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS)
-
     sub.add_parser("pipelines", help="List the bundled pipeline configs")
-
-    agentic = sub.add_parser("agentic", help="Run the agentic pipeline with agent iteration")
-    agentic.add_argument(
-        "--config", default=str(DEFAULT_CONFIG),
-        help="Pipeline YAML used to resolve stage-specific model defaults for the "
-             "agentic run (default: bundled review-loop).",
-    )
-    agentic.add_argument(
-        "--topic", required=True,
-        help="Lesson topic (e.g., 'Teach me how hash maps work')",
-    )
-    agentic.add_argument(
-        "--run-dir", type=Path, required=True,
-        help="Output directory for lesson notebook and metadata",
-    )
-    agentic.add_argument(
-        "--learner-profile",
-        type=Path,
-        help="Path to learner_profile.yaml (background, learning style, material "
-             "density). Copy from templates/examples/ or create your own. "
-             "Uses a sensible default if omitted.",
-    )
-    agentic.add_argument(
-        "--topic-spec",
-        type=Path,
-        help="Path to topic_specification.yaml (scope, objectives, prerequisites, "
-             "depth). Copy from templates/examples/ or create your own. "
-             "Uses a sensible default if omitted.",
-    )
-    agentic.add_argument(
-        "--no-provision", action="store_true",
-        help="Skip building a per-run virtualenv from the lesson's requirements and run "
-             "on the base kernel instead. Provisioning is ON by default so the lesson's "
-             "cells run for real; use this for a fast, offline run when the deps are "
-             "already importable.",
-    )
-    agentic.add_argument(
-        "--debug", action="store_true",
-        help="Enable DEBUG logging (shows detailed pipeline activity)",
-    )
-    agentic.add_argument(
-        "--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS
-    )
-
-    course = sub.add_parser(
-        "course",
-        help="Decompose an over-large topic into an ordered course of module lessons",
-    )
-    course.add_argument("--topic", required=True, help="The course topic or brief")
-    course.add_argument(
-        "--plan-only", action="store_true",
-        help="Produce and check the course plan without running any module (zero LLM "
-             "run cost). Omit to also run each module through the lesson pipeline.",
-    )
-    course.add_argument(
-        "--yes", action="store_true",
-        help="Skip the interactive plan gate and build the proposed plan as-is "
-             "(required when stdin is not a TTY).",
-    )
-    course.add_argument(
-        "--config", default=str(DEFAULT_CONFIG),
-        help="Pipeline YAML used to resolve stage-specific models for each module run "
-             "(default: bundled review-loop).",
-    )
-    course.add_argument(
-        "--runs", default=str(Path.cwd() / "runs"),
-        help="Root directory for the course output (default: ./runs).",
-    )
-    course.add_argument(
-        "--max-modules", type=int, default=None,
-        help="Cap the number of module lessons actually run (cost control).",
-    )
-    course.add_argument(
-        "--redecompose", action="store_true",
-        help="Enable the reactive safety net: any module that still drops a requested "
-             "capability is re-decomposed into a new module and run (opt-in; adds cost).",
-    )
-    course.add_argument(
-        "--max-depth", type=int, default=1,
-        help="Max reactive re-decomposition rounds when --redecompose is set (default: 1). "
-             "Bounds the R1 → planner → R1 loop so it always terminates.",
-    )
-    course.add_argument(
-        "--no-provision", action="store_true",
-        help="Skip per-module virtualenv provisioning; run on the base kernel.",
-    )
-    course.add_argument(
-        "--learner-profile",
-        type=Path,
-        help="Path to learner_profile.yaml (background, learning style, material "
-             "density). Uses a sensible default if omitted.",
-    )
-    course.add_argument(
-        "--topic-spec",
-        type=Path,
-        help="Path to topic_specification.yaml (scope, objectives, prerequisites, "
-             "depth). Uses a sensible default if omitted.",
-    )
-    course.add_argument(
-        "--out",
-        type=Path,
-        help="Directory to persist the course plan into (course_plan.json + COURSE.md). "
-             "When omitted, the plan is only printed.",
-    )
-    course.add_argument("--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS)
 
     learn = sub.add_parser(
         "learn",
-        help="One front door: plan first, confirm, then build a lesson or a course",
+        help="Plan first, confirm, then build a lesson or a course (the front door)",
     )
     learn.add_argument("--topic", required=True, help="What you want to learn")
     learn.add_argument(
         "--yes", action="store_true",
         help="Skip the interactive plan gate and build the proposed plan as-is "
              "(required for non-interactive/scripted use).",
+    )
+    learn.add_argument(
+        "--plan-only", action="store_true",
+        help="Produce and check the plan without building any lesson (no module run "
+             "cost). Omit to continue to the confirmation gate and build.",
+    )
+    learn.add_argument(
+        "--out",
+        type=Path,
+        help="With --plan-only, persist the plan into this directory "
+             "(course_plan.json + COURSE.md). Ignored otherwise.",
     )
     learn.add_argument(
         "--config", default=str(DEFAULT_CONFIG),

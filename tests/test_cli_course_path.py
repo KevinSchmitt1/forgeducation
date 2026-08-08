@@ -1,9 +1,15 @@
-"""CLI tests for `forged course --plan-only` (doc 13, Phase 1e).
+"""CLI tests for the course path through `forged learn` (doc 13).
 
-Phase 1 ships the plan-only slice: decompose a brief into a CourseSpec and check the
-union-coverage honesty invariant — no module runs. Tests patch the CurriculumPlanner so
-they never hit the network; they assert the CLI plumbing, the fidelity verdict, and the
-honest exit codes.
+These originally drove a separate `forged course` command. That command is gone — one
+front door plans first and decides lesson-vs-course itself — so they now drive `learn`
+with a planner stubbed to return a multi-module CourseSpec, which is exactly how the
+course path is reached in production. The behaviour under test is unchanged: the
+plan-only slice, the union-coverage honesty invariant, the orchestration hand-off, and
+the honest exit codes.
+
+Every course here has ≥2 modules, so the readiness pre-flight (1-module only) never
+fires and no ReadinessAssessor stub is needed. Tests patch the CurriculumPlanner so they
+never hit the network.
 """
 
 from __future__ import annotations
@@ -48,6 +54,45 @@ def _patch_planner(monkeypatch, course: CourseSpec) -> None:
     monkeypatch.setattr(cli, "CurriculumPlanner", _FakePlanner, raising=False)
 
 
+class _FakeAssessor:
+    """ReadinessAssessor stand-in: always reachable, never a network call."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def assess(self, **kwargs):
+        from forged.curriculum.model import ReadinessVerdict
+
+        return ReadinessVerdict(
+            reachable=True,
+            beachhead="",
+            missing_foundations=(),
+            unreachable_capabilities=(),
+            reason="stubbed",
+        )
+
+
+@pytest.fixture(autouse=True)
+def _no_live_calls(monkeypatch):
+    """Hard guard: nothing in this file may reach a real LLM or a real pipeline.
+
+    `learn` reaches two things `course` never did — the ReadinessAssessor (1-module plans
+    only) and the single-lesson branch. Both construct real LLM clients. A test here that
+    forgets to stub them does not fail; it runs a full paid pipeline for ~10 minutes and
+    then fails on the assertion. Stubbing them autouse makes that impossible rather than
+    merely discouraged.
+    """
+    monkeypatch.setattr(cli, "ReadinessAssessor", _FakeAssessor, raising=False)
+
+    def _refuse_single_lesson(**kwargs):
+        raise AssertionError(
+            "the single-lesson branch was reached in a course-path test; "
+            "if that is intended, assert on it explicitly with an explicit stub"
+        )
+
+    monkeypatch.setattr(cli, "_run_agentic_lesson", _refuse_single_lesson)
+
+
 @pytest.mark.unit
 def test_course_plan_only_prints_modules_and_exits_ok(monkeypatch, capsys) -> None:
     # A faithful course for the default topic spec (objective "Understand <topic>",
@@ -62,7 +107,7 @@ def test_course_plan_only_prints_modules_and_exits_ok(monkeypatch, capsys) -> No
     )
     _patch_planner(monkeypatch, course)
 
-    code = cli.main(["course", "--topic", "quantum teleportation", "--plan-only"])
+    code = cli.main(["learn", "--topic", "quantum teleportation", "--plan-only"])
 
     out = capsys.readouterr().out
     assert code == cli.EXIT_OK
@@ -80,7 +125,7 @@ def test_course_plan_only_warns_on_dropped_capability(monkeypatch, capsys) -> No
     )
     _patch_planner(monkeypatch, course)
 
-    code = cli.main(["course", "--topic", "quantum teleportation", "--plan-only"])
+    code = cli.main(["learn", "--topic", "quantum teleportation", "--plan-only"])
 
     err = capsys.readouterr().err
     assert code == cli.EXIT_RUNTIME
@@ -103,7 +148,7 @@ def test_course_plan_only_persists_to_out_dir(monkeypatch, tmp_path) -> None:
 
     out = tmp_path / "course"
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--plan-only", "--out", str(out)]
+        ["learn", "--topic", "quantum teleportation", "--plan-only", "--out", str(out)]
     )
 
     assert code == cli.EXIT_OK
@@ -116,7 +161,7 @@ def test_course_plan_only_persists_to_out_dir(monkeypatch, tmp_path) -> None:
 
 @pytest.mark.unit
 def test_course_empty_topic_is_usage_error() -> None:
-    code = cli.main(["course", "--topic", "   ", "--plan-only"])
+    code = cli.main(["learn", "--topic", "   ", "--plan-only"])
     assert code == cli.EXIT_USAGE
 
 
@@ -167,7 +212,7 @@ def test_course_without_plan_only_invokes_orchestrator(monkeypatch, tmp_path) ->
     captured = _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
+        ["learn", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
 
     assert code == cli.EXIT_OK
@@ -183,7 +228,7 @@ def test_course_run_writes_post_run_readme_and_course_md(monkeypatch, tmp_path) 
     _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
+        ["learn", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
 
     assert code == cli.EXIT_OK
@@ -203,7 +248,7 @@ def test_course_threads_max_modules_and_no_provision(monkeypatch, tmp_path) -> N
     captured = _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
 
     cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes",
+        ["learn", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes",
          "--max-modules", "1", "--no-provision"]
     )
 
@@ -218,16 +263,22 @@ def test_course_with_failed_module_exits_runtime(monkeypatch, tmp_path) -> None:
     _patch_run_course(monkeypatch, _module_result(course, terminal_ok=False))
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
+        ["learn", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
     assert code == cli.EXIT_RUNTIME
 
 
 @pytest.mark.unit
 def test_course_fidelity_failure_blocks_orchestration(monkeypatch, tmp_path) -> None:
-    # Course covers nothing about the topic → never orchestrate.
+    # Course covers nothing about the topic → never orchestrate. Two modules, so the plan
+    # takes the course branch (a 1-module plan is a single lesson, where R1's lesson-level
+    # detector owns fidelity instead).
     dropped = CourseSpec(
-        title="Unrelated", modules=(_module("Apples", ["learn about apples"], [], 0),),
+        title="Unrelated",
+        modules=(
+            _module("Apples", ["learn about apples"], [], 0),
+            _module("Oranges", ["learn about oranges"], [], 1),
+        ),
         rationale="",
     )
     _patch_planner(monkeypatch, dropped)
@@ -239,7 +290,7 @@ def test_course_fidelity_failure_blocks_orchestration(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(orch, "run_course", _fake)
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
+        ["learn", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
     assert code == cli.EXIT_RUNTIME
     assert ran["called"] is False
@@ -265,7 +316,7 @@ def test_redecompose_routes_to_reactive_loop_and_threads_max_depth(monkeypatch, 
     monkeypatch.setattr(cli, "_make_remediation_planner", lambda personas_dir: object())
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes",
+        ["learn", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes",
          "--redecompose", "--max-depth", "3"]
     )
 
@@ -281,7 +332,7 @@ def test_without_redecompose_uses_sequential_run_course(monkeypatch, tmp_path) -
     captured = _patch_run_course(monkeypatch, _module_result(course, terminal_ok=True))
 
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
+        ["learn", "--topic", "quantum teleportation", "--runs", str(tmp_path), "--yes"]
     )
 
     assert code == cli.EXIT_OK
@@ -303,7 +354,7 @@ def test_course_without_yes_on_a_non_tty_is_a_usage_error(monkeypatch, tmp_path,
 
     # Act
     code = cli.main(
-        ["course", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
+        ["learn", "--topic", "quantum teleportation", "--runs", str(tmp_path)]
     )
 
     # Assert — no TTY and no --yes means nothing paid runs.
