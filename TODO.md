@@ -18,28 +18,32 @@ unconsented agentic runs** (243s and 634s) after a course test was retargeted fr
 exact cost is unrecoverable (pytest rotated the tmp dirs holding `usage.json`). A local guard is in
 place; the repo-wide fix is under "Known loose ends".
 
-## 🎯 STATE RIGHT NOW — one change on master, one still open
+## 🎯 STATE RIGHT NOW — both changes on `master`, neither validated by a run
 
-| Change | Where | Status |
-|---|---|---|
-| **Provisioning preflight** (#33) | ✅ on `master` (`c3e2613`) | 3 gates green, exercised, **not validated by a run** |
-| **One CLI front door + linear engine deleted** (was #34) | ⚠️ **not on master** — `refactor/single-cli-front-door` | 3 gates green, exercised, **not validated by a run** |
+| Change | Where |
+|---|---|
+| **Provisioning preflight** — venv built between planner and code_author | ✅ `master` (`c3e2613`, #33) |
+| **One CLI front door; linear engine deleted** | ✅ `master` (`5fdb2cc`, #35) |
 
-**What went wrong with #34, so it isn't repeated:** it was opened as a *stacked* PR with base
-`feat/provisioning-preflight` rather than `master`. Merging it therefore merged it into that feature
-branch, not into `master`; `master` was updated separately by #33, and the consolidation was left
-behind. GitHub reported #34 as MERGED, which it was — into the wrong place. The branch has since
-been rebased onto `master` and needs a **fresh PR targeting `master`**.
+Both are **green on the three gates and exercised at the CLI entry point, but neither has been
+validated by a real run** — that distinction is the whole point of `CLAUDE.md`'s norm 2. The next
+paid `learn` run is the first thing to exercise either of them for real. Specifically worth watching:
 
-> **Lesson:** don't open stacked PRs here. Either hold both changes on one branch, or wait for the
-> first to land on `master` and rebase the second onto it. A "MERGED" badge is not proof the code
-> reached `master` — check `git ls-tree origin/master`.
+- a provisioning failure should now surface **before** any notebook exists (the preflight);
+- `learn` is the only way in, so any run exercises the collapsed CLI by definition.
 
-Also worth knowing: PR #32 was squash-merged, which left a duplicate commit on the feature branches
-and made GitHub report a phantom conflict. Rebase onto `origin/master`; don't re-merge.
+**Two git lessons from getting these merged, both mine:**
 
-**Do not merge the remaining change as soon as CI is green** (`CLAUDE.md` norm 3). Add credits, do
-the single doc-18 validation run below, then merge.
+> **Don't open stacked PRs here.** #34 was opened with base `feat/provisioning-preflight` instead of
+> `master`. Merging it merged into that feature branch; `master` was updated separately by #33 and
+> never received the consolidation. GitHub reported #34 as MERGED — into the wrong place. It took a
+> fresh PR (#35) against `master` to actually land it. **A MERGED badge is not proof code reached
+> `master`; check `git ls-tree origin/master`.** Either hold related changes on one branch, or wait
+> for the first to land and rebase the second onto `master`.
+
+> **Squash-merges leave duplicate commits on feature branches.** After #32 was squash-merged, both
+> branches carried a copy of its commit and GitHub reported a phantom conflict. Rebase onto
+> `origin/master`; don't re-merge.
 
 ## 🎯 THEN — RE-RUN THE DOC-18 VALIDATION (criteria 3–5 still unmeasured)
 
