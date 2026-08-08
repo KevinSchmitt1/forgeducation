@@ -1,7 +1,7 @@
 # Learner Profile Template
 # ========================
 # Copy this file, fill in every field, then pass it with:
-#   forged build --topic "..." --learner-profile path/to/profile.yaml
+#   forged learn --topic "..." --learner-profile path/to/profile.yaml
 #
 # All seven fields are required. Enum fields only accept the listed values.
 

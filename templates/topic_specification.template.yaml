@@ -3,7 +3,7 @@
 # Define the scope, depth, and boundaries of what should be learned.
 # All fields optional; omit any that don't apply.
 #
-# Usage: forged build --topic "..." --topic-spec path/to/topic.yaml
+# Usage: forged learn --topic "..." --topic-spec path/to/topic.yaml
 
 scope:
   # What is the focused topic/area?
