@@ -6,13 +6,47 @@
 
 ---
 
-## 🎯 NEXT UP — RE-RUN THE DOC-18 VALIDATION (criteria 3–5 still unmeasured)
+## ⛔ BLOCKED — the OpenAI account is out of credits (2026-08-08)
 
-**Status as of 2026-07-30, end of session.** The lesson-mode debias **works** and is proven across
-two runs. What is *not* yet known is whether the resulting notebooks are actually better, because
-**no module has produced a notebook yet** — the last two attempts died in environment provisioning,
-not in the pipeline. That blocker is now fixed (allow-list removed, PR #31). The next action is
-simply to run it again.
+`learn` fails at the CurriculumPlanner with `429 insufficient_quota / credit_balance_exhausted`.
+**Nothing paid can run until credits are added.** Everything below that says "needs a run" is
+waiting on exactly this.
+
+Part of that balance was spent accidentally: on 2026-08-08 two test-suite invocations made **real,
+unconsented agentic runs** (243s and 634s) after a course test was retargeted from `course` to
+`learn` — a 1-module fixture routes to the single-lesson branch, which builds real `LLMClient`s. The
+exact cost is unrecoverable (pytest rotated the tmp dirs holding `usage.json`). A local guard is in
+place; the repo-wide fix is under "Known loose ends".
+
+## 🎯 STATE RIGHT NOW — one change on master, one still open
+
+| Change | Where | Status |
+|---|---|---|
+| **Provisioning preflight** (#33) | ✅ on `master` (`c3e2613`) | 3 gates green, exercised, **not validated by a run** |
+| **One CLI front door + linear engine deleted** (was #34) | ⚠️ **not on master** — `refactor/single-cli-front-door` | 3 gates green, exercised, **not validated by a run** |
+
+**What went wrong with #34, so it isn't repeated:** it was opened as a *stacked* PR with base
+`feat/provisioning-preflight` rather than `master`. Merging it therefore merged it into that feature
+branch, not into `master`; `master` was updated separately by #33, and the consolidation was left
+behind. GitHub reported #34 as MERGED, which it was — into the wrong place. The branch has since
+been rebased onto `master` and needs a **fresh PR targeting `master`**.
+
+> **Lesson:** don't open stacked PRs here. Either hold both changes on one branch, or wait for the
+> first to land on `master` and rebase the second onto it. A "MERGED" badge is not proof the code
+> reached `master` — check `git ls-tree origin/master`.
+
+Also worth knowing: PR #32 was squash-merged, which left a duplicate commit on the feature branches
+and made GitHub report a phantom conflict. Rebase onto `origin/master`; don't re-merge.
+
+**Do not merge the remaining change as soon as CI is green** (`CLAUDE.md` norm 3). Add credits, do
+the single doc-18 validation run below, then merge.
+
+## 🎯 THEN — RE-RUN THE DOC-18 VALIDATION (criteria 3–5 still unmeasured)
+
+The lesson-mode debias **works** and is proven across two runs. What is *not* yet known is whether
+the resulting notebooks are actually better, because **no module has produced a notebook yet** — the
+attempts died in environment provisioning, not in the pipeline. The allow-list blocker is fixed
+(PR #31) and provisioning now fails *before* the expensive stage (PR #33). Run it again.
 
 ```bash
 .venv/bin/python -m forged.cli learn \
@@ -28,11 +62,24 @@ shows each module's mode **before** any spend, warns when every module shares on
 
 | # | Criterion | Status |
 |---|---|---|
-| 1 | Planner emits a **mix** of modes (not all `executable`) | ✅ **PASS**, twice |
+| 1 | Planner emits a **mix** of modes (not all `executable`) | ✅ **PASS**, three times |
 | 2 | Gate shows modes; a mode can be overridden without re-planning | ✅ works |
 | 3 | Subject stays concrete instead of drifting to computable proxies | ⬜ **unmeasured** — no notebook yet |
 | 4 | Code share drops from the 76–89% band | ⬜ **unmeasured** — needs a built mixed course |
 | 5 | All modules provision | ⬜ blocked twice by the allow-list; should now pass |
+
+**Plan gate observed 2026-08-08** (planned only, not built — this is where the credits ran out).
+4 modules: `[0] Personal AI Workspace & Architecture · artifact`, `[1] Building a Modular AI Agent ·
+executable`, `[2] Agent Harnesses: Testing, Evaluation, CI · executable`, `[3] Optimizing Agentic
+Workflows & Co-Learning Pipelines · executable`. Est. ~$0.80–$2.00 / ~40–48 min. Fidelity: `ⓘ not
+assessed` (no `--topic-spec`, so no discrete capabilities to check — correct behaviour, PR #30).
+
+Two judgement calls for whoever runs it next:
+- **Module 3 is the widest** — RAG pipeline *and* drift monitoring *and* retrain-vs-prompt-tune
+  policy *and* rollback. Most likely to reproduce the original "code-heavy, not practical"
+  complaint. Candidate for `make module 3 artifact` or a split at the gate.
+- **Passing `--topic-spec` would turn the fidelity check on.** As run, nothing verifies the 4
+  modules cover what the topic asked for.
 
 > **Read the notebooks, not just the gate.** Criterion 1 is settled. The open question is Kevin's
 > original complaint: does an `artifact` lesson on personal workflow architecture hand him a scaffold
@@ -40,7 +87,7 @@ shows each module's mode **before** any spend, warns when every module shares on
 > Criterion 1 passing while 3 fails would prove fidelity drift is an **independent** defect and
 > re-open it as its own doc.
 
-### The two runs so far
+### The runs so far
 
 | Run | Modes | Outcome |
 |---|---|---|
