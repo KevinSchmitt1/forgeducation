@@ -175,8 +175,7 @@ second copy of it here just drifts from the real one. To catch up on actual proj
    highest-numbered files are usually the most recent work.
 3. **`git log --oneline -20`, `git status`, `gh pr list`** — ground the above against what's
    actually merged vs. still on a branch or open PR. Docs and branches can lag or lead each other;
-   don't assume either is current without checking. (See also "The working tree silently flips to
-   `master`" under Gotchas.)
+   don't assume either is current without checking. (See also "The working tree ...)
 
 ## Extending the system (common tasks)
 
@@ -196,9 +195,7 @@ Folded from the retired `DEVELOPMENT.md`; kept current here.
 
 ## Gotchas learned the hard way
 
-- **The working tree silently flips to `master`** between sessions/IDE actions; files then look
-  "reverted." It's just the branch — `git switch <feature>` restores everything. Check the branch
-  before debugging "lost" changes.
+- **The working tree is changed when the person who is in charge merges and switches to `master`**; check first before trying to change anything.
 - **`runs/` is gitignored** — run artifacts (and any venvs/grade reports written there) won't show in
   `git status`. Don't expect them in commits.
 - **A `<stamp>_course_<slug>/` run dir just means the plan had multiple modules.** A 1-module `learn`
