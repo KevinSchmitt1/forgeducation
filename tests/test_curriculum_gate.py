@@ -241,3 +241,85 @@ def test_adjuster_receives_titles_only_context() -> None:
     titles, sentence = adjuster.calls[0]
     assert titles == ("Setup", "Train", "Serve")
     assert sentence == "yes"
+
+
+# ── The module cap must be visible at the gate ────────────────────────────────────
+#
+# `--max-modules` caps how many modules actually run (orchestrator.py slices
+# course.modules[:max_modules]) but the gate rendered the estimate for the whole plan.
+# A run capped to 1 module of 5 was quoted "~$2.50 · ~60 min", so the only screen that
+# exists to make the spend decision overstated it 5x — and a real user cancelled a run
+# they wanted because of it.
+
+
+@pytest.mark.unit
+def test_estimate_covers_only_the_modules_that_will_be_built() -> None:
+    text = render_plan(_course(), _caps(_course()), max_modules=1)
+
+    assert "~$0.20–$0.50" in text
+    assert "~10–12 min" in text
+
+
+@pytest.mark.unit
+def test_plan_header_says_how_many_of_the_modules_will_be_built() -> None:
+    text = render_plan(_course(), _caps(_course()), max_modules=1)
+
+    assert "1 of 3" in text
+
+
+@pytest.mark.unit
+def test_uncapped_plan_still_estimates_the_whole_course() -> None:
+    text = render_plan(_course(), _caps(_course()))
+
+    assert "~$0.60–$1.50" in text
+    assert "~30–36 min" in text
+    assert "1 of 3" not in text
+
+
+@pytest.mark.unit
+def test_a_cap_larger_than_the_plan_changes_nothing() -> None:
+    text = render_plan(_course(), _caps(_course()), max_modules=10)
+
+    assert "~$0.60–$1.50" in text
+    assert "of 3" not in text
+
+
+@pytest.mark.unit
+def test_the_gate_itself_shows_the_capped_estimate() -> None:
+    """The cap must reach the rendered plan through run_gate, not just render_plan."""
+    output = io.StringIO()
+    run_gate(
+        _course(),
+        _caps(_course()),
+        _ScriptedAdjuster([("confirm", [])]),
+        _RecordingReplanner(),
+        input_stream=io.StringIO("yes\n"),
+        output_stream=output,
+        max_modules=1,
+    )
+
+    assert "~$0.20–$0.50" in output.getvalue()
+
+
+@pytest.mark.unit
+def test_modules_beyond_the_cap_are_marked_as_not_built() -> None:
+    """Listing all 5 modules under a cap of 1 reads as a promise to build all 5."""
+    text = render_plan(_course(), _caps(_course()), max_modules=1)
+    lines = [line for line in text.splitlines() if "] " in line]
+
+    assert "NOT BUILT" not in lines[0]
+    assert "NOT BUILT" in lines[1]
+    assert "NOT BUILT" in lines[2]
+
+
+@pytest.mark.unit
+def test_no_module_is_marked_not_built_without_a_cap() -> None:
+    assert "NOT BUILT" not in render_plan(_course(), _caps(_course()))
+
+
+@pytest.mark.unit
+def test_the_scope_note_reads_naturally_for_a_single_module() -> None:
+    text = render_plan(_course(), _caps(_course()), max_modules=1)
+
+    assert "for the 1 module that will run" in text
+    assert "module(s)" not in text

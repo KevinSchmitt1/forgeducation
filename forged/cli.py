@@ -414,6 +414,7 @@ def _cmd_learn(args) -> int:
         confirmed_course = _run_plan_gate(
             course, original_capabilities, personas_dir, planner,
             topic, learner_profile, topic_spec,
+            max_modules=args.max_modules,
         )
         if confirmed_course is None:
             print("\nNothing was run.")
@@ -501,7 +502,7 @@ def _readiness_escalation_guidance(verdict) -> str:
 
 def _run_plan_gate(
     course, original_capabilities, personas_dir, planner,
-    topic, learner_profile, topic_spec,
+    topic, learner_profile, topic_spec, max_modules=None,
 ):
     """Run the interactive gate; return the confirmed course, or None if it cancelled."""
     from .curriculum.adjuster import PlanAdjuster
@@ -524,6 +525,7 @@ def _run_plan_gate(
         _replanner,
         input_stream=sys.stdin,
         output_stream=sys.stdout,
+        max_modules=max_modules,
     )
     return outcome.course if outcome.confirmed else None
 

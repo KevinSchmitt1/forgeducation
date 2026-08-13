@@ -72,13 +72,26 @@ class GateOutcome:
 # ── Rendering (pure) ────────────────────────────────────────────────────────────────
 
 
-def render_plan(course: CourseSpec, original_capabilities: Sequence[str]) -> str:
+def render_plan(
+    course: CourseSpec,
+    original_capabilities: Sequence[str],
+    max_modules: int | None = None,
+) -> str:
     """Render the plan the way the learner sees it: numbered modules, one objective per
-    (wrapped) line, compact builds-on links, a cost/time estimate, and the fidelity check."""
+    (wrapped) line, compact builds-on links, a cost/time estimate, and the fidelity check.
+
+    `max_modules` mirrors the `--max-modules` cap the orchestrator applies. The estimate
+    must describe what will actually be built: quoting the whole plan for a capped run
+    overstates the spend on the one screen that exists to decide it.
+    """
     count = len(course.modules)
+    building = count if max_modules is None else min(max_modules, count)
     order_by_title = {module.spec.title: module.order for module in course.modules}
 
-    lines = [f"Proposed plan ({count} module{'' if count == 1 else 's'}):", ""]
+    heading = f"Proposed plan ({count} module{'' if count == 1 else 's'}"
+    if building < count:
+        heading += f"; building {building} of {count} — capped by --max-modules"
+    lines = [heading + "):", ""]
     for module in course.modules:
         header = f"  [{module.order}] {module.spec.title}"
         if module.module_prerequisites:
@@ -89,12 +102,14 @@ def render_plan(course: CourseSpec, original_capabilities: Sequence[str]) -> str
             header += f"  (builds on {refs})"
         if module.lesson_mode is not None:
             header += f"  · mode: {module.lesson_mode}"
+        if module.order >= building:
+            header += "  · NOT BUILT (--max-modules)"
         lines.append(header)
         for objective in module.spec.learning_objectives or ["(no objectives stated)"]:
             lines.append(_wrap_bullet(objective))
         lines.append("")
 
-    lines.append(_render_estimate(count))
+    lines.append(_render_estimate(building, capped=building < count))
     lines.append(_render_fidelity(course, original_capabilities))
     homogeneous = _render_homogeneous_mode_warning(course)
     if homogeneous:
@@ -130,14 +145,17 @@ def _wrap_bullet(text: str) -> str:
     )
 
 
-def _render_estimate(module_count: int) -> str:
+def _render_estimate(module_count: int, capped: bool = False) -> str:
+    """Estimate for the modules that will actually be built, not for the whole plan."""
     low = EST_USD_PER_TOKEN_LOW * EST_TOKENS_PER_LESSON * module_count
     high = EST_USD_PER_TOKEN_HIGH * EST_TOKENS_PER_LESSON * module_count
     min_minutes = EST_MINUTES_PER_LESSON[0] * module_count
     max_minutes = EST_MINUTES_PER_LESSON[1] * module_count
+    plural = "" if module_count == 1 else "s"
+    scope = f", for the {module_count} module{plural} that will run" if capped else ""
     return (
         f"  Estimated cost: ~${low:.2f}–${high:.2f}  ·  "
-        f"estimated time: ~{min_minutes}–{max_minutes} min  (rough)"
+        f"estimated time: ~{min_minutes}–{max_minutes} min  (rough{scope})"
     )
 
 
@@ -174,6 +192,7 @@ def run_gate(
     input_stream: TextIO,
     output_stream: TextIO,
     max_rounds: int = MAX_ADJUSTMENT_ROUNDS,
+    max_modules: int | None = None,
 ) -> GateOutcome:
     """Drive the interactive plan gate until confirm, cancel, EOF, or the round cap.
 
@@ -186,7 +205,7 @@ def run_gate(
 
     rounds = 0
     while rounds < max_rounds:
-        emit(render_plan(course, original_capabilities))
+        emit(render_plan(course, original_capabilities, max_modules))
         emit("")
         output_stream.write(_PROMPT)
         output_stream.flush()
