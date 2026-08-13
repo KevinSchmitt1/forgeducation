@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(git fetch *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)"
+    ]
+  }
+}
