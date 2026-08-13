@@ -401,7 +401,10 @@ def _cmd_learn(args) -> int:
     # The gate: plan first, confirm before spending. --yes accepts as-is (still printed);
     # a non-TTY stdin without --yes is a usage error so a script opts into spending.
     if args.yes:
-        _print_course(course)
+        from .curriculum.gate import render_plan
+
+        print()
+        print(render_plan(course, original_capabilities, args.max_modules))
         print("\n▶ --yes given: building without the interactive gate.")
         confirmed_course = course
     elif not sys.stdin.isatty():
@@ -414,6 +417,7 @@ def _cmd_learn(args) -> int:
         confirmed_course = _run_plan_gate(
             course, original_capabilities, personas_dir, planner,
             topic, learner_profile, topic_spec,
+            max_modules=args.max_modules,
         )
         if confirmed_course is None:
             print("\nNothing was run.")
@@ -432,8 +436,11 @@ def _report_plan_only(course, requested_capabilities: list[str], out: Path | Non
     exit), never a silent success — the same invariant the build path enforces before it
     spends, surfaced here for free.
     """
+    from .curriculum.gate import render_plan
+
     report = assess_course_fidelity(requested_capabilities, course)
-    _print_course(course)
+    print()
+    print(render_plan(course, requested_capabilities))
 
     if not report.is_faithful:
         print(
@@ -501,7 +508,7 @@ def _readiness_escalation_guidance(verdict) -> str:
 
 def _run_plan_gate(
     course, original_capabilities, personas_dir, planner,
-    topic, learner_profile, topic_spec,
+    topic, learner_profile, topic_spec, max_modules=None,
 ):
     """Run the interactive gate; return the confirmed course, or None if it cancelled."""
     from .curriculum.adjuster import PlanAdjuster
@@ -524,6 +531,7 @@ def _run_plan_gate(
         _replanner,
         input_stream=sys.stdin,
         output_stream=sys.stdout,
+        max_modules=max_modules,
     )
     return outcome.course if outcome.confirmed else None
 
@@ -612,7 +620,10 @@ def _render_course_md(course, report) -> str:
     if course.rationale:
         lines += [f"**Rationale:** {course.rationale}", ""]
     for module in course.modules:
-        lines.append(f"## [{module.order}] {module.spec.title} ({module.spec.depth})")
+        heading = f"## [{module.order}] {module.spec.title} ({module.spec.depth})"
+        if module.lesson_mode is not None:
+            heading += f" · mode: {module.lesson_mode}"
+        lines.append(heading)
         for objective in module.spec.learning_objectives:
             lines.append(f"- {objective}")
         if module.module_prerequisites:
@@ -623,20 +634,6 @@ def _render_course_md(course, report) -> str:
     )
     lines += ["---", "", f"**Course-fidelity:** {verdict}", ""]
     return "\n".join(lines)
-
-
-def _print_course(course) -> None:
-    """Render a CourseSpec to stdout for the plan-only dry run."""
-    print(f"\nCourse: {course.title}")
-    print(f"  {len(course.modules)} module(s)")
-    if course.rationale:
-        print(f"  Rationale: {course.rationale}")
-    for module in course.modules:
-        print(f"\n  [{module.order}] {module.spec.title}  ({module.spec.depth})")
-        for objective in module.spec.learning_objectives:
-            print(f"      - {objective}")
-        if module.module_prerequisites:
-            print(f"      builds on: {', '.join(module.module_prerequisites)}")
 
 
 def _build_parser() -> argparse.ArgumentParser:

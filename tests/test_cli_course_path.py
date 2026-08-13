@@ -360,3 +360,76 @@ def test_course_without_yes_on_a_non_tty_is_a_usage_error(monkeypatch, tmp_path,
     # Assert — no TTY and no --yes means nothing paid runs.
     assert code == cli.EXIT_USAGE
     assert "--yes" in capsys.readouterr().err
+
+
+# ── --plan-only must show what the gate shows ─────────────────────────────────────
+#
+# Three renderers existed for one plan: render_plan (the gate), _print_course (plan-only
+# stdout) and _render_course_md (COURSE.md). Only the gate showed each module's
+# lesson_mode, so `--plan-only` — the cheap path whose entire job is telling you what a
+# build would be before you pay for it — hid the one field you probe for. The mode was
+# in course_plan.json the whole time, just never rendered.
+
+
+def _artifact_module(title: str, objectives: list[str], order: int) -> ModuleSpec:
+    return ModuleSpec(
+        spec=TopicSpecification(
+            title=title,
+            scope="implementation",
+            learning_objectives=objectives,
+            prerequisites=[],
+            constraints="",
+            depth="intermediate",
+            focus_areas=[],
+        ),
+        order=order,
+        lesson_mode="artifact",
+    )
+
+
+@pytest.mark.unit
+def test_plan_only_stdout_shows_each_modules_lesson_mode(monkeypatch, capsys) -> None:
+    course = CourseSpec(
+        title="Copilot config course",
+        modules=(_artifact_module("Write the files", ["Understand quantum teleportation"], 0),),
+        rationale="one focused session",
+    )
+    _patch_planner(monkeypatch, course)
+
+    code = cli.main(["learn", "--topic", "quantum teleportation", "--plan-only"])
+
+    out = capsys.readouterr().out
+    assert code == cli.EXIT_OK
+    assert "artifact" in out
+
+
+@pytest.mark.unit
+def test_plan_only_stdout_shows_what_a_build_would_cost(monkeypatch, capsys) -> None:
+    """The cheap path should price the expensive one — that is what it is for."""
+    course = CourseSpec(
+        title="Copilot config course",
+        modules=(_artifact_module("Write the files", ["Understand quantum teleportation"], 0),),
+        rationale="one focused session",
+    )
+    _patch_planner(monkeypatch, course)
+
+    cli.main(["learn", "--topic", "quantum teleportation", "--plan-only"])
+
+    assert "Estimated cost" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+def test_course_md_records_the_lesson_mode(monkeypatch, tmp_path) -> None:
+    course = CourseSpec(
+        title="Copilot config course",
+        modules=(_artifact_module("Write the files", ["Understand quantum teleportation"], 0),),
+        rationale="one focused session",
+    )
+    _patch_planner(monkeypatch, course)
+
+    out = tmp_path / "course"
+    cli.main(
+        ["learn", "--topic", "quantum teleportation", "--plan-only", "--out", str(out)]
+    )
+
+    assert "artifact" in (out / "COURSE.md").read_text()
