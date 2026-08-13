@@ -161,6 +161,18 @@ a thing the notebook claims to have done.
 This also resolves finding 2's contradiction at the source: an objective that never gets
 written is never reported as a dropped capability, so no filter is needed downstream.
 
+**Self-contained means local, never authenticated.** This principle grants the program no new
+powers, and specifically **no access to the learner's GitHub account** — no repo creation, no
+push, no tokens, no network. That is unnecessary for teaching and would add an entire class of
+auth and network failures to a lesson that should be verifiable from its own output.
+
+The distinction is already demonstrated by this very run: the notebook created
+`DemoRepo_AgentDocs/` and `agent-docs-demo-repo/` inside the run directory, each with a real
+`.git`, `.github/` and `AGENTS.md`. A local `git init` in a scratch directory is offline and
+worked fine. What failed was the *unqualified* objective — `git add` executed against the
+learner's actual checkout, where the file did not exist. Same verb, opposite side of the
+criterion.
+
 ### C4 — Treat `finish_reason='length'` as recoverable
 
 A truncated grader response must not cost a full call and yield nothing. Options, cheapest
@@ -184,14 +196,45 @@ are checkable against it offline, for $0:
 C3 is a planner-behavior change and can only be observed on a real plan — but `--plan-only`
 prices that at one `gpt-5-mini` call, so it is checkable for cents before any build.
 
-## Open questions
+## Decisions taken on the open questions (2026-08-13)
 
-1. **Should a `code_quality` route patch instead of regenerate?** Asking for only the failed
-   cells would cut the dominant cost (74K tokens on `code_author`). It is a real change to the
-   revision contract and deserves its own doc — noted here because this run is the evidence
-   for it.
-2. **Should the loop stop when it is not converging?** Failing-cell counts of 8 → 1 → 3 → 7
-   with quality 74 → 82 → 74 → 71 is a random walk that consumed the whole budget. A
-   non-convergence exit would have saved roughly half this run.
-3. **Should the gate's estimate model iterations?** The 100K/lesson constant describes a clean
-   pass; every run that needs revision exceeds it silently.
+### C5 — A `code_quality` route patches; it does not regenerate — **accepted**
+
+Asking for only the failed cells cuts the dominant cost: `code_author` spent 74K of this
+run's 172K tokens rewriting whole notebooks. This changes the revision contract (the brief
+must carry the cells to replace, and the author must return cells rather than a notebook), so
+it is scoped here and implemented separately from the persona work.
+
+### C6 — Non-convergence makes the loop *aware*, it does not stop it — **accepted, softened**
+
+The first proposal was a hard exit at a threshold. Rejected as too blunt: a run that is one
+iteration from working would be killed, and the learner gets nothing.
+
+Instead, when repeated attempts fail to reduce the failures, the brief says so and redirects
+**attention**, not approach:
+
+> Two attempts have not reduced the failures. **Look for a systematic cause** — the same
+> underlying mistake may be recurring in different cells. Re-examine the failing cells from a
+> different angle before changing anything else.
+
+The wording matters and was deliberately narrowed. "Change your strategy" invites a rewrite —
+exactly the expensive behaviour C5 exists to stop. "Look for a systematic cause" keeps the
+work targeted and asks for a shift in *perspective*, which is precisely what the four
+iterations here never did: each treated a recurring structural collision as a fresh local
+slip.
+
+This is the same philosophy as the no-blacklist decision — give the model better information
+and let it judge, rather than fencing it in.
+
+### C7 — Iteration-aware cost estimate — **accepted, low priority**
+
+The 100K/lesson constant describes a clean pass; any run that revises exceeds it silently
+(this one: 172,247). Worth fixing, cheap, not urgent — the gate's honesty problem is smaller
+than the loop's cost problem.
+
+## Still open
+
+1. Should the anti-hollow structural gate treat a notebook whose *artifacts* were built but
+   whose *validator* failed differently from one that built nothing? v1 came closest to
+   working (a single failing cell, quality 82) and was routed identically to v0's eight
+   failures.
