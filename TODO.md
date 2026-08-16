@@ -28,19 +28,62 @@ the notebook embedded Markdown containing Python docstrings inside a Python trip
 and the docstring closed the literal. Four `code_author` iterations, four syntax failures, budget
 exhausted. 1016.7s, 172,247 tokens.
 
-**Accepted changes (doc 20) — none implemented yet:**
+**Accepted changes (doc 20) — status as of 2026-08-16:**
 
-| | Change | Kind |
-|---|---|---|
-| C1 | Name the delimiter collision in the revision brief | deterministic, free |
-| C2 | Teach `code_author` `%%writefile` (content written verbatim, no literal to collide with) | persona |
-| C3 | Plan-time **verifiability criterion** — "can a cell do this and show it worked, using only what the notebook creates?" — explicitly **not** a blacklist | persona |
-| C4 | Treat `finish_reason='length'` as recoverable instead of discarding a paid call | code |
-| C5 | A `code_quality` route **patches failed cells** instead of regenerating the notebook | code (revision contract) |
-| C6 | Non-convergence makes the loop **aware** ("look for a systematic cause"), never stops it | brief text |
-| C7 | Iteration-aware cost estimate | code, **low priority** |
+| | Change | Kind | Status |
+|---|---|---|---|
+| C1 | Name the delimiter collision in the revision brief | deterministic, free | ✅ `master` (#41) |
+| C2 | Teach `code_author` `%%writefile` | persona | ✅ `master` (#41) |
+| C3 | Plan-time **verifiability criterion** — explicitly **not** a blacklist | persona | ✅ `master` (#42) |
+| C4 | Treat `finish_reason='length'` as recoverable | code | ✅ `master` (#42) |
+| C5 | `code_author` sees its notebook and **patches failed cells** | code | 🔄 **PR #45** |
+| C6 | Non-convergence makes the loop **aware** ("look for a systematic cause") | brief text | ⬜ folded into doc 22 (R8) |
+| C7 | Iteration-aware cost estimate | code | ⬜ **low priority** |
 
-C1 and C2 are verifiable **offline for $0** against the four failing notebooks the run left behind.
+**None of it is validated by a paid run yet.** All of it is validated offline against the four
+failing notebooks the run left behind (see below) — which is a real level of confidence, but not
+the same one. The next artifact-lesson run is what proves the loop actually escapes.
+
+### What the offline validation actually showed
+
+**C1's detector, measured on the real corpus** (precision mattered more than recall — a diagnosis
+attached to every `SyntaxError` teaches the reader to ignore it):
+
+| notebook | failed cells | fires on | correct |
+|---|---|---|---|
+| v0 | 4, 7, 9, 12, 14, 17, 19, 21 | **7, 12** | ✅ not 4 — a genuine stray indent |
+| v1 | 16 | **nothing** | ✅ runtime `SystemExit`, parses fine |
+| v2 | 12, 17, 20 | **12** | ✅ |
+| v3 | 7, 9, 12, 14, 17, 19, 22 | **7, 17** | ✅ |
+
+v0 was **already colliding** at cells 7 and 12 — the interpreter reported the stray indent first,
+so it was invisible. Three of four iterations would have been told the mechanism, from the first.
+
+**C5's premise, executed through the production code path** (`patch_from_json` → `apply_patch` →
+run the notebook):
+
+```
+cells: 26 (was 26) | untouched preserved byte-for-byte: 23/23
+failed cells: [9, 14, 19]   (original run: [7, 9, 12, 14, 17, 19, 22])
+  OK .github/copilot-instructions.md  3,058 bytes
+  OK AGENTS.md                        3,639
+  OK tools/validate_agent_docs.py     8,265
+```
+
+**Every syntax failure gone, all three artifacts produced, 3 of 26 cells touched.** Four full
+rewrites and 74K tokens never got there.
+
+The 3 that remain are **content, not structure**, from two roots — both now feeding doc 22:
+a **self-referential validator** (the document forbids hardcoded secrets, names `PASSWORD` doing
+so, and the generated validator flags any `PASSWORD` as a leak) and an under-filled `AGENTS.md`.
+
+### Two constraints found by doing it (both are in the persona now)
+
+- **`%%writefile` cannot create parent directories** — an earlier cell must make them.
+- **A replaced cell loses everything it defined.** The original cell 7 held the `dedent` import
+  and bound `instructions_path`; a naive replacement killed cell 12 with `NameError`. An author
+  can only notice this by **seeing the whole notebook** — which is exactly what C5 adds, and the
+  sharpest argument for its design.
 
 **Two decisions worth not re-litigating** (both recorded with reasons in doc 20):
 
@@ -53,16 +96,41 @@ C1 and C2 are verifiable **offline for $0** against the four failing notebooks t
 > local scratch repos with `git init` successfully; only the *unqualified* "commit to the
 > repository" objective broke it.
 
-### Shipped since (2026-08-08 → 08-13)
+## ▶ NEXT — pick up here
+
+1. **Merge / review the two open PRs**: **#45** (C5 patching) and **#46** (doc 22 design).
+2. **Build R1 + R2 from doc 22** — the smallest changes with the largest effect; *either alone*
+   would have changed the 2026-08-13 run's outcome. R1 is checkable offline: re-score the four
+   real `student_grade_report_v*.json` under the new gating, and **v1 (82/100 with zero
+   artifacts) must come out not-acceptable**. If it doesn't, R1 is wrong.
+3. **Settle doc 22's open question 1 before building R5** — does the new goal-fit/necessity
+   dimension go *in* the rubric or *beside* it? A sixth dimension changes every grade's
+   arithmetic and makes historical scores incomparable, and averaging is what hid the problem in
+   the first place. **This is Kevin's call, not the implementer's.**
+4. **Then a paid artifact-lesson run**, to validate C1–C5 for real. Use `--plan-only` first to
+   confirm the mode for cents (see "New loose ends").
+
+### Shipped since (2026-08-08 → 08-16)
 
 | Change | Where |
 |---|---|
 | Provisioning preflight — venv built between planner and code_author | ✅ `master` (#33) |
 | One CLI front door; linear engine deleted | ✅ `master` (#35) |
 | Repo-wide guard against billable calls in tests + entry-point smoke test | ✅ `master` (#37) |
-| Plan display tells the truth (`--max-modules` pricing; one plan renderer) | 🔄 PR #38 |
-| Design: build from a saved `course_plan.json` | 🔄 PR #39 |
-| Design: this failure analysis (doc 20) | 🔄 PR #40 |
+| Plan display tells the truth (`--max-modules` pricing; one plan renderer) | ✅ `master` (#38) |
+| Design: build from a saved `course_plan.json` (doc 19) | ✅ `master` (#39) |
+| Design + docs: the artifact-lesson failure analysis (doc 20) | ✅ `master` (#40) |
+| **C1 + C2** — collision named in the brief; `%%writefile` idiom | ✅ `master` (#41) |
+| **C3 + C4** — verifiability criterion; truncation recovery | ✅ `master` (#42) |
+| Design: patch-don't-regenerate (doc 21) | ✅ `master` (#43) |
+| Doc 21's offline check run — C5's premise holds | ✅ `master` (#44) |
+| **C5** — `code_author` sees its notebook and patches it | 🔄 **PR #45** |
+| Design: a review that points at the fix (doc 22) | 🔄 **PR #46** |
+
+**Config change worth knowing (#42):** the `gpt-5-mini` stages went `max_tokens` 4096 → 8192.
+Every one of them already exceeded 4096 once reasoning is counted (planner 4,208, student
+~5,135, reviewer ~5,592) — OpenAI counts reasoning against `max_completion_tokens`. A ceiling is
+a cap, not a target, so this prevents truncation without raising spend.
 
 **PR #37 found 9 tests that had been making real paid API calls on every local run** (CI has no key
 configured, so the cost was local-machine only). Suite runtime dropped from minutes to ~15s. The
@@ -220,6 +288,21 @@ they were, because each cost something before it was fixed.
 - ~~**`personas/code_author.md:22` still calls `conceptual` "(rare)"**~~ — ✅ removed, along with
   `executable`'s "(the default — most lessons)". `planner.md` states outright that "None of the
   three is a default, and none is a fallback"; `code_author.md` was the last persona contradicting it.
+
+### New loose ends (2026-08-16)
+
+- **Nobody sees more than one revision brief.** Verified across `code_author.py`,
+  `planner.py`, `content_reviser.py`: every agent reads exactly
+  `revision_brief_v{iteration - 1}`. So a rewrite at iteration 3 knows nothing of what
+  iterations 0–2 revealed — the mechanism behind quality going 74 → 82 → 74 → **71**.
+  Tracked as D5/R6 in doc 22 (the `critique_digest`).
+- **`content_reviser` has the same never-sees-its-own-output shape as `code_author` had.**
+  Almost certainly wants C5's change too; deliberately deferred until C5 is validated by one
+  real run before the pattern is copied. Doc 22, open question 3.
+- **The 2026-08-13 artifacts are the regression corpus and `runs/` is gitignored.** The four
+  failing notebooks are what C1 and C5 were validated against. If that directory is pruned
+  (`forged clean`), the evidence for every offline check in docs 20–22 goes with it. Worth
+  copying somewhere durable before the next cleanup.
 
 ### New loose ends (2026-08-13)
 
