@@ -11,6 +11,7 @@ import atexit
 import logging
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -213,6 +214,52 @@ class _LangfuseTracer:
 _TRACER = _LangfuseTracer()
 
 
+# A response truncated to *nothing* is retried once at this multiple of the configured
+# ceiling. One retry only: a second truncation means the schema or prompt is too large,
+# which more budget cannot fix and a paid call should not keep discovering.
+TRUNCATION_RETRY_MULTIPLIER = 2
+
+
+def complete_with_truncation_retry(
+    do_call: Callable[[int], Any], budget: int, *, model: str
+) -> Any:
+    """Run `do_call(budget)`, retrying once if the response was truncated to nothing.
+
+    OpenAI counts *reasoning* tokens against `max_completion_tokens`, so a reasoning
+    model can consume its whole ceiling before emitting any text — the call is billed and
+    yields nothing. In the 2026-08-13 run that cost the Reviewer's entire critique for an
+    iteration (doc 20).
+
+    Only a *total* loss is retried. Partial content is usable (the graders parse
+    leniently), and an empty response for any other reason — a refusal, a content filter
+    — is not a budget problem, so paying twice for it helps nobody.
+    """
+    response = do_call(budget)
+    if not _is_truncated_to_nothing(response):
+        return response
+
+    raised = budget * TRUNCATION_RETRY_MULTIPLIER
+    _LOG.warning(
+        "LLM response truncated to empty at max_completion_tokens=%d "
+        "(reasoning tokens count against it); retrying once at %d (model=%s)",
+        budget,
+        raised,
+        model,
+    )
+    return do_call(raised)
+
+
+def _is_truncated_to_nothing(response: Any) -> bool:
+    """True only for an empty response whose finish_reason says it ran out of room."""
+    choices = getattr(response, "choices", None)
+    if not choices:
+        return False
+    choice = choices[0]
+    if getattr(choice, "finish_reason", None) != "length":
+        return False
+    return not getattr(getattr(choice, "message", None), "content", None)
+
+
 class LLMClient:
     """Thin wrapper over the OpenAI SDK, configured per stage.
 
@@ -271,24 +318,28 @@ class LLMClient:
         )
         if temperature is None and _OmitSentinel is not None:
             temperature = _OmitSentinel()
-        try:
+        def _call(budget: int) -> Any:
             if self._config.provider is Provider.OLLAMA:
-                response = client.chat.completions.create(
+                return client.chat.completions.create(
                     model=self._config.model,
-                    max_tokens=self._config.max_tokens,
+                    max_tokens=budget,
                     messages=messages,
                     temperature=temperature,
                 )
-            else:
-                kwargs: dict[str, Any] = {
-                    "model": self._config.model,
-                    "max_completion_tokens": self._config.max_tokens,
-                    "messages": messages,
-                    "temperature": temperature,
-                }
-                if response_format is not None:
-                    kwargs["response_format"] = response_format
-                response = client.chat.completions.create(**kwargs)
+            kwargs: dict[str, Any] = {
+                "model": self._config.model,
+                "max_completion_tokens": budget,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if response_format is not None:
+                kwargs["response_format"] = response_format
+            return client.chat.completions.create(**kwargs)
+
+        try:
+            response = complete_with_truncation_retry(
+                _call, self._config.max_tokens, model=self._config.model
+            )
         except Exception as exc:  # noqa: BLE001 — re-raise with actionable context
             self._tracer.record_error(observation, str(exc))
             raise RuntimeError(

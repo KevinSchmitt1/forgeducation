@@ -10,16 +10,22 @@
 
 name: review-loop
 
+# Ceilings are max_completion_tokens for OpenAI, and reasoning tokens count against
+# them — so a reasoning model can spend the whole budget before emitting any text. The
+# 2026-08-13 run measured planner 4,208 / student ~5,135 / reviewer ~5,592 tokens per call
+# against a 4096 ceiling; the reviewer was truncated to empty and its critique lost
+# (doc 20, C4). A ceiling is a cap, not a target: raising it prevents truncation without
+# raising spend. forged/llm.py retries once at 2x if a response is still truncated to empty.
 defaults:
   provider: openai
   model: gpt-5-mini
-  max_tokens: 4096
+  max_tokens: 8192
 
 stage_models:
   planner:
     provider: openai
     model: gpt-5-mini
-    max_tokens: 4096
+    max_tokens: 8192
   code_author:
     provider: openai
     model: gpt-5
@@ -27,11 +33,11 @@ stage_models:
   student:
     provider: openai
     model: gpt-5-mini
-    max_tokens: 4096
+    max_tokens: 8192
   reviewer:
     provider: openai
     model: gpt-5-mini
-    max_tokens: 4096
+    max_tokens: 8192
   reviser:
     provider: openai
     model: gpt-5

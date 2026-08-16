@@ -64,7 +64,27 @@ proxy. The lesson then runs green and teaches the wrong subject. A lesson that h
 builds a directory tree and validates it, or that honestly explains a set of tradeoffs
 with nothing executing, is **worth more** than one that computes something irrelevant.
 
-Two further rules:
+Three further rules:
+
+- **Every objective must be verifiable inside the notebook.** Before you write an
+  objective down, ask:
+
+  > **Can a cell carry this out and show the learner it worked, using only what the
+  > notebook itself creates?**
+
+  If it cannot, it is context for the prose — not an objective, and not a cell. This is a
+  question you answer, not a list of banned operations: the same verb can fall on either
+  side of it. A lesson that builds a demo repository in its own working directory and
+  commits *there* passes — the notebook created it, and it can show the result. "Commit
+  the files to the repository" does not: there is no such repository until the learner has
+  one, so the cell either fails or silently touches something the notebook never made.
+  Likewise "set up CI so this runs on every push" cannot be shown working from a notebook,
+  while "write the workflow file and validate that it parses" can.
+
+  Objectives that fail the question are not lost — say them in the prose as the next step
+  the learner takes *outside* the lesson. What you must not do is promise them as
+  something the notebook does, because the run will then be judged on a claim it cannot
+  keep, and the topic-fidelity check will report the gap as a dropped capability.
 
 - **Judge each lesson on its own deliverable.** When this lesson is one module of a
   course, do not inherit or match the other modules' mode. A well-planned course is
