@@ -56,12 +56,14 @@ surfaced in the run's `SUMMARY.md`:
   changes), or `conceptual` (prose/diagrams, and `SUMMARY.md` says plainly that no code was executed).
   Mode is inferred, never a flag. (`docs/architecture/17-lesson-modes.md`)
 
-  > **Known limitation (2026-08-13):** `artifact` lessons whose deliverable is *itself* a document
-  > containing code — an agent instruction file, say — currently tend to fail. The notebook embeds
-  > that content in a Python string literal, and a docstring inside the content closes the literal.
-  > Diagnosis and the fixes for it:
-  > `docs/architecture/20-artifact-lessons-that-author-documents.md`. `conceptual` has not yet been
-  > observed being selected on a real plan.
+  > **Known limitation (updated 2026-08-16):** `artifact` lessons whose deliverable is *itself* a
+  > document containing code — an agent instruction file, say — failed on the first real run: the
+  > notebook embedded that content in a Python string literal, and a docstring inside the content
+  > closed the literal. Fixes have landed (the revision brief now names the mechanism, and the
+  > author is taught `%%writefile`, which writes verbatim), and they are validated offline against
+  > that run's notebooks — **but not yet by a paid run**. Diagnosis and fixes:
+  > `docs/architecture/20-artifact-lessons-that-author-documents.md`. `conceptual` has still not
+  > been observed being selected on a real plan.
 - **Never spend before you agree.** `forged learn` (the front door) always shows the proposed
   plan and a rough cost/time estimate and runs nothing paid until you confirm; plan tweaks are
   applied deterministically, so an interactive round never costs an expensive re-plan.
