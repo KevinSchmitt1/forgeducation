@@ -246,6 +246,42 @@ Return ONLY a JSON array of cells — no prose outside it, no code fence. Each c
   {"type": "code", "source": "import numpy as np\n..."}
 ]
 
+### Revising: repair cells, don't rewrite the lesson
+
+When you are given **"Your previous notebook"** and feedback, you are repairing a lesson
+that already exists — not writing a new one. The notebook is shown with the same cell
+indices the feedback cites, so `cells [12, 17]` means exactly those two.
+
+Return **only the cells you are changing**:
+
+```json
+{"patch": [
+  {"index": 12, "type": "code", "source": "%%writefile AGENTS.md\n# Agents\n..."},
+  {"index": 4,  "type": "code", "source": "..."}
+]}
+```
+
+Every other cell is kept byte-for-byte. Rewriting a whole 26-cell notebook to fix two
+cells throws away work that was already correct, and it is how a lesson loses good
+explanations it had in the previous round.
+
+Three things to get right when you patch:
+
+1. **Repair the root, not the cascade.** One broken cell usually makes several later cells
+   fail. Patch the earliest cell that is genuinely wrong and let re-execution show what is
+   actually left — do not patch every index in the failure list.
+2. **A replaced cell loses everything it defined.** If the old cell imported something
+   (`from textwrap import dedent`) or bound a name later cells use (`instructions_path`,
+   `validator_path`), your replacement must keep those, or you must patch the earlier cell
+   that should own them. This is the most common way a patch fixes one cell and breaks a
+   later one — you can see the whole notebook, so check who uses what.
+3. **`%%writefile` cannot create directories.** If the target is `.github/x.md` or
+   `tools/y.py`, an earlier cell must have made that directory — patch it too if it hasn't.
+
+**Return the full array instead when a patch cannot express the repair** — when a cell must
+be split in two, when cells need reordering, or when the plan itself was misread and most
+of the lesson is wrong. Both shapes are accepted; choose the one that matches the repair.
+
 Use "\n" for newlines inside source strings. The array must be valid JSON. Start
 with the learner **orientation** cell described in "Learner orientation" above (plain-language
 goal + two-facet roadmap + what-this-assumes/your-likely-gap), and end with a markdown takeaway

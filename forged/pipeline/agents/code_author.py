@@ -17,7 +17,13 @@ import logging
 from pathlib import Path
 
 from forged.artifacts import Artifact, ArtifactStore
-from forged.notebook import build_notebook, cells_from_json
+from forged.notebook import (
+    apply_patch,
+    build_notebook,
+    cells_from_json,
+    patch_from_json,
+    render_indexed,
+)
 from forged.pipeline.state import Degradation, PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
@@ -101,6 +107,28 @@ class CodeAuthorAgent(Agent[AgentOutput]):
             input_artifacts=input_artifacts,
             output_artifact=output_artifact,
         )
+        return self._assemble(raw, self._previous_notebook(state, store))
+
+    def _previous_notebook(self, state: PipelineState, store: ArtifactStore) -> str | None:
+        """The notebook this run is revising, or None on the first pass."""
+        for output in reversed(state.outputs):
+            if output.stage == PipelineStage.CODE_AUTHOR and store.has(output.artifact_name):
+                return store.get(output.artifact_name).content
+        return None
+
+    def _assemble(self, raw: str, previous: str | None) -> str:
+        """Turn the model's response into notebook JSON — a patch or a whole notebook.
+
+        A patch is only meaningful against something: with no previous notebook there is
+        nothing to replace into, so it falls through to the cell parser and fails there,
+        producing the same honest degradation as any other unusable output.
+        """
+        patch = patch_from_json(raw)
+        if patch is not None and previous is not None:
+            try:
+                return apply_patch(previous, patch)
+            except ValueError as exc:
+                raise RuntimeError(f"CodeAuthorAgent: unusable patch — {exc}") from exc
         return self._parse_cells(raw)
 
     def _parse_cells(self, raw: str) -> str:
@@ -125,6 +153,12 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         parts = [f"Lesson Plan:\n{plan_content}"]
         revision_brief = self._read_revision_brief(state, store)
         if revision_brief:
+            # Only on a revision: the author cannot repair what it cannot see, and this is
+            # the largest thing in the prompt — there is nothing to repair on a first pass.
+            # Indices match the executor's and the brief's exactly (doc 21).
+            previous = self._previous_notebook(state, store)
+            if previous is not None:
+                parts.append(f"Your previous notebook:\n{render_indexed(previous)}")
             parts.append(f"Feedback from previous attempt:\n{revision_brief}")
         return self._context_prefix(store) + "\n\n".join(parts)
 

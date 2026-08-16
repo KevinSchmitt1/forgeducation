@@ -84,3 +84,31 @@ def test_the_criterion_is_a_question_not_a_blacklist(persona: str) -> None:
     assert "not a list of banned operations" in text
     for forbidden_framing in ("do not use git", "never run git", "forbidden commands"):
         assert forbidden_framing not in text
+
+
+# ── The patch contract (doc 21, C5) ───────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_code_author_is_told_to_patch_rather_than_rewrite() -> None:
+    text = _read("code_author.md")
+
+    assert '"patch"' in text
+    assert "only the cells you are changing" in text
+
+
+@pytest.mark.unit
+def test_code_author_keeps_the_full_rewrite_as_an_option() -> None:
+    """Some repairs cannot be a patch — forcing one would break them."""
+    text = _read("code_author.md")
+
+    assert "when a patch cannot express the repair" in text
+
+
+@pytest.mark.unit
+def test_code_author_is_warned_about_the_two_constraints_the_experiment_found() -> None:
+    """Both broke a real hand-written patch of lesson_notebook_v3 (doc 21)."""
+    text = _read("code_author.md")
+
+    assert "loses everything it defined" in text          # imports and bound names
+    assert "cannot create directories" in text            # %%writefile + mkdir
