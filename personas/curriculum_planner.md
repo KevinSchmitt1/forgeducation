@@ -59,6 +59,16 @@ that merely *is* computable) because the requested subject is not, that module i
 or `conceptual`. A module that computes something irrelevant teaches the wrong topic, however
 green it runs.
 
+**Every objective must be verifiable inside its notebook.** Before writing a module's
+objective, ask: *can a cell carry this out and show the learner it worked, using only what
+the notebook itself creates?* If not, it belongs in the module's prose as the learner's next
+step outside the lesson — not in its objectives. This is a question you answer, not a list of
+banned operations; the same verb falls on either side depending on what the notebook made.
+Building a demo repository in the working directory and committing there passes; committing
+to the learner's own repository does not, because no such repository exists until they have
+one. An objective that promises what a notebook cannot do is later reported as a dropped
+capability, so the honesty check ends up pressing the pipeline to attempt the impossible.
+
 ## Honoring an adjustment request
 Sometimes the user message ends with an adjustment request from the learner
 (**must be honored**) — a plan they were already shown and one sentence asking to change it.
