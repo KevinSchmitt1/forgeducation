@@ -55,6 +55,13 @@ surfaced in the run's `SUMMARY.md`:
   the deliverable — parse/lint/mocked dry-run — so the self-check still runs, only its target
   changes), or `conceptual` (prose/diagrams, and `SUMMARY.md` says plainly that no code was executed).
   Mode is inferred, never a flag. (`docs/architecture/17-lesson-modes.md`)
+
+  > **Known limitation (2026-08-13):** `artifact` lessons whose deliverable is *itself* a document
+  > containing code — an agent instruction file, say — currently tend to fail. The notebook embeds
+  > that content in a Python string literal, and a docstring inside the content closes the literal.
+  > Diagnosis and the fixes for it:
+  > `docs/architecture/20-artifact-lessons-that-author-documents.md`. `conceptual` has not yet been
+  > observed being selected on a real plan.
 - **Never spend before you agree.** `forged learn` (the front door) always shows the proposed
   plan and a rough cost/time estimate and runs nothing paid until you confirm; plan tweaks are
   applied deterministically, so an interactive round never costs an expensive re-plan.
@@ -258,11 +265,11 @@ what's already in hand. It only ever **keeps the best** version, never a regress
 | `forged/artifacts.py` | Immutable artifacts + reproducible run dirs + cleanup |
 | `forged/llm.py` | Pluggable OpenAI/Ollama client |
 | `forged/notebook.py` | Assemble `.ipynb` from JSON cells; index-label for agents |
-| `forged/agent.py` | `LLMAgent`: persona + inputs → one output artifact |
 | `forged/executor.py` | Run the notebook, capture per-cell errors (anti-bug) |
-| `forged/report.py` | Human-readable `SUMMARY.md` (timing, verdict, residuals) |
-| `forged/orchestrator.py` | Run + time stages, pass artifacts, finalize the run |
 | `forged/packaging.py` | Write the learner-facing `README.md` + `requirements.txt` |
+| `forged/deliverables.py` | Per-run `SUMMARY.md`, final notebook, learner package |
+| `forged/logging_config.py` | Console + per-run file logging (safe to reconfigure per module) |
+| `forged/pipeline/` | The agentic graph: agents, state, router, failure classification, lesson mode |
 | `forged/provisioning.py` | Build/reuse a per-run venv from the deps; register a kernel |
 | `forged/progress.py` | TTY-only elapsed-time spinner for long stages |
 | `forged/context.py` | Build the shared learner+topic context block threaded to every stage |

@@ -6,31 +6,68 @@
 
 ---
 
-## ⛔ BLOCKED — the OpenAI account is out of credits (2026-08-08)
+## 🎯 STATE RIGHT NOW (2026-08-13) — the first artifact lesson ran, and failed informatively
 
-`learn` fails at the CurriculumPlanner with `429 insufficient_quota / credit_balance_exhausted`.
-**Nothing paid can run until credits are added.** Everything below that says "needs a run" is
-waiting on exactly this.
+Credits are back. A real single-lesson `learn` run happened
+(`runs/20260813-201647_create_and_validate__github_co/`) on a GitHub-Copilot-config topic. It
+produced **no acceptable notebook** — but it validated three things that had never been exercised
+and produced a precise, reproducible diagnosis. **Full analysis:
+[`docs/architecture/20-artifact-lessons-that-author-documents.md`](docs/architecture/20-artifact-lessons-that-author-documents.md).**
 
-Part of that balance was spent accidentally: on 2026-08-08 two test-suite invocations made **real,
-unconsented agentic runs** (243s and 634s) after a course test was retargeted from `course` to
-`learn` — a 1-module fixture routes to the single-lesson branch, which builds real `LLMClient`s. The
-exact cost is unrecoverable (pytest rotated the tmp dirs holding `usage.json`). A local guard is in
-place; the repo-wide fix is under "Known loose ends".
+**What the run proved (previously unvalidated):**
 
-## 🎯 STATE RIGHT NOW — both changes on `master`, neither validated by a run
+| Thing | Result |
+|---|---|
+| Provisioning preflight (#33) | ✅ no provisioning failure; the run reached `code_author` and executed notebooks |
+| One CLI front door (#35) | ✅ the only way in; plan gate → single-lesson branch worked |
+| Planner picks `artifact` for a non-computational topic (docs 17/18) | ✅ 1 module, `mode: artifact`, correctly |
+| An `artifact` notebook that builds and validates | ❌ **this is the failure** |
+
+**What failed, in one line:** an instruction file for a coding agent is mostly code examples, so
+the notebook embedded Markdown containing Python docstrings inside a Python triple-quoted literal,
+and the docstring closed the literal. Four `code_author` iterations, four syntax failures, budget
+exhausted. 1016.7s, 172,247 tokens.
+
+**Accepted changes (doc 20) — none implemented yet:**
+
+| | Change | Kind |
+|---|---|---|
+| C1 | Name the delimiter collision in the revision brief | deterministic, free |
+| C2 | Teach `code_author` `%%writefile` (content written verbatim, no literal to collide with) | persona |
+| C3 | Plan-time **verifiability criterion** — "can a cell do this and show it worked, using only what the notebook creates?" — explicitly **not** a blacklist | persona |
+| C4 | Treat `finish_reason='length'` as recoverable instead of discarding a paid call | code |
+| C5 | A `code_quality` route **patches failed cells** instead of regenerating the notebook | code (revision contract) |
+| C6 | Non-convergence makes the loop **aware** ("look for a systematic cause"), never stops it | brief text |
+| C7 | Iteration-aware cost estimate | code, **low priority** |
+
+C1 and C2 are verifiable **offline for $0** against the four failing notebooks the run left behind.
+
+**Two decisions worth not re-litigating** (both recorded with reasons in doc 20):
+
+> **No syntax gate.** Execution already collects *every* failing cell and also finds runtime errors
+> a parse cannot. Kernel time costs no tokens; an extra iteration costs a gpt-5 notebook.
+
+> **No blacklist of forbidden operations.** Same failure mode as the package allow-list (#31):
+> simultaneously too narrow and too broad. C3 is a criterion the planner applies, not a list it is
+> checked against. Related: the program needs **no GitHub access** — the notebook already creates
+> local scratch repos with `git init` successfully; only the *unqualified* "commit to the
+> repository" objective broke it.
+
+### Shipped since (2026-08-08 → 08-13)
 
 | Change | Where |
 |---|---|
-| **Provisioning preflight** — venv built between planner and code_author | ✅ `master` (`c3e2613`, #33) |
-| **One CLI front door; linear engine deleted** | ✅ `master` (`5fdb2cc`, #35) |
+| Provisioning preflight — venv built between planner and code_author | ✅ `master` (#33) |
+| One CLI front door; linear engine deleted | ✅ `master` (#35) |
+| Repo-wide guard against billable calls in tests + entry-point smoke test | ✅ `master` (#37) |
+| Plan display tells the truth (`--max-modules` pricing; one plan renderer) | 🔄 PR #38 |
+| Design: build from a saved `course_plan.json` | 🔄 PR #39 |
+| Design: this failure analysis (doc 20) | 🔄 PR #40 |
 
-Both are **green on the three gates and exercised at the CLI entry point, but neither has been
-validated by a real run** — that distinction is the whole point of `CLAUDE.md`'s norm 2. The next
-paid `learn` run is the first thing to exercise either of them for real. Specifically worth watching:
-
-- a provisioning failure should now surface **before** any notebook exists (the preflight);
-- `learn` is the only way in, so any run exercises the collapsed CLI by definition.
+**PR #37 found 9 tests that had been making real paid API calls on every local run** (CI has no key
+configured, so the cost was local-machine only). Suite runtime dropped from minutes to ~15s. The
+accidental-spend hole from 2026-08-08 is now closed by an autouse fixture on `LLMClient.complete`,
+with `@pytest.mark.live` as the explicit opt-in.
 
 **Two git lessons from getting these merged, both mine:**
 
@@ -48,9 +85,13 @@ paid `learn` run is the first thing to exercise either of them for real. Specifi
 ## 🎯 THEN — RE-RUN THE DOC-18 VALIDATION (criteria 3–5 still unmeasured)
 
 The lesson-mode debias **works** and is proven across two runs. What is *not* yet known is whether
-the resulting notebooks are actually better, because **no module has produced a notebook yet** — the
-attempts died in environment provisioning, not in the pipeline. The allow-list blocker is fixed
-(PR #31) and provisioning now fails *before* the expensive stage (PR #33). Run it again.
+the resulting notebooks are actually better.
+
+> **Update 2026-08-13.** The provisioning blocker is gone — the run that day reached `code_author`
+> and executed notebooks with no provisioning failure at all, so criterion 5 now has positive
+> evidence for a single lesson. The blocker moved *downstream*: notebooks are now produced and then
+> fail to run (doc 20). **Land C1–C3 before re-running this topic** — three of its four modules are
+> `executable`, but module 0 is `artifact`, and it would hit the same delimiter collision.
 
 ```bash
 .venv/bin/python -m forged.cli learn \
@@ -68,9 +109,9 @@ shows each module's mode **before** any spend, warns when every module shares on
 |---|---|---|
 | 1 | Planner emits a **mix** of modes (not all `executable`) | ✅ **PASS**, three times |
 | 2 | Gate shows modes; a mode can be overridden without re-planning | ✅ works |
-| 3 | Subject stays concrete instead of drifting to computable proxies | ⬜ **unmeasured** — no notebook yet |
+| 3 | Subject stays concrete instead of drifting to computable proxies | ⬜ **unmeasured** — still no *acceptable* notebook |
 | 4 | Code share drops from the 76–89% band | ⬜ **unmeasured** — needs a built mixed course |
-| 5 | All modules provision | ⬜ blocked twice by the allow-list; should now pass |
+| 5 | All modules provision | ✅ **positive evidence** — the 2026-08-13 single-lesson run provisioned and executed with no failure |
 
 **Plan gate observed 2026-08-08** (planned only, not built — this is where the credits ran out).
 4 modules: `[0] Personal AI Workspace & Architecture · artifact`, `[1] Building a Modular AI Agent ·
@@ -148,42 +189,51 @@ the topic — and getting that wrong is the origin of the over-large-lesson comp
 - **Still to check on the next run:** nothing about the engines changed, but `learn` is now the only
   path in, so any run exercises it by definition.
 
-### Known loose ends (neither blocking)
+### Known loose ends
 
-- **CI smoke test for the entry point (started, not finished).** A `tests/test_entrypoint_smoke.py`
-  was drafted this session and deliberately **not committed** — 2 of its 7 tests were still failing
-  and half-working tests are worse than none. What it should assert, via `subprocess` on
-  `python -m forged.cli`: each command starts and rejects an empty `--topic` with exit 2 and no
-  traceback; `--help` and `pipelines` exit 0. All free, no network. This is the mechanical guard for
-  `CLAUDE.md` norm 1 — the class of bug that put a `NameError` on `master` past 700 green tests.
-  Now smaller than when it was drafted: there are three commands to cover (`learn`, `pipelines`,
-  `clean`), not six.
-- **Nothing repo-wide stops a test from making a live paid call.** On 2026-08-08, retargeting a
-  course test from `course` to `learn` silently turned a plan-only assertion into two **real, paid
-  agentic runs** (243s and 634s, full planner→…→reviser with revision iterations) — because a
-  1-module plan routes to the single-lesson branch, which constructs real `LLMClient`s. It failed on
-  the assertion *after* spending. The same class of bug hit the doc-14 wiring pass. A local autouse
-  guard now covers `tests/test_cli_course_path.py`, but that is a per-file fix for a repo-wide hole.
-  **Suggested mechanical guard:** an autouse `conftest.py` fixture that raises if `LLMClient` (or
-  `ExecutorStage`) is constructed, with an explicit opt-in marker (e.g. `@pytest.mark.live`) for the
-  handful of tests that genuinely want a real run. Cost of not doing it is measured in paid runs.
-- **`setup_logging` accumulates handlers.** It adds a console + file handler on every call without
-  clearing existing ones. The course orchestrator now calls it once per module (doc 18 crash
-  diagnostics), so every earlier module's file handler stays attached and keeps receiving later
-  modules' records — visible in `runs/20260730-224009_…/module_0_…/pipeline.log`, which contains
-  module 1's provisioning failure. Fix: clear prior handlers (or attach a per-run handler and
-  detach it) before adding.
+**All five items in this section were closed by PR #37 (2026-08-13).** Kept as a record of what
+they were, because each cost something before it was fixed.
 
-- **CI never invokes the CLI the way a user does.** Tests `import forged.cli`; users run
-  `python -m forged.cli`. A NameError shipped to `master` through 700 green tests, ruff and mypy
-  because of exactly this (#30). A smoke test asserting `learn --topic "   "` exits with the usage
-  error would close it — no network, no spend. A structural test now guards the specific
-  "defined after the `__main__` guard" mistake, but not the general hole.
-  **Update 2026-08-08:** the blocker noted above is gone. `agentic`'s divergent exit code was the
-  open question, and that command no longer exists — the CLI is one front door, so the test only has
-  to assert `learn --topic "   "` exits 2 (verified by hand at the `-m` entry point, not automated).
-- **`personas/code_author.md:22`** still calls `conceptual` "(rare)" — a leftover anchor stripped
-  from `planner.md`, `reviewer.md` and `student.md` when the mode selection was debiased.
+- ~~**CI smoke test for the entry point**~~ — ✅ `tests/test_entrypoint_smoke.py` ships. It spawns a
+  real `python -m forged.cli` subprocess: bare `--help`, per-command `--help`, `pipelines`, a blank
+  `--topic` (usage exit 2), an unknown command — asserting exit codes and that no traceback prints.
+  **Verified to have teeth rather than assumed:** reintroducing the #30 bug shape (`main()` calling a
+  helper defined below the `__main__` guard) leaves the 25 import-based CLI tests green, ruff clean
+  and mypy clean, while these fail.
+- ~~**Nothing repo-wide stops a test from making a live paid call**~~ — ✅ an autouse fixture in
+  `tests/conftest.py` replaces `LLMClient.complete` (the single funnel every billable call goes
+  through) with one that raises, naming the model it refused. `@pytest.mark.live` is the explicit
+  opt-in. **Guarding the constructor, as originally suggested here, was the wrong seam** — it is
+  credential-free by design so the offline suite can build real agents, and guarding it would fail
+  hundreds of tests that never spend anything.
+  **It immediately found 9 tests reaching the real API on every local run** in
+  `tests/pipeline/test_agents_concrete.py`. They passed either way: with a key they took the real
+  path, without one they took CodeAuthor/Student's degrade-to-fallback path — so the spend was
+  silent, and `conftest.py` loads `.env`, so a key was always present locally. Suite runtime dropped
+  from minutes to ~15s.
+- ~~**`setup_logging` accumulates handlers**~~ — ✅ handlers it installs are tagged, and each call
+  detaches and closes its own. Only ours are swept, so pytest's capture and a host application's
+  handlers survive (the naive `root.handlers.clear()` would have destroyed them; a test pins it).
+  **Still only test-green:** the bug needs 2+ modules to manifest, so a course run is what validates
+  it. `forged/logging_config.py` had no test file at all before this.
+- ~~**CI never invokes the CLI the way a user does**~~ — ✅ closed by the smoke test above.
+- ~~**`personas/code_author.md:22` still calls `conceptual` "(rare)"**~~ — ✅ removed, along with
+  `executable`'s "(the default — most lessons)". `planner.md` states outright that "None of the
+  three is a default, and none is a fallback"; `code_author.md` was the last persona contradicting it.
+
+### New loose ends (2026-08-13)
+
+- **The cost estimate models a clean pass, not a revision loop.** `gate.py` assumes
+  `EST_TOKENS_PER_LESSON = 100_000`; the 2026-08-13 run used **172,247** because it iterated four
+  times. Tracked as C7 in doc 20, low priority.
+- **`--plan-only` cannot be built.** A probe produced exactly the wanted plan (1 module,
+  `mode: artifact`) and there was no way to build *that* plan — the build path always re-plans, and
+  the planner is non-deterministic. Design: `docs/architecture/19-build-from-a-saved-plan.md` (PR
+  #39). The missing piece is `course_from_dict`; `model.py` has `course_to_dict` and no inverse.
+- **`conceptual` has never been observed firing.** Five planning calls, including two probes on
+  deliberately non-computational topics ("when should I use Copilot agent mode vs chat vs inline
+  completions") — both returned `artifact`. Doc 18 debiased mode selection and proved a *mix* is
+  reachable; it did not prove all three modes are. Cheap to keep probing with `--plan-only`.
 
 ### Also still open — Run A (regression re-run)
 
@@ -471,6 +521,23 @@ level = **resolve by decomposing** (curriculum planner, above).
 - [ ] Compare outcome quality across model mixes
 - [ ] (gap) Meter empty/length-truncated calls too — they raise before usage records, so failed-but-billed
   calls aren't counted.
+
+### Cost findings — second data point (2026-08-13, 12 calls / 172K tokens)
+
+The failed artifact run confirms the output/reasoning-dominated picture below and adds one
+finding the earlier run could not show, because it never iterated four times:
+
+| stage | model | calls | output | reasoning | total |
+|---|---|---:|---:|---:|---:|
+| code_author | gpt-5 | 4 | 49,950 | 16,512 | **74,044** |
+| student | gpt-5-mini | 4 | 11,707 | 8,832 | 52,290 |
+| reviewer | gpt-5-mini | 3 | 9,802 | 6,976 | 39,124 |
+| planner | gpt-5-mini | 1 | 2,928 | 1,280 | 6,789 |
+
+**The revision loop *is* the cost.** `code_author` alone is 43% of the run, and every one of those
+four calls regenerated a whole notebook rather than patching the failing cells — which is why C5
+(patch, don't regenerate) is the highest-value cost change available, ahead of `reasoning_effort`.
+Input caching held up (`code_author` 46.2% cached); the critics still cache poorly (12–13%).
 
 ### Cost findings (live R1 run `localLLM_tokens_last`, 11 calls / 102K tokens)
 
