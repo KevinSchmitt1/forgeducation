@@ -150,8 +150,54 @@ Offline, no spend:
 
 The corpus in `runs/20260813-201647_…/` supports a stronger check than unit tests: apply a
 hand-written patch for v3's two colliding cells to `lesson_notebook_v3.ipynb` and execute the
-result. If it runs green, C5's premise — that these failures were repairable in place — is
-demonstrated rather than assumed. That is worth doing before writing the persona half.
+result.
+
+### That check has now been run (2026-08-16) — C5's premise holds
+
+Patching **3 of 26 cells** and executing the notebook:
+
+| | before | after |
+|---|---|---|
+| failing cells | 7 — `[7, 9, 12, 14, 17, 19, 22]` | **3** — `[9, 14, 19]` |
+| `.github/copilot-instructions.md` | never written | **3,058 bytes** |
+| `AGENTS.md` | never written | **3,639 bytes** |
+| `tools/validate_agent_docs.py` | never written | **8,265 bytes** |
+
+**Every syntax failure is gone and all three artifacts exist.** The lesson's deliverables
+were reachable all along; four full rewrites never reached them.
+
+The three remaining failures are **content**, not structure, and split into two roots:
+
+1. **A self-referential validator** (cells 9 and 19). The generated
+   `copilot-instructions.md` tells Copilot never to hardcode secrets, and names `PASSWORD`
+   to do so. The generated validator then flags any occurrence of `PASSWORD` as a leaked
+   secret — so the document fails the check it describes. Every structural check passed:
+   all six required headings, 8 code fences, before/after examples, repo tokens. Only
+   `forbidden_hits` failed. The Student grader flagged this as a LOW finding during the real
+   run and nothing acted on it.
+2. **An under-filled `AGENTS.md`** (cell 14): `has_placeholder`, `sample_has_code` and
+   `sample_has_roles` are false. Written by cell 12, which this patch did not touch — a
+   pre-existing content gap, not a collision.
+
+### Two constraints the patch surfaced, which C2's guidance must carry
+
+Both were discovered by doing it, and both would have broken a naive patch:
+
+- **`%%writefile` cannot create parent directories.** `.github/` and `tools/` must exist
+  before the cell runs, so an earlier cell has to make them.
+- **Replacing a cell deletes its side effects.** The original cell 7 carried
+  `from textwrap import dedent` and bound `instructions_path`; a `%%writefile` replacement
+  carries neither, and cell 12 died with `NameError: name 'dedent' is not defined` while a
+  later cell lost the path it needed.
+
+The second is the sharper argument for C5 as designed: **an author can only notice that by
+seeing the whole notebook**, which is precisely the input it does not currently get. A patch
+contract without the notebook in the prompt would produce exactly this class of breakage.
+
+*(Method note: the first version of this experiment's own extraction script hit the same
+delimiter collision — its "first line that is just `\"\"\"`" terminator stopped inside the
+embedded content and wrote a 197-byte stub of a 229-line script. The mechanism is pervasive
+enough to catch tooling written to study it.)*
 
 ## Open questions
 
