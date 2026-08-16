@@ -59,6 +59,70 @@ def build_notebook(cells: list[dict]) -> str:
     return nbformat.writes(notebook)
 
 
+def patch_from_json(raw: str) -> list[dict] | None:
+    """Return the patch entries if the response is a patch, else None.
+
+    None means "this is not a patch" — a full `{"cells": [...]}` rewrite, or output that
+    does not parse at all. Both are the caller's existing paths, so the author keeps the
+    freedom to rewrite when a repair cannot be expressed as replacements (splitting a
+    cell, moving an import earlier). Only the *shape* is detected here; the entries are
+    validated in `apply_patch`, next to the notebook they must fit.
+    """
+    try:
+        data = json.loads(_strip_code_fence(raw).strip())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    patch = data.get("patch")
+    return patch if isinstance(patch, list) else None
+
+
+def apply_patch(notebook_json: str, patch: list[dict]) -> str:
+    """Replace the named cells in an existing notebook and return the result.
+
+    Cells are addressed by the same absolute index the executor reports and
+    `render_indexed` shows, so an entry can be written straight from a revision brief
+    ("cells 12, 17, 20 raised errors") with no translation.
+
+    Replace-only by design: no insert, no delete, no reordering. A repair needing those
+    is a full rewrite, which the author may still return. Every entry is validated
+    *before* anything is mutated, because a half-applied notebook is worse than a refused
+    one — the caller degrades honestly on ValueError.
+    """
+    notebook = nbformat.reads(notebook_json, as_version=4)
+    count = len(notebook.cells)
+    if not patch:
+        raise ValueError("Patch is empty; expected at least one cell replacement")
+
+    for position, entry in enumerate(patch):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Patch entry {position} is not an object: {entry!r}")
+        index = entry.get("index")
+        # bool is an int subclass — accepting True as index 1 would silently misplace a cell.
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise ValueError(f"Patch entry {position} needs an integer 'index', got {index!r}")
+        if not 0 <= index < count:
+            raise ValueError(
+                f"Patch entry {position} targets cell {index}, "
+                f"outside this notebook's 0..{count - 1}"
+            )
+        if entry.get("type") not in VALID_CELL_TYPES:
+            raise ValueError(
+                f"Patch entry {position} has invalid type {entry.get('type')!r}; "
+                f"expected one of {sorted(VALID_CELL_TYPES)}"
+            )
+        if not isinstance(entry.get("source"), str):
+            raise ValueError(f"Patch entry {position} 'source' must be a string")
+
+    for entry in patch:
+        source = entry["source"]
+        notebook.cells[entry["index"]] = (
+            new_markdown_cell(source) if entry["type"] == "markdown" else new_code_cell(source)
+        )
+    return nbformat.writes(notebook)
+
+
 def render_indexed(notebook_json: str) -> str:
     """Render a notebook as an index-labelled listing for downstream agents.
 
