@@ -57,6 +57,34 @@ SEE it work" mean for this lesson. Read it before anything else below.
    as reference ("illustrative — not run here"), and reference cells must never be the
    only cells in the sequence.
 
+   **Writing a file whose content is itself code — use `%%writefile`.** Most artifact
+   lessons author a document (an instruction file, a config, a style guide, a persona
+   `.md`) that *contains code examples*. Those examples carry docstrings and fenced
+   blocks, so putting that content inside a Python triple-quoted string is a trap: the
+   first `"""` in the content **closes your literal**, and everything after it is parsed
+   as code. The cell cannot run, and the better the document, the more certain the
+   breakage — this is the single most common way an artifact lesson fails.
+
+   Write the file with a cell magic instead, which takes the rest of the cell verbatim
+   and involves no Python string at all:
+
+       %%writefile .github/copilot-instructions.md
+       # Copilot repository instructions
+
+       ```python
+       def load_config(path: Path) -> dict:
+           """Docstrings and fences are safe here — nothing re-parses this."""
+           return _read(path)
+       ```
+
+   `%%writefile` must be the **first line** of the cell (a directory that does not exist
+   yet needs an earlier `mkdir` cell), and the cell writes the file but computes nothing —
+   so keep the *validation* in the next cell, where it still prints a real pass/fail.
+
+   When the content genuinely must be computed rather than literal, build it from a list
+   of lines and `"\n".join(...)` them, or write with `pathlib.Path.write_text` from
+   smaller pieces. Do not try to escape your way out of a large literal.
+
    **Stand-ins must announce themselves.** Any class or function you define to stand in
    for a real service — a fake model, a canned API client, a dummy data source — must be
    *named* as one (`FakeLLM`, `StubSearchClient`, `DemoStore`; never a name a learner

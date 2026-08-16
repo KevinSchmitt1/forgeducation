@@ -108,7 +108,11 @@ class RevisorAgent(Agent[AgentOutput]):
             raise RuntimeError("Router returned non-terminal result with no next_stage")
 
         brief = self._synthesize_revision_brief(
-            exec_report, grade_report, classification, result.next_stage
+            exec_report,
+            grade_report,
+            classification,
+            result.next_stage,
+            diagnosis=self._diagnose_failures(state, store),
         )
         brief_name = f"revision_brief_v{state.iteration}"
         store.put(Artifact(name=brief_name, kind="text", content=brief))
@@ -376,12 +380,40 @@ class RevisorAgent(Agent[AgentOutput]):
                 return output.artifact_name
         return f"{fallback_prefix}_v{state.iteration}"
 
+    def _diagnose_failures(self, state: PipelineState, store: ArtifactStore) -> str | None:
+        """Name a known failure mechanism the interpreter's message cannot convey.
+
+        Same read-and-degrade shape as `_assess_structure`: a missing or unparseable
+        notebook simply yields no diagnosis. The brief is still written either way — this
+        adds a sentence to it, and skips nothing.
+        """
+        from forged.executor import executed_notebook_filename
+        from forged.pipeline.diagnosis import diagnose_delimiter_collision
+
+        exec_name = self._latest_artifact_name(
+            state, PipelineStage.EXECUTOR, "execution_report"
+        )
+        executed_path = store.run_dir / executed_notebook_filename(exec_name)
+        if not executed_path.exists():
+            return None
+        try:
+            report = self._read_execution_report(state, store)
+            if report is None or not report.failed_cells:
+                return None
+            return diagnose_delimiter_collision(
+                executed_path.read_text(encoding="utf-8"), report.failed_cells
+            )
+        except Exception as exc:  # noqa: BLE001 — a diagnosis must never break the run
+            _LOG.warning("RevisorAgent: could not diagnose failures: %s", exc)
+            return None
+
     def _synthesize_revision_brief(
         self,
         exec_report: ExecutionReport | None,
         grade_report: GradeReport | None,
         classification,
         next_stage: PipelineStage,
+        diagnosis: str | None = None,
     ) -> str:
         """Create structured feedback artifact for rerouted agents.
 
@@ -401,6 +433,8 @@ class RevisorAgent(Agent[AgentOutput]):
                 lines.append(f"- **Failed Cells**: {failed}\n")
             if exec_report.error_summary:
                 lines.append(f"- **Error**: {exec_report.error_summary}\n")
+            if diagnosis:
+                lines.append(f"\n{diagnosis}\n")
             lines.append("\n")
 
         # Only show a quality score when there is a real grade behind it. An
