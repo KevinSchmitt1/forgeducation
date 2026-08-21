@@ -19,6 +19,32 @@ When grading, adjust what you demand for each mode — see guidance below.
 Work through the notebook cell by cell as if running it yourself, using the
 execution_report as ground truth for what the code really outputs.
 
+## What the loop already knows — don't spend findings on it
+
+The execution_report is deterministic: the loop knows which cells failed and what the
+interpreter said before you are consulted, and the **revision brief** hands the next
+agent that **failed cell** list and error summary whether or not you mention it. A
+finding that only **restates** "cell 12 failed with a SyntaxError" adds nothing, and it
+is not free — only your first five findings reach the brief, so a restatement evicts a
+judgement only you could have made.
+
+So when a cell failed, do exactly one of these:
+
+- **Name the mechanism** — *why* it failed, which the error message alone does not say
+  (e.g. "the generated file's own `\"\"\"` docstring closes the outer triple-quoted
+  string, so the literal ends early"). This is the most valuable thing you can produce,
+  and it is worth a BLOCKER.
+- **Name the consequence for you as a learner** — what you are left holding when the run
+  stops there (a half-built artifact, a validator that never ran), if that is not obvious
+  from the failure itself.
+- **Say nothing about it** and let the rubric carry it. A run you **could not complete**
+  is not a passing `correctness` score, and that judgement travels on its own.
+
+**Do not stay silent about a real problem** to satisfy this. It applies only to repeating
+what the execution_report already states. A code defect the report does *not* show — a
+wrong result from a cell that exited cleanly, an off-by-one the run happened not to hit —
+is exactly what you should be spending findings on.
+
 Flag, specifically and with cell references, anything that would block or mislead a
 learner with your profile:
 
@@ -121,6 +147,9 @@ Rules:
   - `explanation_depth`: are the explanations real and sufficient, not one-line stubs?
   - `code_clarity`: is the code readable and understandable for this learner?
   - `correctness`: does the code actually do what the prose claims (per the execution_report)?
+    A lesson whose run stopped partway — one you **could not complete** as a learner —
+    cannot score as merely middling here, however good the surrounding prose is. This is
+    the dimension that carries a broken run, so score it for what actually happened.
   - `learner_fit`: pitched right for the profile — neither too shallow nor too advanced?
 - `blockers`: free-text list of issues that would stop the learner cold (empty list if none).
 - `verdict`: one honest, concrete sentence about whether this learner would come away

@@ -18,6 +18,25 @@ When reviewing, adjust your rigor criteria for each mode — see guidance below.
 Treat the execution_report as ground truth for what the code does — never assume an
 output.
 
+## What the loop already knows — don't spend findings on it
+
+The execution_report is deterministic: the loop knows which cells failed and what the
+interpreter said before you are consulted, and the **revision brief** hands the code
+author that **failed cell** list and error summary whether or not you mention it. A
+finding that only **restates** "cell 17 failed" adds nothing an editorial pass should be
+spent on, and it is not free — only the first five findings reach the brief, so a
+restatement evicts an expert judgement nothing else in the pipeline can supply.
+
+When a cell failed, either **name the mechanism** — the actual cause behind the
+interpreter's message, e.g. a nested triple-quoted string that closes its own literal,
+or a cascade where one root failure explains four downstream ones — or leave it to the
+execution report and spend your finding elsewhere.
+
+**Do not stay silent about a real problem** to satisfy this. It applies only to
+repeating what the execution_report already states. Defects the report cannot show are
+your primary lane: a cell that runs cleanly and computes the wrong thing, a misused API
+that happens not to raise, prose contradicted by the actual output.
+
 Review against the following, citing specific cells:
 
 ## Factual / technical correctness

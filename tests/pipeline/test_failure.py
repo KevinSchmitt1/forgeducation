@@ -1036,3 +1036,229 @@ def test_classify_structural_gate_does_not_override_low_quality(
     )
 
     assert result.category == FailureCategory.CONTENT_QUALITY
+
+
+# ── Doc 22 R1: a fatal dimension gates the verdict instead of averaging into it ─
+#
+# Not to be confused with the repo's *other* R1 (topic fidelity, doc 11). This one
+# is docs/architecture/22-review-that-points-at-the-fix.md → D1/R1.
+#
+# The rubric numbers below are the real ones from the 2026-08-13 artifact run
+# (runs/20260813-201647_create_and_validate__github_co/student_grade_report_v*.json),
+# so these tests are the corpus re-scoring doc 22 Part VI asks for, pinned as tests.
+
+
+@pytest.fixture
+def v1_rubric() -> RubricScores:
+    """Iteration v1's real rubric: composite 82, and it produced zero artifacts.
+
+    correctness 70 — "the validator run fails in cell 16 which will block a learner
+    from finishing" — outvoted by four healthy dimensions.
+    """
+    return RubricScores(
+        structure=90.0,
+        explanation_depth=85.0,
+        code_clarity=80.0,
+        correctness=70.0,
+        learner_fit=85.0,
+    )
+
+
+@pytest.fixture
+def v0_rubric() -> RubricScores:
+    """Iteration v0's real rubric: composite 74, correctness 40 (IndentationError)."""
+    return RubricScores(
+        structure=90.0,
+        explanation_depth=85.0,
+        code_clarity=70.0,
+        correctness=40.0,
+        learner_fit=85.0,
+    )
+
+
+@pytest.mark.unit
+def test_fatal_dimension_refuses_acceptable_despite_passing_composite(
+    ok_execution: ExecutionReport,
+    v1_rubric: RubricScores,
+) -> None:
+    """The doc-22 D1 case: 82/100 must not be ACCEPTABLE on correctness 70.
+
+    v1 scored the highest mark of the run while producing nothing. Its composite
+    clears the 80 threshold, so only a per-dimension floor can refuse it.
+    """
+    grade = GradeReport(quality_score=v1_rubric.composite(), rubric=v1_rubric)
+
+    result = classify(execution_report=ok_execution, grade_report=grade)
+
+    assert grade.quality_score >= 80.0, "fixture must reproduce the passing composite"
+    assert result.category != FailureCategory.ACCEPTABLE
+
+
+@pytest.mark.unit
+def test_fatal_correctness_routes_to_the_agent_that_can_fix_it(
+    ok_execution: ExecutionReport,
+    v0_rubric: RubricScores,
+) -> None:
+    """Fatal `correctness` is a code problem → TEST_FAILURE (code_author).
+
+    Today v0's 74 composite routes to CONTENT_QUALITY, handing a wrong-code lesson
+    to the prose reviser. Correctness at 40 means the code does not do what the
+    prose claims; rewriting the prose cannot fix that.
+    """
+    grade = GradeReport(quality_score=v0_rubric.composite(), rubric=v0_rubric)
+
+    result = classify(execution_report=ok_execution, grade_report=grade)
+
+    assert result.category == FailureCategory.TEST_FAILURE
+
+
+@pytest.mark.unit
+def test_fatal_teaching_dimension_routes_to_content_quality(
+    ok_execution: ExecutionReport,
+) -> None:
+    """A fatal *teaching* dimension is a prose problem → CONTENT_QUALITY.
+
+    Never BLOCKER_STRUCTURE: routing a thin explanation to the planner is the
+    amputation failure doc 11 (the topic-fidelity R1) exists to prevent.
+    """
+    rubric = RubricScores(
+        structure=90.0,
+        explanation_depth=55.0,
+        code_clarity=90.0,
+        correctness=90.0,
+        learner_fit=90.0,
+    )
+    grade = GradeReport(quality_score=rubric.composite(), rubric=rubric)
+
+    result = classify(execution_report=ok_execution, grade_report=grade)
+
+    assert grade.quality_score >= 80.0, "fixture must reproduce the passing composite"
+    assert result.category == FailureCategory.CONTENT_QUALITY
+
+
+@pytest.mark.unit
+def test_healthy_rubric_still_acceptable(ok_execution: ExecutionReport) -> None:
+    """No regression: every dimension at or above the floor still ships."""
+    rubric = RubricScores(
+        structure=85.0,
+        explanation_depth=80.0,
+        code_clarity=75.0,
+        correctness=80.0,
+        learner_fit=85.0,
+    )
+    grade = GradeReport(quality_score=rubric.composite(), rubric=rubric)
+
+    result = classify(execution_report=ok_execution, grade_report=grade)
+
+    assert result.category == FailureCategory.ACCEPTABLE
+
+
+@pytest.mark.unit
+def test_grade_without_a_rubric_is_unaffected(
+    ok_execution: ExecutionReport,
+    high_quality_grade: GradeReport,
+) -> None:
+    """A bare score carries no dimensions, so there is nothing to gate.
+
+    The gate reads the rubric only — it never invents a fatal condition from a
+    composite, and a provider that returns no rubric keeps the old behaviour.
+    """
+    assert high_quality_grade.rubric is None
+
+    result = classify(execution_report=ok_execution, grade_report=high_quality_grade)
+
+    assert result.category == FailureCategory.ACCEPTABLE
+
+
+@pytest.mark.unit
+def test_fatal_gate_reason_names_the_dimension_and_its_score(
+    ok_execution: ExecutionReport,
+    v1_rubric: RubricScores,
+) -> None:
+    """Auditability: the brief must say which dimension was fatal, and at what value.
+
+    A verdict the reviser cannot explain to the next agent is not actionable —
+    this reason is what reaches the revision brief's **Reason** line.
+    """
+    grade = GradeReport(quality_score=v1_rubric.composite(), rubric=v1_rubric)
+
+    result = classify(execution_report=ok_execution, grade_report=grade)
+
+    combined = (result.reason + " " + " ".join(result.matched_signals)).lower()
+    assert "correctness" in combined
+    assert "70" in combined
+
+
+@pytest.mark.unit
+def test_execution_failure_still_outranks_a_fatal_dimension(
+    failed_execution: ExecutionReport,
+    v0_rubric: RubricScores,
+) -> None:
+    """Priority ordering is unchanged: a notebook that did not run is CODE_QUALITY.
+
+    The gate is inserted below execution and grader signals, not above them.
+    """
+    grade = GradeReport(quality_score=v0_rubric.composite(), rubric=v0_rubric)
+
+    result = classify(execution_report=failed_execution, grade_report=grade)
+
+    assert result.category == FailureCategory.CODE_QUALITY
+
+
+@pytest.mark.unit
+def test_blocker_structure_still_outranks_a_fatal_dimension(
+    ok_execution: ExecutionReport,
+    blocker_structure_evidence: Evidence,
+    v0_rubric: RubricScores,
+) -> None:
+    """A plan-scoped BLOCKER still wins: the gate never pre-empts a replan."""
+    grade = GradeReport(
+        quality_score=v0_rubric.composite(),
+        rubric=v0_rubric,
+        findings=[blocker_structure_evidence],
+    )
+
+    result = classify(execution_report=ok_execution, grade_report=grade)
+
+    assert result.category == FailureCategory.BLOCKER_STRUCTURE
+
+
+@pytest.mark.unit
+def test_fatal_floor_is_configurable_like_the_quality_threshold(
+    ok_execution: ExecutionReport,
+    v1_rubric: RubricScores,
+) -> None:
+    """The floor is a named parameter, so a caller can tune it without editing code."""
+    grade = GradeReport(quality_score=v1_rubric.composite(), rubric=v1_rubric)
+
+    lenient = classify(execution_report=ok_execution, grade_report=grade, fatal_floor=60.0)
+
+    assert lenient.category == FailureCategory.ACCEPTABLE
+
+
+@pytest.mark.unit
+def test_fatal_dimensions_lists_every_dimension_below_the_floor() -> None:
+    """RubricScores.fatal_dimensions() reports names in canonical order."""
+    rubric = RubricScores(
+        structure=90.0,
+        explanation_depth=50.0,
+        code_clarity=90.0,
+        correctness=40.0,
+        learner_fit=90.0,
+    )
+
+    assert rubric.fatal_dimensions() == ("explanation_depth", "correctness")
+
+
+@pytest.mark.unit
+def test_fatal_dimensions_is_empty_for_a_healthy_rubric() -> None:
+    """A rubric with no dimension below the floor is fatal-free."""
+    rubric = RubricScores(
+        structure=75.0,
+        explanation_depth=75.0,
+        code_clarity=75.0,
+        correctness=75.0,
+        learner_fit=75.0,
+    )
+
+    assert rubric.fatal_dimensions() == ()

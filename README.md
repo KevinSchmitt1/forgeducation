@@ -28,8 +28,15 @@ things the code doesn't actually do.
 
 ## Honest by design
 
-The pipeline refuses to fake teaching value. Four guarantees, each enforced by the agents and
+The pipeline refuses to fake teaching value. Five guarantees, each enforced by the agents and
 surfaced in the run's `SUMMARY.md`:
+
+- **Never let a good average outvote a fatal flaw.** The quality score is the mean of five
+  rubric dimensions, so four healthy ones could carry a fatal one: a real run scored **82/100**
+  on a notebook that produced no artifacts at all. Any single dimension below the floor now
+  refuses the lesson on its own, and sends it to the agent that can actually repair it — a
+  wrong-code lesson goes back to the code author, not to the prose reviser.
+  (`docs/architecture/22-review-that-points-at-the-fix.md`)
 
 - **Never silently drop a requested capability** (topic fidelity, "R1"). If the topic asks to set
   up *and train* a model, a run that only sets up **records** the dropped capability — it never
