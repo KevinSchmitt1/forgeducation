@@ -11,6 +11,8 @@ Priority cascade (first match wins):
   2. Execution failed                 → CODE_QUALITY
   3. Grader ran but produced no usable grade → UNCLASSIFIABLE
   4. Code runs but high-severity code finding → TEST_FAILURE
+  4b. A rubric dimension below the fatal floor → TEST_FAILURE (correctness)
+                                              or CONTENT_QUALITY (teaching)
   5. Quality score below threshold    → CONTENT_QUALITY
   6a. Execution OK + quality OK but structurally hollow → UNCLASSIFIABLE
   6b. Execution OK + quality acceptable → ACCEPTABLE
@@ -73,6 +75,24 @@ RUBRIC_DIMENSIONS = (
 )
 
 
+# The score below which a single dimension is fatal on its own, no matter what the
+# mean says (docs/architecture/22-review-that-points-at-the-fix.md → D1/R1).
+#
+# Calibrated against the one real case we have. Iteration v1 of the 2026-08-13
+# artifact run scored `correctness` 70 — "the validator run fails, the learner cannot
+# finish" — alongside four dimensions at 80–90, for a composite of 82: the highest
+# mark of the run, awarded to a notebook that produced no artifacts at all. With the
+# acceptance threshold at 80, a dimension sitting more than a few points below the bar
+# is precisely what four healthy dimensions can outvote, so the floor is set just
+# above that case rather than at a round number chosen for its looks.
+FATAL_DIMENSION_FLOOR = 75.0
+
+# Dimensions the fatal gate treats as a *code* defect rather than a teaching one.
+# `correctness` asks "does the code do what the prose claims" — when that is what
+# failed, rewriting the prose cannot fix it, so the lesson goes back to the author.
+_CODE_DIMENSIONS = ("correctness",)
+
+
 @dataclass(frozen=True)
 class RubricScores:
     """Per-dimension teaching-quality scores from the Student grader.
@@ -101,6 +121,17 @@ class RubricScores:
         """Equal-weighted mean of the five dimensions, in [0, 100]."""
         values = [getattr(self, dim) for dim in RUBRIC_DIMENSIONS]
         return sum(values) / len(values)
+
+    def fatal_dimensions(
+        self, floor: float = FATAL_DIMENSION_FLOOR
+    ) -> tuple[str, ...]:
+        """Dimensions scoring below `floor`, in canonical RUBRIC_DIMENSIONS order.
+
+        Deliberately kept *beside* composite() rather than folded into it: the mean
+        stays comparable across runs, and the fatal condition is read as its own
+        signal instead of being averaged away — which is the whole point of the gate.
+        """
+        return tuple(dim for dim in RUBRIC_DIMENSIONS if getattr(self, dim) < floor)
 
 
 @dataclass(frozen=True)
@@ -178,6 +209,7 @@ def classify(
     quality_threshold: float = 80.0,
     structural_report: StructuralReport | None = None,
     lesson_mode: LessonMode = "executable",
+    fatal_floor: float = FATAL_DIMENSION_FLOOR,
 ) -> Classification:
     """Classify what went wrong using a deterministic priority cascade.
 
@@ -191,6 +223,10 @@ def classify(
                            would otherwise pass but is structurally hollow (all
                            cells skipped, no worked example) is refused. Callers
                            should compute this with the same lesson_mode.
+        fatal_floor: score below which a single rubric dimension refuses the lesson
+                     on its own, regardless of the composite. Only consulted when the
+                     grade report carries a rubric; a bare score is never gated.
+                     See docs/architecture/22-review-that-points-at-the-fix.md → R1.
         lesson_mode: what kind of lesson this is (docs/architecture/17-lesson-modes.md).
                      Defaults to ``"executable"`` — unchanged behavior. In
                      ``"artifact"``/``"conceptual"`` modes, the absence of an
@@ -267,6 +303,38 @@ def classify(
             return Classification(
                 category=FailureCategory.TEST_FAILURE,
                 reason="Code runs but produces incorrect output.",
+                matched_signals=signals,
+            )
+
+    # Priority 4b: A single dimension is fatal on its own.
+    # The composite is a mean, so four healthy dimensions can outvote one fatal
+    # one — the 2026-08-13 run awarded 82/100 to a notebook that produced nothing
+    # (doc 22, D1). Read the dimension directly rather than trusting the average,
+    # and send the lesson to the agent that can actually repair what failed.
+    if grade_report is not None and grade_report.rubric is not None:
+        fatal = grade_report.rubric.fatal_dimensions(fatal_floor)
+        if fatal:
+            detail = ", ".join(
+                f"{dim} {getattr(grade_report.rubric, dim):.0f}" for dim in fatal
+            )
+            signals.append(f"Fatal rubric dimension(s) below {fatal_floor:.0f}: {detail}")
+            is_code_defect = any(dim in _CODE_DIMENSIONS for dim in fatal)
+            return Classification(
+                category=(
+                    FailureCategory.TEST_FAILURE
+                    if is_code_defect
+                    else FailureCategory.CONTENT_QUALITY
+                ),
+                reason=(
+                    f"Rubric dimension(s) below the fatal floor of "
+                    f"{fatal_floor:.0f}: {detail}. A composite of "
+                    f"{grade_report.quality_score:.0f} cannot make up for it — the "
+                    + (
+                        "code does not do what the prose claims."
+                        if is_code_defect
+                        else "teaching has a hole the average hides."
+                    )
+                ),
                 matched_signals=signals,
             )
 

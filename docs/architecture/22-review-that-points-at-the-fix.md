@@ -1,6 +1,9 @@
 # 22 — A review that points at the fix
 
-**Status:** designed, not built (2026-08-16)
+**Status:** designed 2026-08-16 · **R1 + R2 IMPLEMENTED 2026-08-21** (R3–R8 not built)
+See "Implementation note — R1 and R2" at the end of this file, which also **corrects
+Part VI's validation criterion for R1**: as written it was already satisfied before the
+change, and the real test is a counterfactual.
 **Evidence:** `runs/20260813-201647_create_and_validate__github_co/` (docs 20, 21)
 **Follows:** C5 (patching) landed the *mechanism* for targeted repair. This doc is about the
 *signal* that drives it — which is currently not targeted at all.
@@ -131,16 +134,16 @@ only thing that makes a rewrite an improvement rather than another sample.
 
 ## Part IV — What changes where
 
-| # | Change | Where | Kind |
-|---|---|---|---|
-| R1 | A fatal condition gates the verdict instead of averaging into it | `failure.py` classify/rubric | code |
-| R2 | Critics stop re-reporting execution failures; the brief carries them once | `student.md`, `reviewer.md` | persona |
-| R3 | Findings name a target cell and what it must satisfy | grader JSON schema + personas | code + persona |
-| R4 | Severity is calibrated to consequence, with the `PASSWORD` case as the worked example | `student.md`, `reviewer.md` | persona |
-| R5 | New rubric dimension for goal fit / necessity / sufficiency, mode-aware | `failure.py` + all grader personas | code + persona |
-| R6 | `critique_digest` accumulates findings across iterations | `reviser.py` | code |
-| R7 | Remake is a recorded decision, informed by the digest | `reviser.py`, `code_author.md` | code + persona |
-| R8 | C6 non-convergence signal ("look for a systematic cause") | `reviser.py` brief text | code |
+| # | Change | Where | Kind | Status |
+|---|---|---|---|---|
+| R1 | A fatal condition gates the verdict instead of averaging into it | `failure.py` classify/rubric | code | ✅ 2026-08-21 |
+| R2 | Critics stop re-reporting execution failures; the brief carries them once | `student.md`, `reviewer.md` | persona | ✅ 2026-08-21 |
+| R3 | Findings name a target cell and what it must satisfy | grader JSON schema + personas | code + persona | ⬜ |
+| R4 | Severity is calibrated to consequence, with the `PASSWORD` case as the worked example | `student.md`, `reviewer.md` | persona | ⬜ |
+| R5 | New rubric dimension for goal fit / necessity / sufficiency, mode-aware | `failure.py` + all grader personas | code + persona | ⬜ |
+| R6 | `critique_digest` accumulates findings across iterations | `reviser.py` | code | ⬜ |
+| R7 | Remake is a recorded decision, informed by the digest | `reviser.py`, `code_author.md` | code + persona | ⬜ |
+| R8 | C6 non-convergence signal ("look for a systematic cause") | `reviser.py` brief text | code | ⬜ |
 
 ## Part V — Sequencing
 
@@ -182,3 +185,70 @@ Only R7's remake behaviour needs a live run, and only after the rest.
 3. **Does `content_reviser` need C5's change too?** It rewrites prose on the `CONTENT_QUALITY`
    route and has the same never-sees-its-own-output shape. Almost certainly yes; deferred so
    that C5 is validated by one run before the pattern is copied.
+
+---
+
+## Implementation note — R1 and R2 (2026-08-21)
+
+### R1's validation criterion was wrong as written, and the fix is a counterfactual
+
+Part VI asks: *re-score the four real `student_grade_report_v*.json` payloads under the
+new gating; v1 (82/100, zero artifacts) must come out not-acceptable.*
+
+Measured against the corpus before writing any code, **all four already came out
+not-acceptable** — `classify()` returns `CODE_QUALITY` at priority 2 from the
+`ExecutionReport`, before the rubric is consulted at all. The criterion could not fail,
+so it could not have validated anything. (Doc 20's own lesson: test that the measurement
+is capable of failing before citing it as evidence.)
+
+The defect D1 describes is real, but it only becomes visible in the counterfactual —
+*what would this rubric have produced had the notebook executed cleanly?* That is not a
+hypothetical: it is exactly the case the gate exists for, a lesson that runs green while
+a fatal dimension is outvoted by the mean. Re-scored that way, with `fatal_floor=0.0`
+standing in for the old behaviour:
+
+| iteration | composite | fatal dimensions | if-exec-ok, before | if-exec-ok, after |
+|---|---:|---|---|---|
+| v0 | 74 | code_clarity 70, correctness 40 | content_quality | **test_failure** |
+| v1 | **82** | correctness 70 | **acceptable** | **test_failure** |
+| v2 | 74 | correctness 50 | content_quality | **test_failure** |
+| v3 | 71 | code_clarity 65, correctness 45 | content_quality | **test_failure** |
+
+Two effects, not one. The headline is v1: an 82/100 can no longer ship. The quieter one
+matters as much — v0, v2 and v3 were being routed to the **prose reviser** on a
+correctness of 40–50. Rewriting explanations cannot fix code that does the wrong thing,
+so those iterations were spending a content-revision budget on a code defect. Both rows
+of the table are pinned as tests in `tests/pipeline/test_failure.py`, using the real
+rubric numbers.
+
+### What shipped
+
+- `FATAL_DIMENSION_FLOOR = 75.0` and `RubricScores.fatal_dimensions()` in
+  `forged/pipeline/failure.py`. The floor is calibrated on v1's `correctness` 70 against
+  an acceptance threshold of 80 — the band a mean can hide — not chosen for roundness.
+- A new priority 4b in the cascade: a fatal `correctness` routes `TEST_FAILURE` (the
+  code author, who can fix it); any other fatal dimension routes `CONTENT_QUALITY`.
+  Never `BLOCKER_STRUCTURE` — routing a thin explanation to the planner is the
+  amputation failure doc 11 exists to prevent.
+- `composite()` is **unchanged**, and the gate reads dimensions beside it rather than
+  reweighting the mean. This is the same answer Kevin gave for open question 1 (R5 is a
+  separate verdict, not a sixth dimension): averaging is what hid the problem, so the
+  fix must not be more arithmetic. Historical scores stay comparable.
+- A grade report with no rubric is never gated — a bare score carries no dimensions, and
+  the gate must not invent a fatal condition from an average.
+- R2 is persona-only, in both critics: the execution report and the revision brief
+  already carry the failed-cell list, and only the first five findings reach the brief,
+  so a restatement *evicts* a judgement rather than merely wasting tokens. The budget is
+  redirected (name the mechanism, name the learner's consequence) rather than cut, with
+  an explicit guard against over-correcting into silence.
+- `student.md` also now states that a run the learner could not complete cannot score as
+  middling on `correctness` — the dimension R1's gate reads. The floor's numeric value
+  is deliberately **not** named in the persona: telling a grader the cut-off invites it
+  to score just above the line.
+
+### Confidence level
+
+**Test-green and validated offline against the real corpus; not validated by a paid
+run.** No live run has exercised either change. R2 in particular is a persona
+instruction — the tests prove the instruction is *present*, not that the critics obey
+it; only reading findings from the next paid run can show that.

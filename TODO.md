@@ -40,6 +40,10 @@ exhausted. 1016.7s, 172,247 tokens.
 | C6 | Non-convergence makes the loop **aware** ("look for a systematic cause") | brief text | ⬜ folded into doc 22 (R8) |
 | C7 | Iteration-aware cost estimate | code | ⬜ **low priority** |
 
+**Doc 22 (the review itself) — status as of 2026-08-21:** R1 (fatal-dimension gate) and R2
+(critic finding budget) are built and offline-validated; R5 is unblocked and next; R3, R4,
+R6, R7, R8 not built. Per-item table lives in doc 22 Part IV.
+
 **None of it is validated by a paid run yet.** All of it is validated offline against the four
 failing notebooks the run left behind (see below) — which is a real level of confidence, but not
 the same one. The next artifact-lesson run is what proves the loop actually escapes.
@@ -98,17 +102,24 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 
 ## ▶ NEXT — pick up here
 
-1. **Merge / review the two open PRs**: **#45** (C5 patching) and **#46** (doc 22 design).
-2. **Build R1 + R2 from doc 22** — the smallest changes with the largest effect; *either alone*
-   would have changed the 2026-08-13 run's outcome. R1 is checkable offline: re-score the four
-   real `student_grade_report_v*.json` under the new gating, and **v1 (82/100 with zero
-   artifacts) must come out not-acceptable**. If it doesn't, R1 is wrong.
-3. **Settle doc 22's open question 1 before building R5** — does the new goal-fit/necessity
-   dimension go *in* the rubric or *beside* it? A sixth dimension changes every grade's
-   arithmetic and makes historical scores incomparable, and averaging is what hid the problem in
-   the first place. **This is Kevin's call, not the implementer's.**
-4. **Then a paid artifact-lesson run**, to validate C1–C5 for real. Use `--plan-only` first to
-   confirm the mode for cents (see "New loose ends").
+1. ~~Merge the open PRs #45 (C5 patching) and #46 (doc 22 design)~~ — ✅ both on `master`
+   (2026-08-16), along with #47. All merged feature branches deleted local + remote.
+2. ~~**Build R1 + R2 from doc 22**~~ — ✅ done 2026-08-21, offline-validated against the real
+   corpus. **Doc 22's stated R1 criterion turned out to be un-failable** (all four iterations
+   were already not-acceptable via the execution-failure route, before any rubric is read), so
+   the validation is a counterfactual instead: *what would this rubric produce had the notebook
+   run clean?* v1's 82/100 goes **acceptable → test_failure**, and v0/v2/v3 stop being handed to
+   the prose reviser on a correctness of 40–50. Full table + reasoning in doc 22's
+   "Implementation note".
+3. **Doc 22's open question 1 is settled** (Kevin, 2026-08-16): R5's goal-fit/necessity
+   dimension is a **separate verdict beside the rubric**, not a sixth dimension — averaging is
+   what hid the problem, so the fix must not be more arithmetic. R5 is now unblocked; **R1 was
+   its prerequisite and is done.**
+4. **Next build items, in doc 22's order:** R5 (the founding "code-heavy, not practical"
+   complaint), then R6 → R7 (the `critique_digest`, then the informed remake), then R3/R4/R8.
+5. **Then a paid artifact-lesson run**, to validate C1–C5 *and* R1+R2 for real. Use
+   `--plan-only` first to confirm the mode for cents (see "New loose ends"). R2 is the one that
+   most needs it: the tests prove the instruction is present, not that the critics obey it.
 
 ### Shipped since (2026-08-08 → 08-16)
 
@@ -124,8 +135,10 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 | **C3 + C4** — verifiability criterion; truncation recovery | ✅ `master` (#42) |
 | Design: patch-don't-regenerate (doc 21) | ✅ `master` (#43) |
 | Doc 21's offline check run — C5's premise holds | ✅ `master` (#44) |
-| **C5** — `code_author` sees its notebook and patches it | 🔄 **PR #45** |
-| Design: a review that points at the fix (doc 22) | 🔄 **PR #46** |
+| **C5** — `code_author` sees its notebook and patches it | ✅ `master` (#45) |
+| Design: a review that points at the fix (doc 22) | ✅ `master` (#46) |
+| **doc-22 R1** — a fatal rubric dimension gates the verdict instead of averaging into it | 🔄 in flight |
+| **doc-22 R2** — critics stop re-reporting the execution report | 🔄 in flight |
 
 **Config change worth knowing (#42):** the `gpt-5-mini` stages went `max_tokens` 4096 → 8192.
 Every one of them already exceeded 4096 once reasoning is counted (planner 4,208, student
