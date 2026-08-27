@@ -29,6 +29,16 @@ notebook.
    markdown — describe the pattern to expect. You cannot see new outputs until the
    revised notebook is re-run.
 5. Stay focused: keep the notebook coherent and roughly the same size; don't bloat it.
+6. **Act on the brief's `Goal fit` line when it is present.** It is the one signal that
+   says code should not be there at all, and it overrides rule 5:
+   - **overwhelming** — you may and should **remove cells**. Cut the machinery the
+     learner never needs again — scaffolding, defensive branches, helper classes,
+     knobs the lesson never varies — and keep what demonstrates the objective. A
+     shorter notebook is the correct outcome here, not a regression.
+   - **insufficient** — the opposite: the idea is named but never shown. Add the
+     worked example or the missing step that makes it learnable.
+   Both can appear at once: cut the machinery *and* show the idea. Never drop a
+   capability the brief's topic asked for — trim what serves nothing, not what is hard.
 
 ## Output format
 

@@ -87,6 +87,32 @@ Judge every concept against your Prior knowledge — not against what an expert 
   visible in the execution_report — that the notebook never tells you was created or why. You
   should never meet a generated file by surprise. Scope `content`.
 
+## Does this lesson earn its place?
+
+Separate from the rubric, answer one more question — the rubric only ever asks how well
+the code that *is* here is presented, never whether it should be here at all. Judge it
+from where you sit: **could you reach the lesson's stated goal with what you were given,
+without wading through what you were not?**
+
+Two ways it fails, and a lesson can be both at once:
+
+- **overwhelming** — machinery you never need to touch again to reach the goal:
+  scaffolding, defensive branches, elaborate helper classes, configuration knobs the
+  lesson never varies. Every one of those is *cost* to you, not value.
+- **insufficient** — trimmed past the point where it still teaches. The idea is named
+  but never actually shown; you would not be able to do this yourself afterwards.
+
+Judge it in the lesson's own **mode**. For `artifact`, ask whether this is an artifact you
+**would keep** and could reproduce next week — not whether the code was impressive. For
+`conceptual`, ask whether the mental model is complete enough to act on.
+
+If the lesson feels like it is teaching the *wrong subject* entirely, say so as a normal
+finding — but that verdict is not yours to file here: the **expert reviewer owns** the
+question of whether this was the right material. Yours is "too much / too little for me".
+
+Report it in the `goal_fit` object described below, whatever your rubric scores say. A
+lesson can be clear, correct, well-structured — and still not worth the learner's time.
+
 ## Missing demonstration
 **For executable mode:** Does the notebook actually SHOW the concept working on real
 inputs, or does it only define machinery? If there's no worked example with visible
@@ -121,6 +147,11 @@ before or after the JSON.
     "learner_fit": <number 0-100>
   },
   "verdict": "<one-line answer: would this learner come away understanding the topic?>",
+  "goal_fit": {
+    "fit": <true | false>,
+    "problems": [<"overwhelming" | "insufficient">, ...],
+    "text": "<one line: what does not earn its place, or why it does>"
+  },
   "blockers": [<string>, ...],
   "findings": [
     {
@@ -151,6 +182,12 @@ Rules:
     cannot score as merely middling here, however good the surrounding prose is. This is
     the dimension that carries a broken run, so score it for what actually happened.
   - `learner_fit`: pitched right for the profile — neither too shallow nor too advanced?
+- `goal_fit`: your answer to "does this lesson earn its place?" (see above). Set
+  `fit: true` with an empty `problems` list when it does — then `text` says briefly why.
+  Set `fit: false` and list every direction that applies when it does not; both
+  `overwhelming` and `insufficient` together is a real and common answer, not a
+  contradiction. `text` must name the concrete thing, not a feeling: "six helper classes
+  the learner never touches again" beats "feels bloated".
 - `blockers`: free-text list of issues that would stop the learner cold (empty list if none).
 - `verdict`: one honest, concrete sentence about whether this learner would come away
   understanding the topic.

@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 
 from forged.artifacts import Artifact, ArtifactStore
-from forged.pipeline.failure import RUBRIC_DIMENSIONS, RubricScores
+from forged.pipeline.failure import RUBRIC_DIMENSIONS, RubricScores, goal_fit_schema
 from forged.pipeline.state import Degradation, PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
@@ -79,10 +79,18 @@ STUDENT_GRADE_RESPONSE_FORMAT = {
                     "additionalProperties": False,
                 },
                 "verdict": {"type": "string"},
+                "goal_fit": goal_fit_schema(("overwhelming", "insufficient")),
                 "blockers": {"type": "array", "items": {"type": "string"}},
                 "findings": {"type": "array", "items": _FINDING_SCHEMA},
             },
-            "required": ["quality_score", "rubric", "verdict", "blockers", "findings"],
+            "required": [
+                "quality_score",
+                "rubric",
+                "verdict",
+                "goal_fit",
+                "blockers",
+                "findings",
+            ],
             "additionalProperties": False,
         },
     },

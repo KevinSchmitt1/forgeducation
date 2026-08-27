@@ -23,6 +23,7 @@ import logging
 from pathlib import Path
 
 from forged.artifacts import Artifact, ArtifactStore
+from forged.pipeline.failure import goal_fit_schema
 from forged.pipeline.state import Degradation, PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
@@ -70,10 +71,14 @@ REVIEWER_RESPONSE_FORMAT = {
             "type": "object",
             "properties": {
                 "verdict": {"type": "string"},
+                # The Reviewer gets the full vocabulary, `drifted` included: it is the
+                # expert on whether this was the right material at all, and drift is
+                # the one goal-fit problem that routes back to the planner.
+                "goal_fit": goal_fit_schema(),
                 "blockers": {"type": "array", "items": {"type": "string"}},
                 "findings": {"type": "array", "items": _FINDING_SCHEMA},
             },
-            "required": ["verdict", "blockers", "findings"],
+            "required": ["verdict", "goal_fit", "blockers", "findings"],
             "additionalProperties": False,
         },
     },

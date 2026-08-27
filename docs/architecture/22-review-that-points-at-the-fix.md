@@ -1,6 +1,6 @@
 # 22 — A review that points at the fix
 
-**Status:** designed 2026-08-16 · **R1 + R2 IMPLEMENTED 2026-08-21** (R3–R8 not built)
+**Status:** designed 2026-08-16 · **R1 + R2 + R5 IMPLEMENTED 2026-08-21** (R3, R4, R6–R8 not built)
 See "Implementation note — R1 and R2" at the end of this file, which also **corrects
 Part VI's validation criterion for R1**: as written it was already satisfied before the
 change, and the real test is a counterfactual.
@@ -140,7 +140,7 @@ only thing that makes a rewrite an improvement rather than another sample.
 | R2 | Critics stop re-reporting execution failures; the brief carries them once | `student.md`, `reviewer.md` | persona | ✅ 2026-08-21 |
 | R3 | Findings name a target cell and what it must satisfy | grader JSON schema + personas | code + persona | ⬜ |
 | R4 | Severity is calibrated to consequence, with the `PASSWORD` case as the worked example | `student.md`, `reviewer.md` | persona | ⬜ |
-| R5 | New rubric dimension for goal fit / necessity / sufficiency, mode-aware | `failure.py` + all grader personas | code + persona | ⬜ |
+| R5 | New rubric dimension for goal fit / necessity / sufficiency, mode-aware | `failure.py` + all grader personas | code + persona | ✅ 2026-08-21 (as a separate verdict, not a dimension) |
 | R6 | `critique_digest` accumulates findings across iterations | `reviser.py` | code | ⬜ |
 | R7 | Remake is a recorded decision, informed by the digest | `reviser.py`, `code_author.md` | code + persona | ⬜ |
 | R8 | C6 non-convergence signal ("look for a systematic cause") | `reviser.py` brief text | code | ⬜ |
@@ -252,3 +252,71 @@ rubric numbers.
 run.** No live run has exercised either change. R2 in particular is a persona
 instruction — the tests prove the instruction is *present*, not that the critics obey
 it; only reading findings from the next paid run can show that.
+
+---
+
+## Implementation note — R5 (2026-08-21)
+
+### Open question 1, answered: beside the rubric
+
+Kevin's call (2026-08-16): the goal-fit judgement is a **separate verdict**, not a sixth
+rubric dimension. The reason is D1 itself — averaging is what hid the fatal condition, so
+the fix must not be more arithmetic — plus the fact that a sixth dimension would silently
+change every composite and make historical scores incomparable. `composite()` is
+untouched by R5, exactly as it was by R1.
+
+### Open question 2, answered: yes, the critics answer it differently
+
+The Student is asked *"was this too much, or too little, for me to reach the goal?"*; the
+Reviewer is asked *"was this the right material at all?"*. Vocabulary follows the split:
+
+| critic | may report | may not |
+|---|---|---|
+| Student | `overwhelming`, `insufficient` | `drifted` |
+| Reviewer | `drifted`, `overwhelming`, `insufficient` | — |
+
+**Only the Reviewer can say `drifted`, and that asymmetry is load-bearing**, because
+`drifted` is the one goal-fit problem that routes to the planner — and a replan can
+delete a capability the topic asked for (doc 11). Letting a simulated novice's "this
+feels off-topic" trigger one would rebuild the amputation failure R1-topic-fidelity
+exists to prevent. It is enforced in **three** places, deliberately: the per-critic JSON
+schema enum (`goal_fit_schema`), `RevisorAgent._coerce_goal_fit(allow_drift=False)` for
+the student's report, and the persona text. A persona is advisory; the other two are not.
+
+### Where it sits in the cascade, and why the order is the design
+
+```
+  4b. goal-fit says `drifted`            → BLOCKER_STRUCTURE  (replan)
+  4c. a rubric dimension is fatal (R1)   → TEST_FAILURE / CONTENT_QUALITY
+  4d. goal-fit says overwhelming/insufficient → CONTENT_QUALITY (reshape)
+```
+
+Drift sits **above** the rubric because repairing code inside a lesson that teaches the
+wrong subject throws the repair away. Shape problems sit **below** it because broken code
+is fixed before the lesson is trimmed — the reverse order would hand a wrong-code lesson
+to the reviser to shorten. Shape problems never route to the planner: "there is too much
+machinery here" must not be able to delete the capability the topic asked for.
+
+### The verdict has to be actionable, so three things carry it
+
+1. `GoalFitVerdict.text` is the critic's own words, and the personas demand a concrete
+   noun rather than a feeling ("six helper classes the learner never touches again", not
+   "feels bloated").
+2. The revision brief prints a `**Goal fit**: ✗ …` line **above** the findings — an
+   author who reads only the first lines still sees the one signal that says the code
+   should not be there at all.
+3. `reviser.md` gained explicit permission to **remove cells** on `overwhelming`, which
+   overrides its standing "keep the notebook roughly the same size" rule. Without this
+   the verdict would arrive at an agent forbidden from acting on it.
+
+### Confidence level
+
+**Test-green and exercised at the entry point; not validated by a paid run.** Doc 22
+Part VI's R5 check — "a dimension that cannot distinguish v3's 26-cell sprawl from a
+lesson that teaches the same thing in 12 is not measuring what it claims" — **cannot be
+run offline**: unlike R1, which re-scores rubric numbers the corpus already contains, R5
+needs a *grader call* to produce a verdict that does not exist in the 2026-08-13
+artifacts. What is proven offline is the plumbing: routing, merge semantics, the
+degrade-to-None path, the drift asymmetry, and survival of the round trip through the
+student's parse step. Whether the critics *use* the verdict well is the next paid run's
+question — and v3's 26-cell notebook is the specific case to look at.

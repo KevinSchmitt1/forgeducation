@@ -11,17 +11,24 @@ Priority cascade (first match wins):
   2. Execution failed                 → CODE_QUALITY
   3. Grader ran but produced no usable grade → UNCLASSIFIABLE
   4. Code runs but high-severity code finding → TEST_FAILURE
-  4b. A rubric dimension below the fatal floor → TEST_FAILURE (correctness)
+  4b. Goal-fit verdict reports drift  → BLOCKER_STRUCTURE
+  4c. A rubric dimension below the fatal floor → TEST_FAILURE (correctness)
                                               or CONTENT_QUALITY (teaching)
+  4d. Goal-fit verdict reports a shape problem → CONTENT_QUALITY
   5. Quality score below threshold    → CONTENT_QUALITY
   6a. Execution OK + quality OK but structurally hollow → UNCLASSIFIABLE
   6b. Execution OK + quality acceptable → ACCEPTABLE
   7. No signals match                 → UNCLASSIFIABLE
+
+Ordering note for 4b–4d: drift is checked *above* the rubric because fixing code in a
+lesson that teaches the wrong subject throws the fix away, while a shape problem
+("too much machinery") is checked *below* it because broken code is repaired before
+the lesson is trimmed.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 
 from .mode import LessonMode
@@ -134,6 +141,88 @@ class RubricScores:
         return tuple(dim for dim in RUBRIC_DIMENSIONS if getattr(self, dim) < floor)
 
 
+# The goal-fit vocabulary (docs/architecture/22-review-that-points-at-the-fix.md → D6/R5).
+# Canonical order — merged verdicts are reported in it, and `drifted` leads because it
+# is the one that changes the route.
+#
+#   drifted      — the code does not serve the objective the plan named
+#   overwhelming — more machinery than the learner needs to reach that objective
+#   insufficient — trimmed past the point where it still teaches
+#
+# `overwhelming` and `insufficient` are two directions of one axis, deliberately not two
+# scores: a lesson can be both at once (the 2026-08-13 run was), and a grader forced to
+# pick a direction says "fine".
+GOAL_FIT_PROBLEMS = ("drifted", "overwhelming", "insufficient")
+
+# The only problem that reaches the planner. Kept as its own name so the routing rule
+# reads as a rule rather than as a string comparison buried in the cascade.
+_PLAN_SCOPE_GOAL_FIT = "drifted"
+
+
+def goal_fit_schema(allowed_problems: tuple[str, ...] = GOAL_FIT_PROBLEMS) -> dict:
+    """The JSON-schema fragment both graders use to emit a goal-fit verdict.
+
+    Lives here, beside the vocabulary it constrains, so the enum a grader is offered
+    and the enum the classifier acts on can never drift apart. `allowed_problems`
+    narrows it per critic: the Student is not offered `drifted` at all, because drift
+    is the expert Reviewer's call and the one problem that routes to the planner.
+    """
+    return {
+        "type": ["object", "null"],
+        "properties": {
+            "fit": {"type": "boolean"},
+            "problems": {
+                "type": "array",
+                "items": {"type": "string", "enum": list(allowed_problems)},
+            },
+            "text": {"type": "string"},
+        },
+        "required": ["fit", "problems", "text"],
+        "additionalProperties": False,
+    }
+
+
+@dataclass(frozen=True)
+class GoalFitVerdict:
+    """Does the code in this lesson earn its place?
+
+    The rubric's five dimensions all ask how well the code that exists is *presented*.
+    None asks whether it should exist — the founding complaint of this project (doc 18:
+    code-heavy, not practical). This verdict is that question, and it lives **beside**
+    the rubric rather than inside it: averaging is what hid the fatal condition in D1,
+    so the fix must not be more arithmetic, and a sixth dimension would make every
+    historical composite incomparable.
+
+    fit      — False when at least one critic refuses the lesson on these grounds.
+    problems — zero or more of GOAL_FIT_PROBLEMS, in canonical order.
+    text     — the critic's own words, carried into the revision brief. A verdict the
+               next agent cannot act on is not worth collecting.
+    """
+
+    fit: bool
+    problems: tuple[str, ...] = ()
+    text: str = ""
+
+    def merged_with(self, other: GoalFitVerdict | None) -> GoalFitVerdict:
+        """Combine the two critics' verdicts into the one the classifier reads.
+
+        Fit requires both to grant it; problems are the union; both rationales are
+        kept, because which critic objected is itself information for the next agent.
+        Returns a new verdict — neither input is touched.
+        """
+        if other is None:
+            return self
+        problems = tuple(
+            p for p in GOAL_FIT_PROBLEMS if p in self.problems or p in other.problems
+        )
+        texts = [t for t in (self.text, other.text) if t]
+        return GoalFitVerdict(
+            fit=self.fit and other.fit,
+            problems=problems,
+            text=" | ".join(texts),
+        )
+
+
 @dataclass(frozen=True)
 class GradeReport:
     """Structured result from the Student (grader) stage.
@@ -146,6 +235,9 @@ class GradeReport:
     content — a failed grader must never masquerade as "mediocre teaching".
     blockers is a list of free-text blocker descriptions (legacy field; prefer findings).
     findings is the structured list of Evidence objects produced by the student.
+    goal_fit is the critics' merged answer to "does this code earn its place?" (R5).
+    None means no critic produced one — an absent judgement, never a negative one, so
+    a provider that cannot emit it keeps the previous behaviour exactly.
     """
 
     quality_score: float
@@ -153,6 +245,7 @@ class GradeReport:
     graded: bool = True
     blockers: list[str] = field(default_factory=list)
     findings: list[Evidence] = field(default_factory=list)
+    goal_fit: GoalFitVerdict | None = None
 
 
 # ── Classification result ──────────────────────────────────────────────────────
@@ -189,6 +282,82 @@ def _has_blocker_in_plan_scope(grade_report: GradeReport) -> Evidence | None:
         if finding.severity == "BLOCKER" and finding.scope in _BLOCKER_SCOPES:
             return finding
     return None
+
+
+def _classify_goal_fit_drift(grade_report: GradeReport) -> Classification | None:
+    """Priority 4b: the lesson teaches the wrong subject → replan.
+
+    Checked above the rubric because repairing code inside a drifted lesson throws
+    the repair away. This is the one goal-fit problem that reaches the planner, and
+    by construction only the expert Reviewer can raise it — see
+    `RevisorAgent._coerce_goal_fit(allow_drift=...)`.
+    """
+    verdict = grade_report.goal_fit
+    if verdict is None or verdict.fit or _PLAN_SCOPE_GOAL_FIT not in verdict.problems:
+        return None
+    return Classification(
+        category=FailureCategory.BLOCKER_STRUCTURE,
+        reason=(
+            "The lesson does not serve the objective the plan named — the subject "
+            f"itself has drifted: {verdict.text}"
+        ),
+        matched_signals=[f"Goal-fit verdict: drifted — {verdict.text[:80]}"],
+    )
+
+
+def _classify_fatal_dimension(
+    grade_report: GradeReport, fatal_floor: float
+) -> Classification | None:
+    """Priority 4c: a single rubric dimension is fatal on its own.
+
+    The composite is a mean, so four healthy dimensions can outvote one fatal one —
+    the 2026-08-13 run awarded 82/100 to a notebook that produced nothing (doc 22,
+    D1). Read the dimension directly rather than trusting the average, and send the
+    lesson to the agent that can actually repair what failed.
+    """
+    if grade_report.rubric is None:
+        return None
+    fatal = grade_report.rubric.fatal_dimensions(fatal_floor)
+    if not fatal:
+        return None
+    detail = ", ".join(f"{dim} {getattr(grade_report.rubric, dim):.0f}" for dim in fatal)
+    is_code_defect = any(dim in _CODE_DIMENSIONS for dim in fatal)
+    return Classification(
+        category=(
+            FailureCategory.TEST_FAILURE if is_code_defect else FailureCategory.CONTENT_QUALITY
+        ),
+        reason=(
+            f"Rubric dimension(s) below the fatal floor of {fatal_floor:.0f}: {detail}. "
+            f"A composite of {grade_report.quality_score:.0f} cannot make up for it — the "
+            + (
+                "code does not do what the prose claims."
+                if is_code_defect
+                else "teaching has a hole the average hides."
+            )
+        ),
+        matched_signals=[f"Fatal rubric dimension(s) below {fatal_floor:.0f}: {detail}"],
+    )
+
+
+def _classify_goal_fit_shape(grade_report: GradeReport) -> Classification | None:
+    """Priority 4d: the code does not earn its place → rewrite the lesson's shape.
+
+    `overwhelming` / `insufficient`, checked *below* the rubric so broken code is
+    repaired before the lesson is trimmed. Never BLOCKER_STRUCTURE: "there is too
+    much machinery here" must not be able to delete the capability the topic asked
+    for — the amputation failure doc 11 exists to prevent.
+    """
+    verdict = grade_report.goal_fit
+    if verdict is None or verdict.fit or not verdict.problems:
+        return None
+    detail = ", ".join(verdict.problems)
+    return Classification(
+        category=FailureCategory.CONTENT_QUALITY,
+        reason=(
+            f"The code in this lesson does not earn its place ({detail}): {verdict.text}"
+        ),
+        matched_signals=[f"Goal-fit verdict: {detail} — {verdict.text[:80]}"],
+    )
 
 
 def _has_high_severity_code_finding(grade_report: GradeReport) -> Evidence | None:
@@ -306,37 +475,18 @@ def classify(
                 matched_signals=signals,
             )
 
-    # Priority 4b: A single dimension is fatal on its own.
-    # The composite is a mean, so four healthy dimensions can outvote one fatal
-    # one — the 2026-08-13 run awarded 82/100 to a notebook that produced nothing
-    # (doc 22, D1). Read the dimension directly rather than trusting the average,
-    # and send the lesson to the agent that can actually repair what failed.
-    if grade_report is not None and grade_report.rubric is not None:
-        fatal = grade_report.rubric.fatal_dimensions(fatal_floor)
-        if fatal:
-            detail = ", ".join(
-                f"{dim} {getattr(grade_report.rubric, dim):.0f}" for dim in fatal
-            )
-            signals.append(f"Fatal rubric dimension(s) below {fatal_floor:.0f}: {detail}")
-            is_code_defect = any(dim in _CODE_DIMENSIONS for dim in fatal)
-            return Classification(
-                category=(
-                    FailureCategory.TEST_FAILURE
-                    if is_code_defect
-                    else FailureCategory.CONTENT_QUALITY
-                ),
-                reason=(
-                    f"Rubric dimension(s) below the fatal floor of "
-                    f"{fatal_floor:.0f}: {detail}. A composite of "
-                    f"{grade_report.quality_score:.0f} cannot make up for it — the "
-                    + (
-                        "code does not do what the prose claims."
-                        if is_code_defect
-                        else "teaching has a hole the average hides."
-                    )
-                ),
-                matched_signals=signals,
-            )
+    # Priorities 4b–4d: judgements about the lesson as a whole rather than about a
+    # single finding. Each helper returns a complete Classification or None; the
+    # order of the three is the load-bearing part and is explained in the module
+    # docstring (drift above the rubric, shape problems below it).
+    if grade_report is not None:
+        for check in (
+            _classify_goal_fit_drift(grade_report),
+            _classify_fatal_dimension(grade_report, fatal_floor),
+            _classify_goal_fit_shape(grade_report),
+        ):
+            if check is not None:
+                return replace(check, matched_signals=[*signals, *check.matched_signals])
 
     # Priority 5: Quality score below threshold.
     # Code is correct but teaching quality is insufficient.
