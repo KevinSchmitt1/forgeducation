@@ -105,7 +105,7 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 
 1. ~~Merge the open PRs #45 (C5 patching) and #46 (doc 22 design)~~ — ✅ both on `master`
    (2026-08-16), along with #47. All merged feature branches deleted local + remote.
-2. ~~**Build R1 + R2 from doc 22**~~ — ✅ done 2026-08-21, offline-validated against the real
+2. ~~**Build R1 + R2 from doc 22**~~ — ✅ **`master` (#48)**, offline-validated against the real
    corpus. **Doc 22's stated R1 criterion turned out to be un-failable** (all four iterations
    were already not-acceptable via the execution-failure route, before any rubric is read), so
    the validation is a counterfactual instead: *what would this rubric produce had the notebook
@@ -145,8 +145,8 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 | Doc 21's offline check run — C5's premise holds | ✅ `master` (#44) |
 | **C5** — `code_author` sees its notebook and patches it | ✅ `master` (#45) |
 | Design: a review that points at the fix (doc 22) | ✅ `master` (#46) |
-| **doc-22 R1** — a fatal rubric dimension gates the verdict instead of averaging into it | 🔄 in flight |
-| **doc-22 R2** — critics stop re-reporting the execution report | 🔄 in flight |
+| **doc-22 R1** — a fatal rubric dimension gates the verdict instead of averaging into it | ✅ `master` (#48) |
+| **doc-22 R2** — critics stop re-reporting the execution report | ✅ `master` (#48) |
 | **doc-22 R5** — goal-fit verdict: does this code earn its place? | 🔄 in flight |
 
 **Config change worth knowing (#42):** the `gpt-5-mini` stages went `max_tokens` 4096 → 8192.
