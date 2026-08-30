@@ -6,7 +6,31 @@
 
 ---
 
-## 🎯 STATE RIGHT NOW (2026-08-13) — the first artifact lesson ran, and failed informatively
+## 🎯 STATE RIGHT NOW (2026-08-30) — the review has been rebuilt; nothing has been re-run
+
+Everything doc 22 scoped as "smallest change, largest effect" is on `master`: **R1** (a fatal
+rubric dimension refuses the lesson instead of averaging into it), **R2** (critics stop
+re-reporting the execution report), **R5** (both critics answer whether the code earns its
+place). Together with C1–C5 from doc 20/21, the loop that failed on 2026-08-13 has been changed
+in six places.
+
+> **The single most important fact for whoever picks this up: none of it has been validated by a
+> paid run.** R1 is validated offline against the real corpus. C1–C5 are validated offline against
+> the four failing notebooks. **R2 and R5 cannot be** — both are judgements an LLM critic makes,
+> and the tests prove only that the instruction is present and the plumbing carries the answer.
+> The next paid artifact-lesson run is the binding constraint on almost every open question here,
+> and it is worth more than the next feature.
+
+**What to do first, in order:** (1) read this file's ▶ NEXT block; (2) if you are about to build,
+build R6 → R7; (3) if you are about to spend money, do the artifact-lesson run and read the
+findings, not just the verdict. Details for both paths are below.
+
+The 2026-08-13 analysis that produced all of this work is kept below, unchanged, because every
+decision in docs 20–22 refers back to it.
+
+---
+
+## 📌 The run that started it (2026-08-13) — the first artifact lesson failed informatively
 
 Credits are back. A real single-lesson `learn` run happened
 (`runs/20260813-201647_create_and_validate__github_co/`) on a GitHub-Copilot-config topic. It
@@ -28,7 +52,7 @@ the notebook embedded Markdown containing Python docstrings inside a Python trip
 and the docstring closed the literal. Four `code_author` iterations, four syntax failures, budget
 exhausted. 1016.7s, 172,247 tokens.
 
-**Accepted changes (doc 20) — status as of 2026-08-16:**
+**Accepted changes (doc 20) — status as of 2026-08-30:**
 
 | | Change | Kind | Status |
 |---|---|---|---|
@@ -36,11 +60,11 @@ exhausted. 1016.7s, 172,247 tokens.
 | C2 | Teach `code_author` `%%writefile` | persona | ✅ `master` (#41) |
 | C3 | Plan-time **verifiability criterion** — explicitly **not** a blacklist | persona | ✅ `master` (#42) |
 | C4 | Treat `finish_reason='length'` as recoverable | code | ✅ `master` (#42) |
-| C5 | `code_author` sees its notebook and **patches failed cells** | code | 🔄 **PR #45** |
+| C5 | `code_author` sees its notebook and **patches failed cells** | code | ✅ `master` (#45) |
 | C6 | Non-convergence makes the loop **aware** ("look for a systematic cause") | brief text | ⬜ folded into doc 22 (R8) |
 | C7 | Iteration-aware cost estimate | code | ⬜ **low priority** |
 
-**Doc 22 (the review itself) — status as of 2026-08-21:** R1 (fatal-dimension gate), R2
+**Doc 22 (the review itself) — status as of 2026-08-30:** R1 (fatal-dimension gate), R2
 (critic finding budget) and R5 (goal-fit verdict) are built; R6 → R7 are next; R3, R4, R8
 not built. Per-item table lives in doc 22 Part IV. R1 is offline-validated against the real
 corpus; R2 and R5 are plumbing-validated only and need a paid run to judge.
@@ -103,33 +127,45 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 
 ## ▶ NEXT — pick up here
 
-1. ~~Merge the open PRs #45 (C5 patching) and #46 (doc 22 design)~~ — ✅ both on `master`
-   (2026-08-16), along with #47. All merged feature branches deleted local + remote.
-2. ~~**Build R1 + R2 from doc 22**~~ — ✅ **`master` (#48)**, offline-validated against the real
-   corpus. **Doc 22's stated R1 criterion turned out to be un-failable** (all four iterations
-   were already not-acceptable via the execution-failure route, before any rubric is read), so
-   the validation is a counterfactual instead: *what would this rubric produce had the notebook
-   run clean?* v1's 82/100 goes **acceptable → test_failure**, and v0/v2/v3 stop being handed to
-   the prose reviser on a correctness of 40–50. Full table + reasoning in doc 22's
-   "Implementation note".
-3. ~~**Build R5**~~ — ✅ done 2026-08-21. Doc 22's **open question 1 settled by Kevin**
-   (2026-08-16): the goal-fit judgement is a **separate verdict beside the rubric**, not a
-   sixth dimension. **Open question 2 answered in the build**: the critics answer it from
-   their own side, and only the Reviewer may report `drifted` — the one problem that routes
-   to the planner. Enforced in three places (schema enum, `_coerce_goal_fit(allow_drift=…)`,
-   persona) because a replan can delete a capability (doc 11).
-4. **Next build items, in doc 22's order:** R6 → R7 (the `critique_digest`, then the
-   informed remake — the digest must exist before a remake can be informed by it), then
-   R3/R4/R8.
-5. **Then a paid artifact-lesson run**, to validate C1–C5 *and* R1+R2+R5 for real. Use
-   `--plan-only` first to confirm the mode for cents (see "New loose ends"). **R2 and R5 are
-   the two that most need it** — both are judgements made by an LLM critic, and the tests
-   prove only that the instruction is present and the plumbing carries the answer, never
-   that the critics use it well. For R5 specifically, doc 22's own check (can the verdict
-   tell v3's 26-cell sprawl from a 12-cell lesson teaching the same thing?) **cannot be run
-   offline** — the corpus has no verdicts in it, because nothing asked for one at the time.
+*Done and merged (#45–#50): C5 patching, doc 22's design, and doc 22's R1, R2, R5. Two
+findings from building them are recorded in doc 22's implementation notes and are worth
+reading before touching that code — **R1's stated validation criterion was un-failable as
+written** (all four corpus iterations were already not-acceptable via the execution-failure
+route, before any rubric is read; the real test is a counterfactual), and **only the Reviewer
+may report `drifted`**, enforced in three places because a replan can delete a capability.*
 
-### Shipped since (2026-08-08 → 08-16)
+**1. Build R6, then R7** (doc 22, in this order — the digest must exist before a remake can be
+informed by it).
+
+R6 is the `critique_digest`: findings accumulate across iterations instead of each brief
+superseding the last. The defect is already confirmed, not suspected — every agent reads exactly
+`revision_brief_v{iteration - 1}` (verified in `code_author.py`, `planner.py`,
+`content_reviser.py`), so the iteration-3 rewrite knew nothing of what iterations 0–2 found.
+That is the mechanism behind quality going **74 → 82 → 74 → 71**.
+
+It has a real offline check, and doc 22 Part VI names it: rebuild the digest from the four
+existing `revision_brief_v*.md` in the 2026-08-13 run dir and confirm the `PASSWORD`
+self-referential-validator finding survives to the top rather than being lost with its
+iteration. **Confirm that check can actually fail before trusting it** — that is exactly the
+mistake R1's criterion made.
+
+**2. Then the paid artifact-lesson run** — this is the binding constraint, and it outranks
+building R3/R4/R8. Use `--plan-only` first to confirm the mode for cents (see "New loose ends").
+It validates C1–C5, R1, R2 and R5 at once. **R2 and R5 need it most**: both are judgements an
+LLM critic makes, and the tests prove only that the instruction is present and the plumbing
+carries the answer, never that the critics use it well. For R5, doc 22's own check — can the
+verdict tell v3's 26-cell sprawl from a 12-cell lesson teaching the same thing? — **cannot be
+run offline**, because the corpus contains no verdicts; nothing asked for one at the time.
+
+**When it finishes, read the findings, not just the verdict.** Specifically: did the critics
+stop restating failed cells (R2)? Did either file a `goal_fit` refusal, and was it right (R5)?
+Did any iteration get refused by the fatal-dimension gate that would previously have shipped (R1)?
+
+3. **After that:** R3, R4, R8 from doc 22, and doc 22's open question 3 — whether
+   `content_reviser` needs C5's see-your-own-output change too (almost certainly yes; deliberately
+   deferred until one real run has exercised C5).
+
+### Shipped since (2026-08-08 → 08-30)
 
 | Change | Where |
 |---|---|
@@ -147,7 +183,8 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 | Design: a review that points at the fix (doc 22) | ✅ `master` (#46) |
 | **doc-22 R1** — a fatal rubric dimension gates the verdict instead of averaging into it | ✅ `master` (#48) |
 | **doc-22 R2** — critics stop re-reporting the execution report | ✅ `master` (#48) |
-| **doc-22 R5** — goal-fit verdict: does this code earn its place? | 🔄 in flight |
+| **doc-22 R5** — goal-fit verdict: does this code earn its place? | ✅ `master` (#49) |
+| Docs: CLAUDE.md + TEST.md describe acceptance after R1/R5 | ✅ `master` (#50) |
 
 **Config change worth knowing (#42):** the `gpt-5-mini` stages went `max_tokens` 4096 → 8192.
 Every one of them already exceeded 4096 once reasoning is counted (planner 4,208, student
@@ -322,9 +359,13 @@ they were, because each cost something before it was fixed.
   Almost certainly wants C5's change too; deliberately deferred until C5 is validated by one
   real run before the pattern is copied. Doc 22, open question 3.
 - **The 2026-08-13 artifacts are the regression corpus and `runs/` is gitignored.** The four
-  failing notebooks are what C1 and C5 were validated against. If that directory is pruned
-  (`forged clean`), the evidence for every offline check in docs 20–22 goes with it. Worth
-  copying somewhere durable before the next cleanup.
+  failing notebooks are what C1, C5 and R1 were validated against, and the three
+  `revision_brief_v*.md` beside them are what **R6's offline check needs** — so this is now a
+  prerequisite for the next build task, not just an archive. If that directory is pruned
+  (`forged clean`), the evidence for every offline check in docs 20–22 goes with it, and R6
+  becomes unverifiable offline. **Verified still present 2026-08-30**
+  (`runs/20260813-201647_create_and_validate__github_co/`). Worth copying somewhere durable
+  before the next cleanup.
 
 ### New loose ends (2026-08-13)
 
