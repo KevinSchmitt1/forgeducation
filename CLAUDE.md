@@ -23,8 +23,14 @@ Both branches below are reached from `learn`, and share the same agents, persona
   `planner → code_author → executor → student → reviewer → revisor → (content_reviser | replan | END)`
   - **Two critics** run before the deterministic router: **Student** (learner POV — "could I follow
     this?") and **Reviewer** (expert correctness/quality). The **Reviser** is *not* a critic — it's a
-    deterministic classifier/router that **merges both critics' findings** before `classify()`.
+    deterministic classifier/router that **merges both critics' findings** — and, since doc 22's
+    R5, their **goal-fit verdicts** — before `classify()`.
     **ContentReviser** is the LLM that rewrites prose for the `CONTENT_QUALITY` route.
+  - **Acceptance is not an average** (doc 22, R1/R5). `quality_score` is the mean of five rubric
+    dimensions, but a mean can hide a fatal one, so `classify()` also reads: any single dimension
+    below `FATAL_DIMENSION_FLOOR`, and the critics' `goal_fit` verdict ("does this code earn its
+    place?" — `drifted` / `overwhelming` / `insufficient`). Only the Reviewer may report `drifted`,
+    because that is the one verdict that routes to the planner and a replan can amputate.
   - Routing is deterministic (`router.py` + `failure.py`); a finding's **scope** (`plan`/`structure`/
     `code`/`content`) decides where it's sent. Scope tagging matters a lot — see R1 below.
   - **Lesson modes** (`mode.py`, doc 17): the planner infers `executable` (default — compute-and-show,

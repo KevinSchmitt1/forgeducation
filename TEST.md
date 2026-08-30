@@ -1,8 +1,8 @@
 # Testing the Agentic Pipeline
 
 **Status**: agentic pipeline + curriculum planner shipped; the honesty guarantees (topic
-fidelity, orientation, readiness verdict, course-level coverage) are in place; ~459 tests passing
-at ~92% coverage. Production-ready for personal testing.
+fidelity, orientation, readiness verdict, course-level coverage) are in place; 783 tests passing
+at ~89% coverage (2026-08-30). Production-ready for personal testing.
 
 This guide shows how to test the agentic pipeline with real OpenAI integration, monitor execution, and verify agent iteration and failure recovery.
 
@@ -96,7 +96,9 @@ forged agentic \
 - Planner creates lesson plan
 - CodeAuthor generates notebook
 - Executor runs without errors → `ok: True`
-- Student grades quality score ≥ 80
+- Student grades quality score ≥ 80, **with no single rubric dimension below the fatal
+  floor** and **no goal-fit refusal from either critic** — since doc 22 (R1/R5), a passing
+  mean is necessary but not sufficient
 - Reviser classifies as ACCEPTABLE → ends
 
 **What to check**:
@@ -160,7 +162,9 @@ forged agentic \
 **What to check**:
 - ✅ `SUMMARY.md` shows multiple iterations (>1 route)
 - ✅ Quality scores improve over iterations
-- ✅ Final quality ≥ 80
+- ✅ Final quality ≥ 80 — and check the run did not merely *average* its way there: every
+  rubric dimension clears the fatal floor, and the `Goal fit` line in the last revision
+  brief is not a refusal (doc 22, R1/R5)
 - ✅ Each routing decision is logged with reason
 
 ---
