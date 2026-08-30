@@ -28,8 +28,15 @@ things the code doesn't actually do.
 
 ## Honest by design
 
-The pipeline refuses to fake teaching value. Five guarantees, each enforced by the agents and
+The pipeline refuses to fake teaching value. Six guarantees, each enforced by the agents and
 surfaced in the run's `SUMMARY.md`:
+
+- **Never ship code that doesn't earn its place.** Both critics answer one question the rubric
+  never asked — *should this code exist at all?* — from their own side: the learner asks whether
+  it was **too much or too little** to reach the goal, the expert asks whether it was **the right
+  material**. A lesson that drifted from its objective goes back to the planner; one that buries
+  the idea in machinery goes back to be cut down. This is the direct answer to "code-heavy and
+  not practical". (`docs/architecture/22-review-that-points-at-the-fix.md`)
 
 - **Never let a good average outvote a fatal flaw.** The quality score is the mean of five
   rubric dimensions, so four healthy ones could carry a fatal one: a real run scored **82/100**

@@ -40,9 +40,10 @@ exhausted. 1016.7s, 172,247 tokens.
 | C6 | Non-convergence makes the loop **aware** ("look for a systematic cause") | brief text | ⬜ folded into doc 22 (R8) |
 | C7 | Iteration-aware cost estimate | code | ⬜ **low priority** |
 
-**Doc 22 (the review itself) — status as of 2026-08-21:** R1 (fatal-dimension gate) and R2
-(critic finding budget) are built and offline-validated; R5 is unblocked and next; R3, R4,
-R6, R7, R8 not built. Per-item table lives in doc 22 Part IV.
+**Doc 22 (the review itself) — status as of 2026-08-21:** R1 (fatal-dimension gate), R2
+(critic finding budget) and R5 (goal-fit verdict) are built; R6 → R7 are next; R3, R4, R8
+not built. Per-item table lives in doc 22 Part IV. R1 is offline-validated against the real
+corpus; R2 and R5 are plumbing-validated only and need a paid run to judge.
 
 **None of it is validated by a paid run yet.** All of it is validated offline against the four
 failing notebooks the run left behind (see below) — which is a real level of confidence, but not
@@ -104,22 +105,29 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 
 1. ~~Merge the open PRs #45 (C5 patching) and #46 (doc 22 design)~~ — ✅ both on `master`
    (2026-08-16), along with #47. All merged feature branches deleted local + remote.
-2. ~~**Build R1 + R2 from doc 22**~~ — ✅ done 2026-08-21, offline-validated against the real
+2. ~~**Build R1 + R2 from doc 22**~~ — ✅ **`master` (#48)**, offline-validated against the real
    corpus. **Doc 22's stated R1 criterion turned out to be un-failable** (all four iterations
    were already not-acceptable via the execution-failure route, before any rubric is read), so
    the validation is a counterfactual instead: *what would this rubric produce had the notebook
    run clean?* v1's 82/100 goes **acceptable → test_failure**, and v0/v2/v3 stop being handed to
    the prose reviser on a correctness of 40–50. Full table + reasoning in doc 22's
    "Implementation note".
-3. **Doc 22's open question 1 is settled** (Kevin, 2026-08-16): R5's goal-fit/necessity
-   dimension is a **separate verdict beside the rubric**, not a sixth dimension — averaging is
-   what hid the problem, so the fix must not be more arithmetic. R5 is now unblocked; **R1 was
-   its prerequisite and is done.**
-4. **Next build items, in doc 22's order:** R5 (the founding "code-heavy, not practical"
-   complaint), then R6 → R7 (the `critique_digest`, then the informed remake), then R3/R4/R8.
-5. **Then a paid artifact-lesson run**, to validate C1–C5 *and* R1+R2 for real. Use
-   `--plan-only` first to confirm the mode for cents (see "New loose ends"). R2 is the one that
-   most needs it: the tests prove the instruction is present, not that the critics obey it.
+3. ~~**Build R5**~~ — ✅ done 2026-08-21. Doc 22's **open question 1 settled by Kevin**
+   (2026-08-16): the goal-fit judgement is a **separate verdict beside the rubric**, not a
+   sixth dimension. **Open question 2 answered in the build**: the critics answer it from
+   their own side, and only the Reviewer may report `drifted` — the one problem that routes
+   to the planner. Enforced in three places (schema enum, `_coerce_goal_fit(allow_drift=…)`,
+   persona) because a replan can delete a capability (doc 11).
+4. **Next build items, in doc 22's order:** R6 → R7 (the `critique_digest`, then the
+   informed remake — the digest must exist before a remake can be informed by it), then
+   R3/R4/R8.
+5. **Then a paid artifact-lesson run**, to validate C1–C5 *and* R1+R2+R5 for real. Use
+   `--plan-only` first to confirm the mode for cents (see "New loose ends"). **R2 and R5 are
+   the two that most need it** — both are judgements made by an LLM critic, and the tests
+   prove only that the instruction is present and the plumbing carries the answer, never
+   that the critics use it well. For R5 specifically, doc 22's own check (can the verdict
+   tell v3's 26-cell sprawl from a 12-cell lesson teaching the same thing?) **cannot be run
+   offline** — the corpus has no verdicts in it, because nothing asked for one at the time.
 
 ### Shipped since (2026-08-08 → 08-16)
 
@@ -137,8 +145,9 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 | Doc 21's offline check run — C5's premise holds | ✅ `master` (#44) |
 | **C5** — `code_author` sees its notebook and patches it | ✅ `master` (#45) |
 | Design: a review that points at the fix (doc 22) | ✅ `master` (#46) |
-| **doc-22 R1** — a fatal rubric dimension gates the verdict instead of averaging into it | 🔄 in flight |
-| **doc-22 R2** — critics stop re-reporting the execution report | 🔄 in flight |
+| **doc-22 R1** — a fatal rubric dimension gates the verdict instead of averaging into it | ✅ `master` (#48) |
+| **doc-22 R2** — critics stop re-reporting the execution report | ✅ `master` (#48) |
+| **doc-22 R5** — goal-fit verdict: does this code earn its place? | 🔄 in flight |
 
 **Config change worth knowing (#42):** the `gpt-5-mini` stages went `max_tokens` 4096 → 8192.
 Every one of them already exceeded 4096 once reasoning is counted (planner 4,208, student

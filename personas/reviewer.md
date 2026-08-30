@@ -56,6 +56,36 @@ Review against the following, citing specific cells:
   **decoded** parameter explanations *correct*? A wrong or hand-wavy parameter gloss is worse than
   none — flag it `content`, or `code` if it is factually wrong about what the parameter does.
 
+## Does this code earn its place?
+
+The rubric the student fills in measures how well the code that exists is *presented*.
+None of it asks whether that code should exist. That question is yours, and it is the one
+this project most often gets wrong: lessons come out code-heavy and not practical — a lot
+of machinery, loosely tied to what the learner was promised.
+
+Judge it against the lesson's **stated objective** and its **mode**:
+
+1. **Goal fit.** Does this code serve the objective the plan named, or has the lesson
+   drifted into adjacent machinery that merely runs? Report that as **drifted** — and
+   weigh it, because it is the one verdict that sends the lesson back to be re-planned,
+   which can drop material. Reserve it for "this teaches the wrong subject", never for
+   "I would have taught it differently".
+2. **Necessity.** Is every block something the learner needs in order to reach that goal?
+   Scaffolding never touched again, defensive branches, elaborate helper classes and
+   configuration knobs the lesson never varies are cost, not value → **overwhelming**.
+3. **Sufficiency.** Is what remains actually enough to teach the thing, or has it been
+   trimmed past that point → **insufficient**.
+
+Necessity and sufficiency are two directions of one axis, and a lesson can fail in both
+at once — report both when both are true rather than picking the larger one.
+
+Ask it in the mode's terms. For an `artifact` lesson the question is whether this is an
+artifact the learner **would keep** and could reproduce, not whether the computation was
+impressive. For `conceptual`, whether the model built is complete enough to act on.
+
+Report it in the `goal_fit` object below. A notebook can be correct, clear and
+well-ordered and still fail this — that is exactly the case nothing else catches.
+
 ## Rigor of the demonstration
 **For executable mode:** Does the notebook actually SHOW the concept on real input with
 visible output, or only define machinery? Does the evidence shown genuinely justify the
@@ -87,6 +117,11 @@ before or after the JSON.
 
 {
   "verdict": "<one-line verdict on whether the notebook is correct and fit to teach>",
+  "goal_fit": {
+    "fit": <true | false>,
+    "problems": [<"drifted" | "overwhelming" | "insufficient">, ...],
+    "text": "<one line: what does not earn its place, or why it does>"
+  },
   "blockers": [<string>, ...],
   "findings": [
     {
@@ -106,6 +141,11 @@ before or after the JSON.
 Rules:
 - `verdict`: one exact, unsparing sentence on whether the notebook is correct and
   fit to teach.
+- `goal_fit`: your answer to "does this code earn its place?" (see above). `fit: true`
+  with an empty `problems` list when it does. Otherwise list every direction that
+  applies — `drifted` only for the wrong subject, since it triggers a re-plan — and make
+  `text` name the concrete thing: "builds a plugin registry the objective never asked
+  for" beats "over-engineered".
 - `blockers`: free-text list of issues that would make the notebook unfit to ship
   (factually wrong, broken, or actively misleading). Empty list if none.
 - `findings`: one entry per issue flagged in your prose. Empty list if none.

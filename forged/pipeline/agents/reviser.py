@@ -26,9 +26,11 @@ if TYPE_CHECKING:
     from forged.pipeline.mode import LessonMode
     from forged.pipeline.structure import StructuralReport
 from forged.pipeline.failure import (
+    GOAL_FIT_PROBLEMS,
     RUBRIC_DIMENSIONS,
     ExecutionReport,
     FailureCategory,
+    GoalFitVerdict,
     GradeReport,
     RubricScores,
     classify,
@@ -157,6 +159,9 @@ class RevisorAgent(Agent[AgentOutput]):
             graded=raw.get("graded", True),
             blockers=raw.get("blockers", []),
             findings=findings,
+            # The student judges "too much / too little for me", never "wrong subject":
+            # drift is the expert reviewer's call, because it is what reaches the planner.
+            goal_fit=self._coerce_goal_fit(raw.get("goal_fit"), allow_drift=False),
         )
 
     def _findings_from_json(
@@ -217,9 +222,14 @@ class RevisorAgent(Agent[AgentOutput]):
         learner-student. The student's quality_score, rubric and graded flag are kept
         as-is: the reviewer is a findings critic, not a second scorer, so it never
         double-counts against the quality threshold.
+
+        The goal-fit verdict (R5) is the one judgement both critics answer, from their
+        own side, so it *is* merged rather than kept: fit requires both to grant it.
         """
-        reviewer_findings, reviewer_blockers = self._read_reviewer_report(state, store)
-        if not reviewer_findings and not reviewer_blockers:
+        reviewer_findings, reviewer_blockers, reviewer_goal_fit = self._read_reviewer_report(
+            state, store
+        )
+        if not reviewer_findings and not reviewer_blockers and reviewer_goal_fit is None:
             return grade_report
 
         if grade_report is None:
@@ -232,35 +242,79 @@ class RevisorAgent(Agent[AgentOutput]):
                 graded=True,
                 blockers=list(reviewer_blockers),
                 findings=reviewer_findings,
+                goal_fit=reviewer_goal_fit,
             )
 
+        merged_goal_fit = (
+            grade_report.goal_fit.merged_with(reviewer_goal_fit)
+            if grade_report.goal_fit is not None
+            else reviewer_goal_fit
+        )
         return replace(
             grade_report,
             findings=[*grade_report.findings, *reviewer_findings],
             blockers=[*grade_report.blockers, *reviewer_blockers],
+            goal_fit=merged_goal_fit,
         )
 
     def _read_reviewer_report(
         self, state: PipelineState, store: ArtifactStore
-    ) -> tuple[list[Evidence], list[str]]:
-        """Read the latest reviewer_report artifact as (findings, blockers).
+    ) -> tuple[list[Evidence], list[str], GoalFitVerdict | None]:
+        """Read the latest reviewer_report artifact as (findings, blockers, goal_fit).
 
         Returns empty lists when the reviewer did not run, its JSON is invalid, or it
         degraded (reviewed=False) — an absent review simply adds no findings.
+
+        The reviewer is the only critic whose verdict may claim `drifted`: it is the
+        expert on whether this was the right material, and drift is the one goal-fit
+        problem that reaches the planner.
         """
         name = self._latest_artifact_name(state, PipelineStage.REVIEWER, "reviewer_report")
         if not store.has(name):
-            return [], []
+            return [], [], None
         try:
             raw = json.loads(store.get(name).content)
         except json.JSONDecodeError:
             _LOG.warning("RevisorAgent: invalid reviewer report JSON in %s", name)
-            return [], []
+            return [], [], None
         findings = self._findings_from_json(raw.get("findings", []), default_source="reviewer")
         blockers = raw.get("blockers", [])
         if not isinstance(blockers, list):
             blockers = []
-        return findings, blockers
+        return findings, blockers, self._coerce_goal_fit(raw.get("goal_fit"))
+
+    @staticmethod
+    def _coerce_goal_fit(raw: object, allow_drift: bool = True) -> GoalFitVerdict | None:
+        """Rebuild the goal-fit verdict from grader JSON, or None when unusable.
+
+        Same read-and-degrade rule as the rubric: a malformed verdict is dropped, never
+        fatal to the routing loop. An absent verdict is an absent judgement, not a
+        negative one — the lesson simply is not gated on it.
+
+        Two things are enforced here rather than left to the persona, because both are
+        load-bearing and a persona is advisory:
+          * only labels in GOAL_FIT_PROBLEMS survive, so a model inventing a fourth
+            label cannot smuggle in a routing decision;
+          * `allow_drift=False` (used for the student) strips `drifted`, the one
+            problem that reaches the planner. A simulated novice's "this feels
+            off-topic" must not be able to trigger a replan — see doc 11.
+        """
+        if not isinstance(raw, dict) or not isinstance(raw.get("fit"), bool):
+            return None
+        raw_problems = raw.get("problems")
+        problems = tuple(
+            p
+            for p in GOAL_FIT_PROBLEMS
+            if isinstance(raw_problems, list)
+            and p in raw_problems
+            and (allow_drift or p != "drifted")
+        )
+        text = raw.get("text")
+        return GoalFitVerdict(
+            fit=bool(raw["fit"]),
+            problems=problems,
+            text=text if isinstance(text, str) else "",
+        )
 
     @staticmethod
     def _coerce_rubric(raw: object) -> RubricScores | None:
@@ -452,6 +506,14 @@ class RevisorAgent(Agent[AgentOutput]):
                     f"code_clarity {r.code_clarity:.0f}, "
                     f"correctness {r.correctness:.0f}, "
                     f"learner_fit {r.learner_fit:.0f}\n"
+                )
+            # The goal-fit verdict (R5) is the only signal that says the code should
+            # not be there at all, so it goes above the findings: an author who reads
+            # only the first lines must still see it.
+            if grade_report.goal_fit is not None and not grade_report.goal_fit.fit:
+                problems = ", ".join(grade_report.goal_fit.problems) or "does not fit"
+                lines.append(
+                    f"- **Goal fit**: ✗ {problems} — {grade_report.goal_fit.text}\n"
                 )
             if grade_report.findings:
                 lines.append("- **Key Findings**:\n")
