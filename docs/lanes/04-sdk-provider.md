@@ -1,7 +1,8 @@
 # Lane 4 — SDK-as-provider / "no API key" (DESIGN DOC ONLY)
 
 **Branch:** `docs/sdk-provider-design` · **Type:** design doc, no code · **Depends on:** none
-**Process:** see "Parallel lane workflow" in root `CLAUDE.md`. Read `forged/llm.py` first, and use
+**Status:** not started.
+**Process:** see "Lane workflow" in root `CLAUDE.md`. Read `forged/llm.py` first, and use
 the `claude-api` skill for accurate Anthropic SDK / structured-output details.
 
 ## The question to design an answer for (Kevin's framing)

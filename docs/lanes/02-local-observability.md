@@ -1,7 +1,8 @@
 # Lane 2 — Local observability (self-hosted Langfuse + trace enrichment)
 
 **Branch:** `feat/local-observability` · **Type:** code · **Depends on:** none
-**Process:** see "Parallel lane workflow" in root `CLAUDE.md`.
+**Status:** not started.
+**Process:** see "Lane workflow" in root `CLAUDE.md`.
 
 ## Why this lane exists
 Langfuse is **already integrated** — `forged/llm.py` creates a real trace per LLM call, seeded with

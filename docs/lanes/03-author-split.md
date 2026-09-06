@@ -1,7 +1,8 @@
 # Lane 3 — Author-identity split (DESIGN DOC ONLY)
 
 **Branch:** `docs/author-split-design` · **Type:** design doc, no code · **Depends on:** none
-**Process:** see "Parallel lane workflow" in root `CLAUDE.md`. Read `docs/architecture/17-*.md`
+**Status:** not started.
+**Process:** see "Lane workflow" in root `CLAUDE.md`. Read `docs/architecture/17-*.md`
 (lesson modes) and `docs/architecture/22-*.md` first.
 
 ## The problem to design a fix for (Kevin's framing)

@@ -1,7 +1,12 @@
 # Lane 5 — UI grilling session (DECISION DOC)
 
 **Branch:** `docs/ui-exploration` · **Type:** interactive discussion → decision doc, no code
-**Depends on:** none · **Process:** see "Parallel lane workflow" in root `CLAUDE.md`. Read `README.md` first.
+**Depends on:** none · **Status:** not started
+**Process:** see "Lane workflow" in root `CLAUDE.md`. Read `README.md` first.
+
+> **Note:** this lane *decides whether/what UI to build* → the deliverable is a doc (validated by
+> review). The eventual **UI build is a separate future lane** and must be verified vertically in a
+> real browser (e2e / Playwright) — a UI is the most vertical-hungry deliverable, not the least.
 
 ## Purpose
 Kevin wants a **"grilling session" about building a UI** for forgeducation. The job is NOT to jump to

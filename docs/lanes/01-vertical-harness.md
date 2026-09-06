@@ -1,7 +1,8 @@
 # Lane 1 — Vertical-confirmation harness
 
 **Branch:** `feat/vertical-confirmation-harness` · **Type:** code · **Depends on:** none
-**Process:** see "Parallel lane workflow" in root `CLAUDE.md`.
+**Status:** in progress — corpus fixture placed; harness not yet written.
+**Process:** see "Lane workflow" in root `CLAUDE.md`.
 
 ## Why this lane exists
 Today every check on the pipeline is **horizontal**: unit tests and a mocked-LLM graph-integration
@@ -16,8 +17,8 @@ notebooks through the *real* critics with a cheap model, for cents — not dolla
 ## Scope
 1. **Corpus fixture** — already placed at `tests/corpus/doc22-regression-run/` (the four real
    iterations from the 2026-08-13 run: `lesson_notebook_v*.ipynb`, `execution_report_v*_executed.ipynb`,
-   `student_grade_report_v*.json`, `revision_brief_v*.md`). A durable copy also lives outside the repo
-   at `../eduforge-regression-corpus/`.
+   `student_grade_report_v*.json`, `revision_brief_v*.md`). Being committed to git *is* its durable
+   home now — it no longer depends on a gitignored `runs/` dir surviving.
 2. **A `@pytest.mark.live` replay harness** (new file under `tests/pipeline/`, e.g.
    `test_live_corpus_replay.py`). It must:
    - load a corpus notebook + its execution report,

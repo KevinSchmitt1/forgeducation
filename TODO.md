@@ -127,9 +127,10 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 
 ## 🔀 PARALLEL LANES (opened 2026-09-06)
 
-Five workstreams now run concurrently as git worktrees + branches; briefs live in `docs/lanes/`
-(index: `docs/lanes/README.md`; process: `CLAUDE.md` → "Parallel lane workflow"). This is the
-delivery plan for the brainstorm topics — observability, UI, usability, and the actual-state fixes.
+Five workstreams are tracked as branches in this repo (one working tree → one lane checked out at a
+time); briefs live in `docs/lanes/` (index: `docs/lanes/README.md`; process: `CLAUDE.md` →
+"Lane workflow"). This is the delivery plan for the brainstorm topics — observability, UI, usability,
+and the actual-state fixes.
 
 | Lane | Branch | Type | Status | Feeds |
 |---|---|---|---|---|
@@ -147,9 +148,11 @@ delivery plan for the brainstorm topics — observability, UI, usability, and th
 and a *mocked-LLM* graph test prove plumbing carries a value, never that a critic judges *well*. The
 only vertical check (real input → real LLM → real routing → real output) is a full paid run. Lane 1
 adds the missing middle rung: a `@pytest.mark.live` replay of the corpus through the *real* critics
-with gpt-5-mini, for cents. It becomes the pre-merge ritual for R6/R7. The corpus is now an in-repo
-fixture at `tests/corpus/doc22-regression-run/` (durable copy: `../eduforge-regression-corpus/`), so
-the offline checks in docs 20–22 and R6's check no longer depend on a gitignored `runs/` dir surviving.
+with gpt-5-mini, for cents. It becomes the pre-merge ritual for R6/R7 — and, more broadly, every
+lane verifies **by deliverable** (docs → review; runtime code → exercised; a UI build → real-browser
+e2e; LLM-judgement changes → this harness); see `CLAUDE.md` → "Lane workflow". The corpus is now an
+in-repo fixture at `tests/corpus/doc22-regression-run/`, so the offline checks in docs 20–22 and R6's
+check no longer depend on a gitignored `runs/` dir surviving.
 
 ## ▶ NEXT — pick up here
 
