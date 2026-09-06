@@ -1,0 +1,62 @@
+{
+  "run_id": "20260813-201647_create_and_validate__github_co",
+  "calls": 12,
+  "totals": {
+    "input": 97860,
+    "cached_input": 20096,
+    "output": 74387,
+    "reasoning": 33600,
+    "total": 172247,
+    "cached_input_pct": 20.5
+  },
+  "by_stage": [
+    {
+      "stage": "planner",
+      "model": "gpt-5-mini",
+      "provider": "openai",
+      "calls": 1,
+      "input": 3861,
+      "cached_input": 0,
+      "output": 2928,
+      "reasoning": 1280,
+      "total": 6789,
+      "cached_input_pct": 0.0
+    },
+    {
+      "stage": "code_author",
+      "model": "gpt-5",
+      "provider": "openai",
+      "calls": 4,
+      "input": 24094,
+      "cached_input": 11136,
+      "output": 49950,
+      "reasoning": 16512,
+      "total": 74044,
+      "cached_input_pct": 46.2
+    },
+    {
+      "stage": "student",
+      "model": "gpt-5-mini",
+      "provider": "openai",
+      "calls": 4,
+      "input": 40583,
+      "cached_input": 5376,
+      "output": 11707,
+      "reasoning": 8832,
+      "total": 52290,
+      "cached_input_pct": 13.2
+    },
+    {
+      "stage": "reviewer",
+      "model": "gpt-5-mini",
+      "provider": "openai",
+      "calls": 3,
+      "input": 29322,
+      "cached_input": 3584,
+      "output": 9802,
+      "reasoning": 6976,
+      "total": 39124,
+      "cached_input_pct": 12.2
+    }
+  ]
+}

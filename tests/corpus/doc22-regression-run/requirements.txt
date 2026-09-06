@@ -1,0 +1,4 @@
+# Auto-generated from the lesson plan — see README.md.
+# This lesson needs no third-party packages.
+# ipykernel: register this environment as a Jupyter kernel (see README).
+ipykernel>=6

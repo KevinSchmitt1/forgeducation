@@ -1,0 +1,1 @@
+Create and Validate .github/copilot-instructions.md and AGENTS.md

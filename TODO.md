@@ -125,6 +125,35 @@ so, and the generated validator flags any `PASSWORD` as a leak) and an under-fil
 > local scratch repos with `git init` successfully; only the *unqualified* "commit to the
 > repository" objective broke it.
 
+## 🔀 PARALLEL LANES (opened 2026-09-06)
+
+Five workstreams are tracked as branches in this repo (one working tree → one lane checked out at a
+time); briefs live in `docs/lanes/` (index: `docs/lanes/README.md`; process: `CLAUDE.md` →
+"Lane workflow"). This is the delivery plan for the brainstorm topics — observability, UI, usability,
+and the actual-state fixes.
+
+| Lane | Branch | Type | Status | Feeds |
+|---|---|---|---|---|
+| 1 · Vertical-confirmation harness | `feat/vertical-confirmation-harness` | code | in progress | validates R2/R5/R6 for cents |
+| 2 · Local observability (self-host Langfuse + enrich) | `feat/local-observability` | code | not started | Observability Follow-Up ↓ |
+| 3 · Author-identity split (design) | `docs/author-split-design` | design | not started | usability (non-code lessons) |
+| 4 · SDK-as-provider / no-API-key (design) | `docs/sdk-provider-design` | design | not started | usability |
+| 5 · UI grilling (decision) | `docs/ui-exploration` | design | not started | UI |
+
+**Held back — not parallel-safe:** R6 → R7 wait on Lane 1's harness; the author-split
+*implementation* waits on R6/R7 (shares `personas/`, `graph.py`, `router.py`). The **paid run**
+(NEXT §2) remains the single validation gate for everything downstream.
+
+**Vertical vs horizontal (Lane 1's reason to exist):** today all checks are horizontal — unit tests
+and a *mocked-LLM* graph test prove plumbing carries a value, never that a critic judges *well*. The
+only vertical check (real input → real LLM → real routing → real output) is a full paid run. Lane 1
+adds the missing middle rung: a `@pytest.mark.live` replay of the corpus through the *real* critics
+with gpt-5-mini, for cents. It becomes the pre-merge ritual for R6/R7 — and, more broadly, every
+lane verifies **by deliverable** (docs → review; runtime code → exercised; a UI build → real-browser
+e2e; LLM-judgement changes → this harness); see `CLAUDE.md` → "Lane workflow". The corpus is now an
+in-repo fixture at `tests/corpus/doc22-regression-run/`, so the offline checks in docs 20–22 and R6's
+check no longer depend on a gitignored `runs/` dir surviving.
+
 ## ▶ NEXT — pick up here
 
 *Done and merged (#45–#50): C5 patching, doc 22's design, and doc 22's R1, R2, R5. Two
@@ -651,6 +680,10 @@ level = **resolve by decomposing** (curriculum planner, above).
 ---
 
 ## Observability Follow-Up
+
+> **Now owned by Lane 2** (`feat/local-observability`, `docs/lanes/02-local-observability.md`): the
+> remaining open items below — self-hosted Langfuse on localhost, trace enrichment with pipeline
+> semantics, surfacing trace ids in run summaries — are that lane's scope.
 
 **Status:** partially complete
 
