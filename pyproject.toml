@@ -51,7 +51,8 @@ line-length = 100
 target-version = "py310"   # matches requires-python
 # Generated run output (LLM-authored notebooks, executed copies) is not source
 # code — keep it out of linting even when ruff is run bare at the repo root.
-extend-exclude = ["runs", "e2e-runs", "test-e2e*"]
+# tests/corpus holds a captured run kept as a regression fixture (Lane 1 harness).
+extend-exclude = ["runs", "e2e-runs", "test-e2e*", "tests/corpus"]
 
 [tool.ruff.lint]
 # E/F: pyflakes+pycodestyle, I: isort, UP: pyupgrade, B: bugbear,

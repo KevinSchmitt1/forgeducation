@@ -168,6 +168,38 @@ Process degrades under momentum — that is exactly when these get skipped. Pref
     architecture orientation), the templates. No routine per-work-unit updates — see "Resuming
     work in a new session" below for why this file deliberately holds no state.
 
+## Parallel lane workflow (how-to for agents)
+
+When several independent slices of work run at once, each is a **lane**: a `git worktree` on its own
+branch, with a tracked brief in **`docs/lanes/`**. This lets multiple agents (in multiple terminals)
+work simultaneously without stepping on each other. `docs/lanes/README.md` is the live index; each
+`docs/lanes/NN-*.md` owns one lane's scope, file-ownership (collision map), and definition of done.
+
+**To start or resume a lane** (one terminal per lane):
+
+```bash
+# create the lane's worktree off master (once), or cd into it if it already exists
+git worktree add -b <lane-branch> ../eduforge-<lane-name> master   # first time
+cd ../eduforge-<lane-name> && claude                                # then: read docs/lanes/NN-*.md
+```
+
+Inside the worktree, **read your `docs/lanes/NN-*.md` first** and follow it. Then:
+
+- **Stay inside your file-ownership map.** The whole point of lanes is no merge conflicts — if your
+  brief says "do not touch `router.py`/`personas/`", don't. If two lanes need the same hot file
+  (`router.py`, `failure.py`, `classify()`, `personas/`, `graph.py`, `mode.py`), they **cannot** run
+  in parallel — one serializes after the other. The brief states this per lane.
+- **Design lanes** (docs only) need no venv. **Code lanes** bootstrap their own:
+  `python -m venv .venv && .venv/bin/pip install -e ".[dev]"` (worktrees don't share the main `.venv`).
+- **Sync before finishing:** `git rebase master` (or merge) inside the worktree so your branch carries
+  the latest shared docs/state, then run the three CI gates and open a PR per the git conventions above.
+- **When a lane's PR merges, remove its worktree:** `git worktree remove ../eduforge-<lane-name>` and
+  delete the branch (local + remote), so stale worktrees don't accumulate. `git worktree list` audits.
+
+Lane briefs are coordination docs, not project state — **`TODO.md` remains the single source of truth**
+for status, dependencies between lanes, and what's held back (e.g. R6/R7 and the author-split
+*implementation*, which serialize because they share hot files).
+
 ## Resuming work in a new session
 
 This file is conventions + architecture orientation only. It deliberately does not track current

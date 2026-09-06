@@ -1,0 +1,1 @@
+{"reviewed": false, "blockers": [], "findings": [], "error": "LLM returned empty content: finish_reason='length' (provider=openai, model=gpt-5-mini)"}
