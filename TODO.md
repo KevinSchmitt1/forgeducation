@@ -153,7 +153,7 @@ and the actual-state fixes.
 | 2 · Local observability (self-host Langfuse + enrich) | `feat/local-observability` | code | scope 1–2 done (PR open) | Observability Follow-Up ↓ |
 | 3 · Author-identity split (design) | `docs/author-split-design` | design | not started | usability (non-code lessons) |
 | 4 · SDK-as-provider / no-API-key (design) | `docs/sdk-provider-design` | design | not started | usability |
-| 5 · UI grilling (decision) | `docs/ui-exploration` | design | not started | UI |
+| 5 · UI grilling (decision) | `docs/ui-exploration` | design | **DONE → doc 25** | UI |
 
 **Held back — not parallel-safe:** R6 → R7 wait on Lane 1's harness; the author-split
 *implementation* waits on R6/R7 (shares `personas/`, `graph.py`, `router.py`). The **paid run**
@@ -814,5 +814,6 @@ any phase.
   verdict — all parts DONE (2026-07-20), including Part III (escalation workflow)
 - `docs/architecture/15-structured-grader-output.md` — structured (JSON-schema) grader outputs — done
 - `docs/architecture/16-smart-front-door.md` — `forged learn` interactive plan gate — IMPLEMENTED
+- `docs/architecture/25-ui-exploration.md` — UI decision (Lane 5): BUILD a scoped local BYOK/Docker input front door; live-run + notebook reading out of scope
 - `CLAUDE.md` — agent orientation, conventions, current state + next task, extending the system
 - `templates/README.md` — user-facing structured input guide

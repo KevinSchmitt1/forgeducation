@@ -1,7 +1,10 @@
 # Lane 5 — UI grilling session (DECISION DOC)
 
 **Branch:** `docs/ui-exploration` · **Type:** interactive discussion → decision doc, no code
-**Depends on:** none · **Status:** not started
+**Depends on:** none · **Status:** DONE (2026-09-24) → decision in
+[`docs/architecture/25-ui-exploration.md`](../architecture/25-ui-exploration.md): **BUILD, scoped**
+— a local, self-hostable (Docker), bring-your-own-key input front door; live-run + notebook
+reading out of scope. The build itself is a separate future lane.
 **Process:** see "Lane workflow" in root `CLAUDE.md`. Read `README.md` first.
 
 > **Note:** this lane *decides whether/what UI to build* → the deliverable is a doc (validated by
