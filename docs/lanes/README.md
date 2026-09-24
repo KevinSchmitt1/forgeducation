@@ -19,7 +19,7 @@ verification rung it must reach, and its definition of done.
 | 2 · Local observability | [02-local-observability.md](02-local-observability.md) | `feat/local-observability` | code | exercised + unit tests | — |
 | 3 · Author-identity split | [03-author-split.md](03-author-split.md) | `docs/author-split-design` | design doc | review | — |
 | 4 · SDK-as-provider | [04-sdk-provider.md](04-sdk-provider.md) | `docs/sdk-provider-design` | design doc | review | — |
-| 5 · UI grilling | [05-ui-exploration.md](05-ui-exploration.md) | `docs/ui-exploration` | decision doc | review | — |
+| 5 · UI grilling | [05-ui-exploration.md](05-ui-exploration.md) | `docs/ui-exploration` | decision doc **(DONE → doc 25: BUILD, scoped)** | review | — |
 
 **One lane at a time** in the working tree (single repo → one branch checked out at once). Lanes that
 share a hot file (`router.py`, `failure.py`, `classify()`, `personas/`, `graph.py`, `mode.py`) can't
