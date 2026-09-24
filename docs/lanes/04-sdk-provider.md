@@ -1,7 +1,9 @@
 # Lane 4 — SDK-as-provider / "no API key" (DESIGN DOC ONLY)
 
 **Branch:** `docs/sdk-provider-design` · **Type:** design doc, no code · **Depends on:** none
-**Status:** not started.
+**Status:** DELIVERED 2026-09-24 — `docs/architecture/24-sdk-as-provider.md` written (per-option verdict:
+Anthropic API = feasible/portability only; Claude Code SDK = fails the structured-output gate + ToS gray
+zone; GitHub Copilot = not worth it). Ready for review / PR.
 **Process:** see "Lane workflow" in root `CLAUDE.md`. Read `forged/llm.py` first, and use
 the `claude-api` skill for accurate Anthropic SDK / structured-output details.
 
