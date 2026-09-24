@@ -56,6 +56,13 @@ class LLMTraceContext:
     iteration: int | None = None
     input_artifacts: tuple[str, ...] = ()
     output_artifact: str | None = None
+    # Pipeline semantics known at call time (best-effort; None when not yet known).
+    # These turn a call-level generation into one the localhost dashboard can read as
+    # a step in a reasoning loop: why this stage ran and what the last pass scored.
+    route_taken: str | None = None
+    quality_score: float | None = None
+    goal_fit: str | None = None
+    lesson_mode: str | None = None
 
 
 class _LangfuseTracer:
@@ -208,6 +215,16 @@ class _LangfuseTracer:
                 "output_artifact": trace_context.output_artifact,
             }
         )
+        # Pipeline semantics: emit each only when known, so an early stage's trace is
+        # not cluttered with null verdicts it could not have yet.
+        for key, value in (
+            ("route_taken", trace_context.route_taken),
+            ("quality_score", trace_context.quality_score),
+            ("goal_fit", trace_context.goal_fit),
+            ("lesson_mode", trace_context.lesson_mode),
+        ):
+            if value is not None:
+                metadata[key] = value
         return metadata
 
 

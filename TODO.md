@@ -150,7 +150,7 @@ and the actual-state fixes.
 | Lane | Branch | Type | Status | Feeds |
 |---|---|---|---|---|
 | 1 · Vertical-confirmation harness | `feat/vertical-confirmation-harness` | code | in progress | validates R2/R5/R6 for cents |
-| 2 · Local observability (self-host Langfuse + enrich) | `feat/local-observability` | code | not started | Observability Follow-Up ↓ |
+| 2 · Local observability (self-host Langfuse + enrich) | `feat/local-observability` | code | scope 1–2 done (PR open) | Observability Follow-Up ↓ |
 | 3 · Author-identity split (design) | `docs/author-split-design` | design | not started | usability (non-code lessons) |
 | 4 · SDK-as-provider / no-API-key (design) | `docs/sdk-provider-design` | design | not started | usability |
 | 5 · UI grilling (decision) | `docs/ui-exploration` | design | not started | UI |
@@ -711,7 +711,14 @@ level = **resolve by decomposing** (curriculum planner, above).
 - [x] **Per-call token usage → `usage.json` + `USAGE.md` per run** (PR #13). Captures input / output /
   **cached-input** / **reasoning** tokens per stage via a ledger inside `LLMClient.complete`. Offline,
   provider-agnostic; replaces guesswork about run cost. See `forged/usage.py`.
-- [ ] Surface trace ids / trace URLs in run summaries or manifests
+- [x] **Self-host Langfuse on localhost** (Lane 2). `docker-compose.observability.yml` (trimmed
+  upstream v3 stack) + `docs/observability.md`; no secrets committed. `forged/llm.py::_ensure_client`
+  already reads `LANGFUSE_HOST`/`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`.
+- [x] **Enrich traces with pipeline semantics** (Lane 2). Each generation now carries `route_taken`,
+  `quality_score`, `goal_fit`, `lesson_mode` (plus the existing stage/iteration/run ids), extracted
+  best-effort in `agents/__init__.py::_semantic_enrichment` and emitted from `llm.py::_metadata`.
+  Validated offline by `tests/pipeline/test_trace_enrichment.py`; localhost view confirmed on next paid run.
+- [ ] Surface trace ids / trace URLs in run summaries or manifests (Lane 2 scope 3, optional)
 - [ ] Compare outcome quality across model mixes
 - [ ] (gap) Meter empty/length-truncated calls too — they raise before usage records, so failed-but-billed
   calls aren't counted.

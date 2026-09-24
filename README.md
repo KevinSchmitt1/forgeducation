@@ -94,9 +94,11 @@ pip install -e .            # editable install; adds the `forged` command
 cp .env.example .env        # then put your OPENAI_API_KEY in .env
 ```
 
-If you also want prompt tracing, add your `LANGFUSE_PUBLIC_KEY` and
-`LANGFUSE_SECRET_KEY` to `.env`. When those keys are present, every LLM-backed
-agent prompt is traced automatically.
+If you also want prompt tracing, add your `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`
+and `LANGFUSE_SECRET_KEY` to `.env`. When those keys are present, every LLM-backed
+agent prompt is traced automatically. You can run the whole Langfuse UI on
+localhost — no cloud account — with `docker compose -f
+docker-compose.observability.yml up`; see [`docs/observability.md`](docs/observability.md).
 
 ## Use
 
@@ -241,7 +243,7 @@ End-to-end validated with OpenAI. Features:
   - **Self-contained deliverable**: each run ships `README.md` + `requirements.txt`
   - **Revision brief**: structured failure feedback drives smart rerouting
   - **Monitoring**: full routing log in SUMMARY.md, execution trace in pipeline.log
-  - **Tracing**: every LLM-backed prompt is grouped into a Langfuse trace per run when `LANGFUSE_*` keys are configured
+  - **Tracing**: every LLM-backed prompt is grouped into a Langfuse trace per run when `LANGFUSE_*` keys are configured — each generation enriched with the run's semantics (stage, iteration, route, quality score, goal-fit verdict, lesson mode). Self-host the UI on localhost via `docker-compose.observability.yml` ([docs](docs/observability.md))
   - **Token accounting**: each run writes `usage.json` + `USAGE.md` — input/output/cached/reasoning
     tokens per stage, captured locally (no dashboard required)
   - **Followable dense code**: an ASCII pipeline map + per-cell briefs decode parameters and surface
