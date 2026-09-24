@@ -1,7 +1,8 @@
 # Lane 1 — Vertical-confirmation harness
 
 **Branch:** `feat/vertical-confirmation-harness` · **Type:** code · **Depends on:** none
-**Status:** in progress — corpus fixture placed; harness not yet written.
+**Status:** done — harness written (`tests/pipeline/test_live_corpus_replay.py`), run once
+live on gpt-5-mini (R2 + R5 held over the corpus), ritual documented in `TODO.md`. Ready for PR.
 **Process:** see "Lane workflow" in root `CLAUDE.md`.
 
 ## Why this lane exists

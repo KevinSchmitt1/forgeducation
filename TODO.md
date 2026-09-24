@@ -67,7 +67,22 @@ exhausted. 1016.7s, 172,247 tokens.
 **Doc 22 (the review itself) — status as of 2026-08-30:** R1 (fatal-dimension gate), R2
 (critic finding budget) and R5 (goal-fit verdict) are built; R6 → R7 are next; R3, R4, R8
 not built. Per-item table lives in doc 22 Part IV. R1 is offline-validated against the real
-corpus; R2 and R5 are plumbing-validated only and need a paid run to judge.
+corpus; R2 and R5 are now **exercised vertically** by the Lane 1 live-replay harness (real
+gpt-5-mini critic over the corpus, for cents) — a middle rung above "plumbing-validated,"
+still short of a full paid run.
+
+**Live-replay ritual (Lane 1):** for any LLM-judgement change (critics, router, personas,
+graders — **including R6/R7 before merge**), run the single-slice replay first:
+
+```bash
+.venv/bin/python -m pytest -m live tests/pipeline/test_live_corpus_replay.py   # needs OPENAI_API_KEY
+```
+
+It feeds a real captured notebook through the real Student and Reviewer on gpt-5-mini and
+asserts a weak-but-real signal (R2: no verbatim restatement of the execution failure; R5: a
+`goal_fit` verdict is emitted). The default suite excludes it (skips without `-m live`), so
+it never fires in CI or a bare `pytest`. It is the vertical rung, not a replacement for the
+full paid artifact-lesson run below.
 
 **None of it is validated by a paid run yet.** All of it is validated offline against the four
 failing notebooks the run left behind (see below) — which is a real level of confidence, but not
