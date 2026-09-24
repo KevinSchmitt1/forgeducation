@@ -1,7 +1,8 @@
 # Lane 2 — Local observability (self-hosted Langfuse + trace enrichment)
 
 **Branch:** `feat/local-observability` · **Type:** code · **Depends on:** none
-**Status:** not started.
+**Status:** scope 1 (self-host compose + docs) and scope 2 (trace enrichment + unit tests) done;
+PR open. Scope 3 (bespoke agent-performance view) not started — optional.
 **Process:** see "Lane workflow" in root `CLAUDE.md`.
 
 ## Why this lane exists

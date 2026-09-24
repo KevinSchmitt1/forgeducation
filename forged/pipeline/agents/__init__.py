@@ -15,6 +15,8 @@ Imports only from: forged.pipeline.state — no circular imports.
 
 from __future__ import annotations
 
+import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +27,8 @@ from ..state import PipelineStage, PipelineState
 if TYPE_CHECKING:
     from forged.artifacts import ArtifactStore
     from forged.llm import LLMClient
+
+_LOG = logging.getLogger(__name__)
 
 
 # ── Type variable ──────────────────────────────────────────────────────────────
@@ -132,6 +136,7 @@ class Agent(ABC, Generic[T]):
         if store.has("lesson_context") and "lesson_context" not in artifact_names:
             artifact_names.insert(0, "lesson_context")
 
+        enrichment = _semantic_enrichment(state, store)
         trace_context = LLMTraceContext(
             stage_name=stage_name.value,
             pipeline_kind="agentic",
@@ -141,6 +146,10 @@ class Agent(ABC, Generic[T]):
             iteration=state.iteration,
             input_artifacts=tuple(artifact_names),
             output_artifact=output_artifact,
+            route_taken=enrichment.route_taken,
+            quality_score=enrichment.quality_score,
+            goal_fit=enrichment.goal_fit,
+            lesson_mode=enrichment.lesson_mode,
         )
         if response_format is None:
             return self._llm_client.complete(
@@ -155,6 +164,112 @@ class Agent(ABC, Generic[T]):
             trace_context=trace_context,
             response_format=response_format,
         )
+
+
+# ── Trace enrichment ─────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class _SemanticEnrichment:
+    """Pipeline semantics known when a stage makes its LLM call.
+
+    Every field is best-effort: an early stage runs before any grade exists, so
+    None simply means "not known yet at this point in the run".
+    """
+
+    route_taken: str | None = None
+    quality_score: float | None = None
+    goal_fit: str | None = None
+    lesson_mode: str | None = None
+
+
+def _latest_artifact_name(state: PipelineState, stage: PipelineStage) -> str | None:
+    """Name of the most recent artifact produced by `stage`, or None if none yet."""
+    for output in reversed(state.outputs):
+        if output.stage == stage:
+            return output.artifact_name
+    return None
+
+
+def _read_json_artifact(store: ArtifactStore, name: str | None) -> dict | None:
+    """Parse a JSON artifact by name, tolerating absence or malformed content."""
+    if name is None or not store.has(name):
+        return None
+    try:
+        parsed = json.loads(store.get(name).content)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _summarize_goal_fit(raw: object) -> str | None:
+    """Collapse a critic's goal-fit block into one trace-friendly token.
+
+    Shape is ``{"fit": bool, "problems": [...], "text": ...}`` (see failure.py).
+    Returns "fit" when it earns its place, the problem list when it does not, and
+    None when the critic offered no verdict.
+    """
+    if not isinstance(raw, dict):
+        return None
+    problems = raw.get("problems")
+    if isinstance(problems, list) and problems:
+        return ",".join(str(p) for p in problems)
+    if raw.get("fit") is True:
+        return "fit"
+    if raw.get("fit") is False:
+        return "unfit"
+    return None
+
+
+def _semantic_enrichment(state: PipelineState, store: ArtifactStore) -> _SemanticEnrichment:
+    """Read the pipeline semantics a stage can know at call time from state + store.
+
+    Best-effort by contract: any read may find nothing (first pass, missing or
+    malformed artifact) and the corresponding field stays None. This never raises —
+    observability must not break an LLM call.
+    """
+    try:
+        route_taken = (
+            state.routing_log[-1].classification if state.routing_log else None
+        )
+
+        grade = _read_json_artifact(
+            store, _latest_artifact_name(state, PipelineStage.STUDENT)
+        )
+        quality_score = grade.get("quality_score") if grade else None
+        if not isinstance(quality_score, (int, float)):
+            quality_score = None
+
+        # The expert Reviewer is the only critic that can say "drifted", so its
+        # verdict leads; fall back to the Student's when the Reviewer has not run.
+        review = _read_json_artifact(
+            store, _latest_artifact_name(state, PipelineStage.REVIEWER)
+        )
+        goal_fit = _summarize_goal_fit(review.get("goal_fit") if review else None)
+        if goal_fit is None and grade is not None:
+            goal_fit = _summarize_goal_fit(grade.get("goal_fit"))
+
+        lesson_mode = _extract_lesson_mode(state, store)
+    except Exception as exc:  # noqa: BLE001 - enrichment is best-effort, never fatal
+        _LOG.debug("Trace enrichment skipped: %s", exc)
+        return _SemanticEnrichment()
+
+    return _SemanticEnrichment(
+        route_taken=route_taken,
+        quality_score=float(quality_score) if quality_score is not None else None,
+        goal_fit=goal_fit,
+        lesson_mode=lesson_mode,
+    )
+
+
+def _extract_lesson_mode(state: PipelineState, store: ArtifactStore) -> str | None:
+    """Infer the lesson mode from the planner's plan artifact, if one exists yet."""
+    name = _latest_artifact_name(state, PipelineStage.PLANNER)
+    if name is None or not store.has(name):
+        return None
+    from forged.pipeline.mode import extract_lesson_mode
+
+    return extract_lesson_mode(store.get(name).content)
 
 
 # ── AgentOutput value object ───────────────────────────────────────────────────
