@@ -149,15 +149,25 @@ and the actual-state fixes.
 
 | Lane | Branch | Type | Status | Feeds |
 |---|---|---|---|---|
-| 1 · Vertical-confirmation harness | `feat/vertical-confirmation-harness` | code | in progress | validates R2/R5/R6 for cents |
-| 2 · Local observability (self-host Langfuse + enrich) | `feat/local-observability` | code | scope 1–2 done (PR open) | Observability Follow-Up ↓ |
-| 3 · Author-identity split (design) | `docs/author-split-design` | design | not started | usability (non-code lessons) |
-| 4 · SDK-as-provider / no-API-key (design) | `docs/sdk-provider-design` | design | not started | usability |
-| 5 · UI grilling (decision) | `docs/ui-exploration` | design | **DONE → doc 25** | UI |
+| 1 · Vertical-confirmation harness | `feat/vertical-confirmation-harness` | code | ✅ MERGED #53 | validates R2/R5/R6 for cents |
+| 2 · Local observability (self-host Langfuse + enrich) | `feat/local-observability` | code | ✅ MERGED #57 (scope 1–2; scope 3 optional) | Observability Follow-Up ↓ |
+| 3 · Author-identity split (design) | `docs/author-split-design` | design | ✅ MERGED #55 → doc 23 | usability (non-code lessons) |
+| 4 · SDK-as-provider / no-API-key (design) | `docs/sdk-provider-design` | design | ✅ MERGED #54 → doc 24 | usability |
+| 5 · UI grilling (decision) | `docs/ui-exploration` | design | ✅ MERGED #56 → doc 25 (BUILD, scoped) | UI |
+| **6 · Critique digest → remake (R6→R7)** | `feat/critique-digest-remake` | code+persona | **▶ ACTIVE** (hot-file lane) | the quality-loop fix; unblocks author-split impl |
+| **7 · UI backend seam** | `feat/ui-backend-seam` | code (additive) | **▶ ACTIVE** (parallel-safe with 6) | UI build lane; also any 2nd entry point / automation |
 
-**Held back — not parallel-safe:** R6 → R7 wait on Lane 1's harness; the author-split
-*implementation* waits on R6/R7 (shares `personas/`, `graph.py`, `router.py`). The **paid run**
-(NEXT §2) remains the single validation gate for everything downstream.
+**Active pair (2026-09-24):** Lane 6 (R6→R7, doc 22 Parts III–VI) owns the hot files
+(`reviser.py`, `personas/`, …); Lane 7 (UI backend seam, doc 25 first-implementer plan —
+`course_from_dict` + gate-as-step-function) is additive and touches none of them → the two run in
+parallel via `git worktree`.
+
+**Held back — serializes after Lane 6:** the **author-split *implementation*** (doc 23) collides
+with R6/R7 on `personas/`, `graph.py`, `reviser.py`; rebase it onto post-R7 `master` (doc 23 Part VI
+explains why landing it *after* R7 is also DRY-cheaper). **Optional / on-demand:** the Anthropic
+provider (doc 24 Option A) if provider portability becomes a real want; the UI *frontend* build lane
+after Lane 7's seam lands. The **paid artifact-lesson run** (NEXT §2) remains the single validation
+gate for everything judgement-heavy and outranks every feature above.
 
 **Vertical vs horizontal (Lane 1's reason to exist):** today all checks are horizontal — unit tests
 and a *mocked-LLM* graph test prove plumbing carries a value, never that a critic judges *well*. The
