@@ -1,7 +1,8 @@
 # Lane 3 — Author-identity split (DESIGN DOC ONLY)
 
 **Branch:** `docs/author-split-design` · **Type:** design doc, no code · **Depends on:** none
-**Status:** not started.
+**Status:** ✅ done — `docs/architecture/23-author-identity-split.md` written (2026-09-24), covers all
+six touch-points and flags the R6/R7 serialization. PR open.
 **Process:** see "Lane workflow" in root `CLAUDE.md`. Read `docs/architecture/17-*.md`
 (lesson modes) and `docs/architecture/22-*.md` first.
 
