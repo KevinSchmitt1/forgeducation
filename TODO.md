@@ -157,7 +157,9 @@ and the actual-state fixes.
 | 4 · SDK-as-provider / no-API-key (design) | `docs/sdk-provider-design` | design | ✅ MERGED #54 → doc 24 | usability |
 | 5 · UI grilling (decision) | `docs/ui-exploration` | design | ✅ MERGED #56 → doc 25 (BUILD, scoped) | UI |
 | 6 · Critique digest → remake (R6→R7) | `feat/critique-digest-remake` | code+persona | ✅ MERGED #60 (R6 offline-validated; R7 live-replay owed) | the quality-loop fix; unblocks author-split impl |
-| **7 · UI backend seam** | `feat/ui-backend-seam` | code (additive) | **▶ ACTIVE** (parallel-safe with 6) | UI build lane; also any 2nd entry point / automation |
+| 7 · UI backend seam | `feat/ui-backend-seam` | code (additive) | ✅ MERGED #59 | UI build lane; also any 2nd entry point / automation |
+| **8 · UI frontend v1 (BYOK front door)** | `feat/ui-frontend` | code (additive) | **▶ ACTIVE** — critical path | **gates the paid run** |
+| **9 · Author-split implementation** | `feat/author-split` | code+persona | **▶ ACTIVE** (parallel-safe with 8) | usability (non-code lessons); live-replay owed |
 
 **Lane 6 merged (2026-09-29, #60):** R6→R7 landed — the digest accumulates and orders by
 consequence (offline-proven on the corpus, with a fail-capable check), and a remake is a recorded,
@@ -172,12 +174,12 @@ place first. Until then, judgement-heavy work (R6/R7, R2/R5) stays validated **o
 live-replay for cents**; the full paid run waits for the UI. This reorders NEXT: **UI first, paid run
 after.**
 
-**Now active:** Lane 7 (UI backend seam, doc 25 — `course_from_dict` + gate-as-step-function),
-then the UI *frontend* build lane on top of it. **Held back — serializes after Lane 6 (now
-unblocked):** the **author-split *implementation*** (doc 23) collided with R6/R7 on `personas/`,
-`graph.py`, `reviser.py`; rebase it onto post-#60 `master` (doc 23 Part VI explains why landing it
-*after* R7 is also DRY-cheaper). **Optional / on-demand:** the Anthropic provider (doc 24 Option A)
-if provider portability becomes a real want.
+**Now active (2026-09-29):** Lane 7 merged (#59). **Lane 8** builds the UI frontend on its seam
+(doc 25 steps 2–4: service layer, Gradio/Streamlit app, Dockerfile, Playwright-verified) — the
+critical path to the paid run. **Lane 9** implements the author-identity split (doc 23, option B:
+two persona files, one node), now unblocked by #60; it runs in parallel because the two lanes'
+files are disjoint. **Optional / on-demand:** the Anthropic provider (doc 24 Option A) if provider
+portability becomes a real want.
 
 **Vertical vs horizontal (Lane 1's reason to exist):** today all checks are horizontal — unit tests
 and a *mocked-LLM* graph test prove plumbing carries a value, never that a critic judges *well*. The

@@ -1,6 +1,10 @@
 """CodeAuthorAgent — produces notebook cells from a lesson plan.
 
-Persona: personas/code_author.md
+Persona: chosen per lesson mode (doc 23, recommendation B — two personas, one node):
+  executable (and any absent/unknown mode) → personas/code_author.md
+  artifact / conceptual                    → personas/artifact_author.md
+The mode is re-derived from the latest plan on every run — first pass and repair pass
+alike — exactly as the reviser does; it is never threaded through state (doc 17).
 Input artifacts: lesson_plan_v{N}.md  (reads latest from outputs)
 Output artifact: lesson_notebook_v{iteration}.ipynb  (kind=notebook — real
 nbformat JSON, assembled from the model's cell list via forged.notebook)
@@ -14,7 +18,9 @@ assembly into .ipynb happens here, exactly as in the linear LLMAgent.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 
 from forged.artifacts import Artifact, ArtifactStore
 from forged.notebook import (
@@ -24,6 +30,7 @@ from forged.notebook import (
     patch_from_json,
     render_indexed,
 )
+from forged.pipeline.mode import LessonMode, extract_lesson_mode
 from forged.pipeline.state import Degradation, PipelineStage, PipelineState, StageOutput
 
 from . import Agent, AgentOutput
@@ -44,6 +51,22 @@ _FALLBACK_CELLS = [
 ]
 
 
+_CODE_PERSONA = "code_author.md"
+_ARTIFACT_PERSONA = "artifact_author.md"
+
+# Only the modes that leave the default identity are listed; everything else —
+# executable, and whatever extract_lesson_mode ever falls back to — gets the code author.
+_PERSONA_BY_MODE: Mapping[LessonMode, str] = MappingProxyType({
+    "artifact": _ARTIFACT_PERSONA,
+    "conceptual": _ARTIFACT_PERSONA,
+})
+
+
+def persona_filename(mode: LessonMode) -> str:
+    """The persona file that authors a lesson of ``mode``."""
+    return _PERSONA_BY_MODE.get(mode, _CODE_PERSONA)
+
+
 class CodeAuthorAgent(Agent[AgentOutput]):
     """Converts a lesson plan into a runnable Jupyter notebook.
 
@@ -55,8 +78,27 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         super().__init__(personas_dir=personas_dir, llm_client=llm_client)
 
     def _load_persona(self) -> str:
-        path = self.personas_dir / "code_author.md"
+        path = self.personas_dir / _CODE_PERSONA
         return path.read_text(encoding="utf-8")
+
+    def _persona_for(self, mode: LessonMode) -> str:
+        """The system prompt for a lesson of ``mode``.
+
+        Executable returns the persona the base class loaded at construction, so that
+        path's prompt input is exactly what it was before the split. The artifact persona
+        is read on demand, so a personas dir holding only code_author.md still serves
+        executable lessons.
+        """
+        filename = persona_filename(mode)
+        if filename == _CODE_PERSONA:
+            return self.persona
+        return (self.personas_dir / filename).read_text(encoding="utf-8")
+
+    def _lesson_mode(self, state: PipelineState, store: ArtifactStore) -> LessonMode:
+        """The plan's declared mode; the conservative default when there is no plan."""
+        plan_name = self._latest_plan_name(state)
+        plan_text = store.get(plan_name).content if store.has(plan_name) else ""
+        return extract_lesson_mode(plan_text)
 
     def next_stage(self) -> PipelineStage:
         return PipelineStage.EXECUTOR
@@ -65,8 +107,9 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         user_msg = self._build_user_message(state, store)
         artifact_name = f"lesson_notebook_v{state.iteration}"
         degradation: Degradation | None = None
+        persona = self._persona_for(self._lesson_mode(state, store))
         try:
-            response = self._call_llm(state, store, user_msg, artifact_name)
+            response = self._call_llm(state, store, user_msg, artifact_name, persona)
         except RuntimeError as exc:
             _LOG.warning("CodeAuthorAgent LLM call failed, using fallback cells: %s", exc)
             response = build_notebook(_FALLBACK_CELLS)
@@ -93,6 +136,7 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         store: ArtifactStore,
         user_msg: str,
         output_artifact: str,
+        persona: str,
     ) -> str:
         """Call the LLM and return assembled nbformat notebook JSON."""
         plan_name = self._latest_plan_name(state)
@@ -106,6 +150,7 @@ class CodeAuthorAgent(Agent[AgentOutput]):
             user_msg=user_msg,
             input_artifacts=input_artifacts,
             output_artifact=output_artifact,
+            persona=persona,
         )
         return self._assemble(raw, self._previous_notebook(state, store))
 
