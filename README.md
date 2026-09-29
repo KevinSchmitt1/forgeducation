@@ -346,8 +346,21 @@ templates in `templates/` (ready-to-use examples in `templates/examples/`).
 ```bash
 pip install -e ".[dev]"
 pytest -q                        # offline: no API key needed
-pytest --cov=forged              # with coverage (~92%)
+pytest --cov=forged              # with coverage (~90%)
 ```
+
+**Testing the web UI.** The UI's logic is unit-tested without a browser (`tests/test_service.py`,
+`tests/ui/`); on top of that one end-to-end test drives the real app in Chromium against the offline
+fake LLM — no key, no network, and Launch is a dry run:
+
+```bash
+pip install -e ".[dev,e2e]" && python -m playwright install chromium
+pytest tests/test_service.py tests/ui -q                          # includes the browser e2e
+FORGED_E2E_SCREENSHOTS=tests/ui/screenshots pytest tests/ui/test_browser_e2e.py   # keep screenshots
+```
+
+The browser test skips itself when Playwright or its browser is not installed (as in CI). To click
+through by hand, run `forged ui --fake-llm` and open http://127.0.0.1:7860.
 
 Covers config validation, notebook assembly, cell indexing, the executor catching a
 failing cell, run finalization, summary generation, the acceptance gate, the bounded

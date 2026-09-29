@@ -61,6 +61,12 @@ install timeout and an environment size cap apply.
 - `forged/pipeline/` — agents, graph, state, router, failure classification, lesson-mode inference
   (`mode.py`), provisioning hook
 - `personas/` — the system prompts that define each agent
+- `forged/service.py` — the UI's only door into the backend: `plan` / `preview` / `edit` / `adjust` /
+  `build` step functions over the CLI + curriculum code (no forked pipeline logic). `build` runs the
+  CLI's own `_build_confirmed` in a child process (`python -m forged.service build --request …`).
+- `forged/ui/` — the local BYOK web front door (doc 25): `front_door.py` holds **all** UI behaviour
+  as gradio-free pure steps `(frozen Session, widget values) → (Session, View)`; `app.py` is Gradio
+  wiring only; `fake_llm.py` is the canned offline LLM behind `--fake-llm`
 - `config/pipeline.*.yaml` — stage→model resolution (planner/student/reviewer = gpt-5-mini; code_author/reviser = gpt-5)
 - `docs/architecture/` — design of record; last file is most of the time the most recent work, what was done.
 - `TODO.md` — roadmap and current priorities
@@ -78,6 +84,36 @@ Use the project venv explicitly (the shell's active venv is often something else
 
 CI (`.github/workflows/ci.yml`) runs exactly those three on every PR. Run all three before claiming
 green — `pytest` passing does **not** catch ruff line-length (E501) failures.
+
+### The web UI (`forged ui`) — running and testing it
+
+```bash
+.venv/bin/pip install -e '.[dev,ui,e2e]'          # dev already pulls in ui (so CI tests the UI layer)
+.venv/bin/python -m playwright install chromium  # once; the browser for the e2e
+.venv/bin/python -m forged.cli ui --fake-llm     # offline demo → http://127.0.0.1:7860
+.venv/bin/python -m forged.cli ui                # real mode: paste a key in the page (planner calls bill!)
+
+.venv/bin/python -m pytest tests/test_service.py tests/ui -q                   # units + wiring (~15s)
+FORGED_E2E_SCREENSHOTS=tests/ui/screenshots \
+  .venv/bin/python -m pytest tests/ui/test_browser_e2e.py -q                     # real-browser e2e
+```
+
+- **`--fake-llm` is the only safe way to exercise the UI** without spending: planner, readiness and
+  adjuster calls get canned answers, and **Launch is a dry run** (`DryRunLauncher` writes
+  `ui_request.json` + `ui_launch.log`, spawns nothing). Real mode's *Plan* button makes a paid
+  gpt-5-mini call and *Launch* starts a full paid build — both need the user's consent.
+- **The e2e is the UI's vertical rung** (see "Lane workflow"). It starts `python -m forged.cli ui
+  --fake-llm` as a child process with no key in its env and drives Chromium through
+  validation → inputs → plan → edits → re-plan → undo → confirm → launch. It **skips** when
+  Playwright or a browser is missing, so it is silently skipped in CI — run it locally before
+  claiming a UI change works. Stable selectors are the `fd-*` `elem_id`s in `app.py`.
+- **Put UI behaviour in `front_door.py`, not `app.py`** — it is unit-tested without a browser;
+  `app.py` lambdas only run inside a served app and are not seen by coverage.
+- **BYOK is a tested contract:** the key is a widget value (never `Session` state), scoped to
+  in-process planner calls and handed to the build only via env. Tests assert it never reaches disk,
+  logs, the page text, or `repr(Session)`; keep those assertions when touching the key path.
+- **Docker:** `docker build -t forgeducation . && docker run --rm -p 127.0.0.1:7860:7860 -v
+  "$PWD/runs:/app/runs" forgeducation`. The image installs editable on purpose — see the gotcha below.
 
 ## Verification discipline (written 2026-07-30, after a bad session)
 
@@ -259,6 +295,13 @@ Folded from the retired `DEVELOPMENT.md`; kept current here.
   against an existing `runs/.venv-cache/*` venv. (Making the timeout configurable is a known nice-to-have.)
 - **The planner's `requirements` block is LLM-non-deterministic**, so its content hash changes between
   runs and the venv cache rarely hits across "the same" topic. pip's wheel cache still helps if warm.
+- **A wheel (non-editable) install cannot find `personas/` or `config/`.** They live at the repo root,
+  outside the `forged` package, and `cli.PACKAGE_ROOT` looks next to it. Editable installs work; the
+  Dockerfile installs editable for this reason. Fixing it properly is its own lane (it moves
+  `personas/`, a hot directory).
+- **`python -m ipykernel install --user --name python3` rewrites the machine-wide kernel.** In a
+  worktree it points every checkout's `python3` kernel at *that* worktree's venv. Don't run it from a
+  worktree; the main checkout's venv owns the user kernel.
 - **Git push over SSH has no key in the agent shell.** Push via `gh auth setup-git` + an explicit
   HTTPS remote URL (`git push https://github.com/<org>/<repo>.git <branch>`) rather than assuming the
   SSH remote works.
