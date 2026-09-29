@@ -2,7 +2,7 @@
 
 **Branch:** `feat/author-split` · **Type:** code + persona · **Depends on:** Lane 3 design (✅ #55,
 doc 23), Lane 6 R6→R7 (✅ #60 — the serialization doc 23 Part VI required is satisfied)
-**Status:** not started.
+**Status:** implemented on `feat/author-split`, PR open — green + exercised; live-replay + paid run owed (not validated).
 **Process:** see "Lane workflow" in root `CLAUDE.md`. Read `docs/architecture/23-author-identity-split.md`
 in full (recommendation **B**, the touch-point table, Part IV test plan, Part V DRY risk, Part VI) and
 doc 22's "Implementation note — R6 and R7" (what the post-#60 author persona now contains) first.

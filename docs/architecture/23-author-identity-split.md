@@ -1,8 +1,8 @@
 # 23 — Author-identity split (code author vs artifact author)
 
-**Status:** designed 2026-09-24 · ready to implement — but **implementation serializes after the
-R6/R7 lane** (doc 22); see Part VI. This doc is design-only; its deliverable is validated by review,
-not by a run.
+**Status:** IMPLEMENTED 2026-09-29 (recommendation B, Lane 9 — see "Implementation note" at the
+end) · tests green + exercised offline, **not yet validated** (Lane 1 live-replay + a paid run owed).
+Originally: designed 2026-09-24, serialized after the R6/R7 lane (doc 22, Part VI).
 **Follows:** doc 17 (lesson modes) established that a lesson is `executable` / `artifact` /
 `conceptual`, purely planner-inferred. Doc 22 R5 established the goal-fit verdict. This doc addresses
 one thing 17 left half-done: the *authoring identity* is still singular.
@@ -272,3 +272,54 @@ the pipeline routes to a single author *node* and derives mode from the plan art
 — which is verified in the code, not assumed. No runtime behaviour has been exercised, because the
 deliverable is this document; the implementation's own rungs (exercised on all three modes, then the
 Lane 1 replay + one paid run) are in Part IV.
+
+---
+
+## Implementation note — recommendation B (2026-09-29)
+
+Implemented as designed: two persona files, one author node. Every Part III "no change" held —
+`graph.py`, `router.py`, `failure.py`, `executor.py`, the reviser/`classify()`, `state.py` and
+`config/pipeline.*.yaml` are untouched. Nothing in the design turned out to be wrong; two details
+the doc left open were settled as follows.
+
+**How the agent swaps persona without touching the base class.** `Agent._complete_llm` (in
+`agents/__init__.py`, outside this lane's file map) sends `self.persona`, which the base loads once
+at construction. Rather than widen the base with a `persona=` parameter, `CodeAuthorAgent.run`
+re-derives the mode from the latest plan each run and calls `_for_mode(mode)`: for `executable` it
+returns `self` untouched (so the executable prompt input is exactly what the base always sent —
+pinned by `test_executable_prompt_input_is_pinned`); for `artifact`/`conceptual` it returns a
+shallow copy bound to `artifact_author.md`. The agent itself is never mutated, and the artifact
+persona is read lazily, so a personas dir holding only `code_author.md` still serves executable
+lessons (which every existing test fixture relies on). The mode→file map is a pure function,
+`persona_filename(mode)`, defaulting to `code_author.md` for anything but `artifact`/`conceptual`.
+
+**What "shared" means, mechanically.** Part V asked for verbatim-identical shared sections plus a
+test. The shared machinery is now six whole `##` sections that close both files in the same order:
+*Hard rules that hold in every lesson* (old rules 4–6, numbering kept), *Files the lesson writes,
+and stand-ins* (the `%%writefile` trap and stand-in naming, lifted out of old rule 2 where they sat
+under an artifact-mode note), *Learner orientation*, *Code maps & cell briefs*, *Explanation cells*,
+and *Output format* (including the patch protocol and the R6/R7 remake/digest subsections, to EOF).
+`tests/pipeline/test_author_split.py` splits both files on `## ` headings and requires those six to
+be byte-identical; it is shown to be fail-capable by editing one shared section of one copy (one
+case per heading) and by renaming a shared heading, each of which the check reports. Each file
+differs only in its identity paragraph and its mode-specific sections above the shared block.
+
+**Mode-specific text that moved.** The two artifact-mode sentences that lived inside shared sections
+(the "primary shape of the notebook" note under *Code maps*, and the conceptual zero-code-cells
+clause at the end of *Output format*) moved into `artifact_author.md`'s own sections, so the shared
+block carries no mode branches. `code_author.md` lost its *Lesson mode* section and every inline
+`artifact`-mode note; its rules 1–3 are unchanged text.
+
+**One deliberate semantic change.** The old conceptual branch said rules 1–4 "all assume code cells
+exist" and do not apply. Rule 4 (never state a specific numeric result in markdown) does not in fact
+assume code cells, and with nothing running a number in prose has no source at all — so the new
+*Conceptual lessons* section keeps rule 4 in force and suspends only the artifact rules 1–3.
+
+**Confidence.** Green (ruff / mypy / pytest ≥80%) and **exercised**: the real agent was driven
+offline with a stub LLM client against real plans — an executable plan from a 2026-07-30 run, the
+doc-22 corpus artifact plan, and (no real conceptual plan exists in any run) that executable plan
+with its fence swapped to `conceptual` — and the system prompt it sent was byte-equal to
+`code_author.md`, `artifact_author.md` and `artifact_author.md` respectively. **Not validated:**
+whether `artifact_author.md` actually authors better artifact/conceptual lessons than the bolted-on
+branches did is an LLM-judgement question, answered only by the Lane 1 live-replay
+(`pytest -m live`) plus one paid run — both owed.
