@@ -30,13 +30,25 @@ dev = [
     "ruff>=0.6.0",          # lint + import sorting
     "mypy>=1.11.0",         # static type checking
     "types-PyYAML>=6.0",    # stubs for the yaml import
+    "forged[ui]",           # so CI type-checks and tests the UI layer too
+]
+# The local BYOK web front door (`forged ui`, doc 25). Optional so the CLI stays lean.
+ui = [
+    "gradio>=5.0,<6",
+]
+# Drives the UI in a real browser (tests/ui/test_browser_e2e.py; needs
+# `playwright install chromium`). Skipped when absent, so CI does not need it.
+e2e = [
+    "playwright>=1.45",
 ]
 
 [project.scripts]
 forged = "forged.cli:main"
 
-[tool.setuptools]
-packages = ["forged", "forged.pipeline", "forged.pipeline.agents"]
+# Discover every forged.* package: the hand-kept list omitted forged.curriculum, which
+# broke any non-editable install (e.g. a wheel) at import time.
+[tool.setuptools.packages.find]
+include = ["forged*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -44,6 +56,7 @@ markers = [
     "unit: fast, isolated unit tests (no I/O, no LLM)",
     "integration: tests that integrate multiple modules",
     "live: opts out of the no-billable-calls guard; may reach a real, paid LLM API",
+    "e2e: drives the UI in a real browser (needs the e2e extra + a Playwright browser)",
 ]
 
 [tool.ruff]

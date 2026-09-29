@@ -1,7 +1,7 @@
 # Lane 8 — UI frontend v1: local BYOK front door (CODE, additive)
 
 **Branch:** `feat/ui-frontend` · **Type:** code, additive · **Depends on:** Lane 7 (✅ #59)
-**Status:** not started.
+**Status:** built, PR open (2026-09-29) — service layer + Gradio app + `forged ui` + Dockerfile; driven end to end in a real browser against the offline fake LLM (screenshots in `tests/ui/screenshots/`). Confidence: *exercised* (not *validated* — no paid run). Docker image not built (daemon not running on the build machine). Follow-up: a wheel install cannot locate `personas/`/`config/` (repo-root data, outside the package) — the image installs editable.
 **Process:** see "Lane workflow" in root `CLAUDE.md`. Read `docs/architecture/25-ui-exploration.md`
 in full (scope, stack recommendation, first-implementer plan steps 2–4, open questions) and
 `docs/architecture/19-*.md` (build from a saved plan) first.

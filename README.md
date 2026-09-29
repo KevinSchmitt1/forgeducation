@@ -131,6 +131,35 @@ Output lands in `./runs/<timestamp>_<slug>/` for a single lesson (or `./runs/<ti
 for a course): open `lesson.ipynb`, read `SUMMARY.md`. Cap cost with `--max-modules N` (limit how many
 course modules actually run) and `--no-provision` (skip per-lesson virtualenv building).
 
+### The web front door (`forged ui`)
+
+Prefer a form to YAML? `forged ui` serves a local page that does the same plan → confirm → build
+flow in a browser: typed inputs for the learner profile and topic spec (dropdowns for the enums,
+add/remove rows for the lists, validation shown inline), the plan preview (modules, per-module
+lesson mode, cost estimate, fidelity), plan edits (merge / drop / reorder / single lesson / set a
+module's mode, or a plain-language change for a guided re-plan, with undo), and **Launch**. The
+build runs as a child process into `./runs/…`; the page shows the run directory and points you at
+Langfuse for watching it. Live streaming and notebook reading are deliberately not in the UI.
+
+```bash
+pip install -e '.[ui]'        # Gradio is an optional extra; the CLI stays lean
+forged ui                     # → http://127.0.0.1:7860  (also: python -m forged.ui)
+forged ui --fake-llm          # offline demo: canned plans, no API calls, launch is a dry run
+```
+
+**Bring your own key.** Paste your OpenAI key into the page. It is held in memory only, used for
+the planner calls, and handed to the build process through its environment — never written to
+disk, never logged, never part of a prompt or trace. (A key already in the environment or `.env`
+is used when the field is blank.)
+
+**Docker** (single-tenant; the container is also the sandbox the generated notebooks run in):
+
+```bash
+docker build -t forgeducation .
+docker run --rm -p 127.0.0.1:7860:7860 -v "$PWD/runs:/app/runs" forgeducation
+# → open http://localhost:7860 and paste your key
+```
+
 ### Other commands
 
 There is **one** build command — `forged learn`. It plans first and decides for itself whether your
@@ -140,6 +169,7 @@ utilities:
 | Command | What it's for |
 |---|---|
 | `forged learn --topic … --plan-only [--out DIR]` | Print the plan and its coverage verdict, then stop. Cheap (one planner call) and builds nothing — the way to see the shape of a course before spending on it. `--out` also saves `course_plan.json` + `COURSE.md`. |
+| `forged ui [--fake-llm]` | The local web front door above (needs `pip install -e '.[ui]'`). |
 | `forged pipelines` | List the bundled pipeline configs. |
 | `forged clean --keep N` | Prune old run directories (asks before deleting). |
 

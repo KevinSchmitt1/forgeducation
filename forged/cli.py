@@ -18,6 +18,7 @@ what produced over-large lessons.
     forged learn --topic "Hash maps" --plan-only
 
 Other commands:
+  forged ui                   # local web front door (needs: pip install 'forged[ui]')
   forged pipelines            # list the bundled pipeline configs
   forged clean --keep 10      # prune old runs (asks before deleting)
 
@@ -72,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_clean(args)
     if args.command == "pipelines":
         return _cmd_pipelines(args)
+    if args.command == "ui":
+        return _cmd_ui(args)
     return _cmd_learn(args)
 
 
@@ -243,6 +246,29 @@ def _run_agentic_lesson(
         logger.exception("Agentic pipeline failed: %s", exc)
         print(f"\n✗ Pipeline failed: {exc}", file=sys.stderr)
         return EXIT_RUNTIME
+
+
+def _cmd_ui(args) -> int:
+    """Serve the local bring-your-own-key web front door (doc 25). Gradio is an optional
+    extra, so a missing install is a usage error with the fix, not a traceback."""
+    if not 1 <= args.port <= 65535:
+        print(f"✗ --port must be 1–65535, got {args.port}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        from .ui.app import serve
+    except ImportError as exc:
+        print(
+            f"✗ the UI needs its optional dependencies ({exc.name or exc}): "
+            "pip install 'forged[ui]'",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    _load_dotenv(Path.cwd() / ".env")
+    _load_dotenv(PACKAGE_ROOT / ".env")
+    mode = " (offline demo: canned plans, dry-run launch)" if args.fake_llm else ""
+    print(f"▶ forgeducation UI on http://{args.host}:{args.port}{mode}")
+    serve(host=args.host, port=args.port, runs=Path(args.runs), fake_llm=args.fake_llm)
+    return EXIT_OK
 
 
 def _cmd_pipelines(args) -> int:
@@ -457,7 +483,8 @@ def _report_plan_only(course, requested_capabilities: list[str], out: Path | Non
 
 
 def _apply_readiness_preflight(
-    course, personas_dir: Path, planner, topic: str, learner_profile, topic_spec
+    course, personas_dir: Path, planner, topic: str, learner_profile, topic_spec,
+    assessor=None,
 ):
     """Doc 14 Part III: before any paid build, check whether a plan the CurriculumPlanner
     sized to a single module is honestly reachable for this learner.
@@ -468,11 +495,15 @@ def _apply_readiness_preflight(
     an N-module course that flows into the existing, unchanged gate/build path. Fails open
     (returns the original plan) on any re-plan error — never blocks a build over an
     escalation attempt that itself failed.
+
+    `assessor` is injectable so the UI service (`forged.service`) can hand in one bound
+    to its own LLM client; the CLI leaves it None and gets the real one.
     """
     if len(course.modules) != 1:
         return course
 
-    assessor = ReadinessAssessor(personas_dir=personas_dir)
+    if assessor is None:
+        assessor = ReadinessAssessor(personas_dir=personas_dir)
     verdict = assessor.assess(
         brief=topic, learner_profile=learner_profile, topic_spec=topic_spec
     )
@@ -536,18 +567,39 @@ def _run_plan_gate(
     return outcome.course if outcome.confirmed else None
 
 
-def _build_confirmed(
-    args, course, learner_profile, topic, pipeline, personas_dir, original_capabilities
-) -> int:
-    """Build a confirmed plan: 1 module → single lesson, N modules → course orchestration."""
+def _run_stamp() -> str:
+    """The timestamp prefix every run directory carries."""
     from datetime import datetime
 
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def _planned_run_dir(course, topic: str, runs_root: Path, stamp: str) -> Path:
+    """Where `_build_confirmed` will write this plan's output.
+
+    1 module → `{stamp}_{module-title-slug}`; N modules → `{stamp}_course_{topic-slug}`.
+    Extracted so the UI service can tell the user the run dir before the build starts.
+    """
+    if len(course.modules) == 1:
+        return Path(runs_root) / f"{stamp}_{_dir_slug(course.modules[0].spec.title)}"
+    return Path(runs_root) / f"{stamp}_course_{_dir_slug(topic)}"
+
+
+def _build_confirmed(
+    args, course, learner_profile, topic, pipeline, personas_dir, original_capabilities,
+    stamp: str | None = None,
+) -> int:
+    """Build a confirmed plan: 1 module → single lesson, N modules → course orchestration.
+
+    `stamp` pins the run-dir timestamp (the UI service announces the dir before launching
+    the build); the CLI leaves it None and stamps now.
+    """
+    stamp = stamp or _run_stamp()
     provision = not getattr(args, "no_provision", False)
+    run_dir = _planned_run_dir(course, topic, Path(args.runs), stamp)
 
     if len(course.modules) == 1:
         module = course.modules[0]
-        run_dir = Path(args.runs) / f"{stamp}_{_dir_slug(module.spec.title)}"
         print(f"\n▶ Running 1 module lesson into {run_dir} …")
         return _run_agentic_lesson(
             topic=module.spec.title,
@@ -578,7 +630,7 @@ def _build_confirmed(
         )
         return EXIT_RUNTIME
 
-    course_dir = Path(args.runs) / f"{stamp}_course_{_dir_slug(topic)}"
+    course_dir = run_dir
     course_dir.mkdir(parents=True, exist_ok=True)
     _persist_course(course_dir, course, report)
 
@@ -709,6 +761,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Enable DEBUG logging for a single-lesson build.",
     )
     learn.add_argument("--personas", default=str(DEFAULT_PERSONAS), help=argparse.SUPPRESS)
+
+    ui = sub.add_parser(
+        "ui",
+        help="Serve the local web front door: author inputs, edit the plan, launch "
+             "(bring your own key; needs pip install 'forged[ui]')",
+    )
+    ui.add_argument(
+        "--host", default="127.0.0.1",
+        help="Interface to bind (default: 127.0.0.1; the Docker image uses 0.0.0.0).",
+    )
+    ui.add_argument("--port", type=int, default=7860, help="Port to serve on (default: 7860).")
+    ui.add_argument(
+        "--runs", default=str(Path.cwd() / "runs"),
+        help="Root directory for run output (default: ./runs).",
+    )
+    ui.add_argument(
+        "--fake-llm", action="store_true",
+        help="Offline demo: canned plans, no API calls, and Launch is a dry run.",
+    )
 
     clean = sub.add_parser("clean", help="Prune old run directories (manual, confirmed)")
     clean.add_argument(
