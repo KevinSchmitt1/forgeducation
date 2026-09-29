@@ -1,6 +1,6 @@
 # 22 — A review that points at the fix
 
-**Status:** designed 2026-08-16 · **R1 + R2 + R5 IMPLEMENTED 2026-08-21** (R3, R4, R6–R8 not built)
+**Status:** designed 2026-08-16 · **R1 + R2 + R5 IMPLEMENTED 2026-08-21 · R6 + R7 IMPLEMENTED 2026-09-29** (R3, R4, R8 not built)
 See "Implementation note — R1 and R2" at the end of this file, which also **corrects
 Part VI's validation criterion for R1**: as written it was already satisfied before the
 change, and the real test is a counterfactual.
@@ -141,8 +141,8 @@ only thing that makes a rewrite an improvement rather than another sample.
 | R3 | Findings name a target cell and what it must satisfy | grader JSON schema + personas | code + persona | ⬜ |
 | R4 | Severity is calibrated to consequence, with the `PASSWORD` case as the worked example | `student.md`, `reviewer.md` | persona | ⬜ |
 | R5 | New rubric dimension for goal fit / necessity / sufficiency, mode-aware | `failure.py` + all grader personas | code + persona | ✅ 2026-08-21 (as a separate verdict, not a dimension) |
-| R6 | `critique_digest` accumulates findings across iterations | `reviser.py` | code | ⬜ |
-| R7 | Remake is a recorded decision, informed by the digest | `reviser.py`, `code_author.md` | code + persona | ⬜ |
+| R6 | `critique_digest` accumulates findings across iterations | `reviser.py` | code | ✅ 2026-09-29 |
+| R7 | Remake is a recorded decision, informed by the digest | `reviser.py`, `code_author.md` | code + persona | ✅ 2026-09-29 |
 | R8 | C6 non-convergence signal ("look for a systematic cause") | `reviser.py` brief text | code | ⬜ |
 
 ## Part V — Sequencing
@@ -320,3 +320,81 @@ artifacts. What is proven offline is the plumbing: routing, merge semantics, the
 degrade-to-None path, the drift asymmetry, and survival of the round trip through the
 student's parse step. Whether the critics *use* the verdict well is the next paid run's
 question — and v3's 26-cell notebook is the specific case to look at.
+
+---
+
+## Implementation note — R6 and R7 (2026-09-29)
+
+### R6 — the digest is a pure function of accumulated findings, not a running mutation
+
+`forged/pipeline/digest.py` builds a `CritiqueDigest` from a sequence of
+`IterationFindings` (the merged critic findings for each iteration, recorded on
+`PipelineState.critique_history` via `with_iteration_findings`). Building it is a pure
+function: the Reviser recomputes the whole digest each iteration rather than appending
+to a mutable one, so there is no order-dependence and the offline check reproduces the
+run exactly. The Reviser records the iteration's findings and writes a standalone
+`critique_digest_v{N}` artifact on **every** return path — terminal included — so a
+finding is never lost to a terminal run.
+
+**Deduplication is mechanical, and it had to be.** The same issue is restated across
+both critics and across iterations in different words, and — because the notebook is
+rewritten each round — at *different cell indices*, so it cannot be keyed on location.
+Findings are clustered by a document-frequency-weighted token-overlap **within the same
+scope**: rare, distinctive tokens (`password`, `regex`, `forbidden`) carry the signal,
+common filler does not. Plain bag-of-words was measured and rejected — on the corpus a
+non-PASSWORD finding scored as high (0.31) against a PASSWORD one as some PASSWORD pairs
+did, so it could not separate them. DF-weighting opened a clean gap
+(PASSWORD↔PASSWORD ≥ 0.34, PASSWORD↔other ≤ 0.21); the threshold sits at **0.33**,
+centred in that gap. IDF is smoothed (`log((N+1)/df)`) so it stays positive on a tiny
+early-iteration corpus where every token would otherwise appear in every finding.
+
+**Ordering is by consequence, and recurrence leads it.** This is the D3 fix: the
+`PASSWORD` self-referential-validator bug was filed LOW in three separate iterations and
+buried under transient blockers each time. A finding that *recurs* across iterations is
+one repeated patching never removed (the C6 signal), so recurrence is the primary sort
+key, severity the tiebreak. A persistent LOW rightly outranks a one-off BLOCKER, because
+the transient blocker is already carried by the per-iteration brief and the execution
+report (R2), while the recurring root cause is exactly what a remake needs to see.
+
+### R6's Part VI check, run — and shown to be able to fail
+
+Part VI: *rebuild the digest from the existing per-iteration critiques and check the
+`PASSWORD` finding survives to the top.* Rebuilt through the Reviser's own finding
+parser over the four corpus iterations, the PASSWORD cluster (recurrence 3, four
+restatements across iters 1–3) lands at rank 1. Following R1's lesson — *a check that
+cannot fail proves nothing* — the counterfactual is pinned alongside it: the digest
+built from **only the last iteration** (today's non-accumulating behaviour) does **not**
+surface PASSWORD to the top; there it is a lone nitpick below the iteration's blockers.
+That is the state R6 changes, and if accumulation regressed to last-only the top-of-
+digest assertion would start failing. Both are in
+`tests/pipeline/test_critique_digest_corpus.py`.
+
+### R7 — the remake decision is recorded, never silent
+
+`forged/pipeline/remake.py`'s `decide_remake` is a deterministic judgement from evidence
+the Reviser already has: how many repair rounds have run
+(`get_stage_attempt_count(CODE_AUTHOR)`) and whether a finding has persisted across them
+(the digest's max recurrence — the non-convergence signal). It is weighed **only on a
+code-author route** (a rewrite is the author's tool, not the planner's), and its
+`RemakeDecision.reason` is **always populated** — remake or not — and written into the
+revision brief as a `## Remake decision` block, mirroring how the router always records
+a routing reason. A remake therefore can never happen silently. The thresholds
+(`REMAKE_MIN_REPAIR_ATTEMPTS = 2`, `REMAKE_PERSISTENCE = 3`) are named and justified
+against the corpus, but the load-bearing guarantee is the recording, not the number.
+
+On a remake the brief carries the **whole** digest and the action items say *return the
+full cell array, start from the most persistent findings*; on a normal repair the brief
+carries only the head of the digest (top 8) so accumulated context does not bury the
+specific cells the patch names. `personas/code_author.md` gained a "When the brief calls
+for a remake" section that reads the decision and the digest accordingly.
+
+### Confidence level
+
+**R6: test-green and validated offline against the real corpus, with a check proven able
+to fail.** No paid run needed — the digest is a pure function of findings the corpus
+already contains. **R7: test-green and exercised at the Reviser entry point; its remake
+*behaviour* is not yet validated by a paid run.** The unit tests prove the decision
+fires on non-convergence, holds off early, and is always recorded; whether the author
+*produces a better notebook* from the digest on a real remake is the live-replay
+harness's question and then the paid artifact-lesson run's — that run belongs to the
+roadmap, not this change.

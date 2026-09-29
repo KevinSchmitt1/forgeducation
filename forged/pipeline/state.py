@@ -101,6 +101,24 @@ class Evidence:
 
 
 @dataclass(frozen=True)
+class IterationFindings:
+    """Every finding raised in one revision iteration, kept for the critique digest.
+
+    The Reviser records the merged critic findings for each iteration here, so the
+    digest (docs/architecture/22 → R6) can be rebuilt as a pure function of the whole
+    run's history rather than mutated in place. Before this, every agent read only
+    `revision_brief_v{iteration - 1}` and each iteration's critique superseded the
+    last (D5) — this is the accumulation that fixes that.
+
+    findings is a tuple (not a list) so the record stays hashable and unmistakably
+    immutable, matching the other frozen value objects in this module.
+    """
+
+    iteration: int
+    findings: tuple[Evidence, ...] = ()
+
+
+@dataclass(frozen=True)
 class RoutingDecision:
     """One routing event in the audit trail.
 
@@ -205,6 +223,7 @@ class PipelineState:
     routing_log: list[RoutingDecision] = field(default_factory=list)
     degradations: list[Degradation] = field(default_factory=list)
     topic_fidelity: list[TopicFidelitySignal] = field(default_factory=list)
+    critique_history: list[IterationFindings] = field(default_factory=list)
 
     is_terminal: bool = False
     terminal_reason: str | None = None
@@ -264,6 +283,18 @@ class PipelineState:
         capability is surfaced in the run summary rather than lost (R1).
         """
         return replace(self, topic_fidelity=self.topic_fidelity + [signal])
+
+    def with_iteration_findings(
+        self, iteration: int, findings: tuple[Evidence, ...]
+    ) -> PipelineState:
+        """Return a new state with one iteration's findings recorded for the digest.
+
+        Creates a new list to preserve immutability, mirroring with_topic_fidelity().
+        The Reviser calls this each pass so the critique digest (R6) accumulates every
+        iteration's findings instead of each superseding the last.
+        """
+        record = IterationFindings(iteration=iteration, findings=findings)
+        return replace(self, critique_history=self.critique_history + [record])
 
     def with_attempt(self, stage: PipelineStage) -> PipelineState:
         """Return a new state with the attempt counter for a stage incremented.

@@ -25,6 +25,7 @@ from forged.artifacts import ArtifactStore
 if TYPE_CHECKING:
     from forged.pipeline.mode import LessonMode
     from forged.pipeline.structure import StructuralReport
+from forged.pipeline.digest import CritiqueDigest, build_digest, render_digest
 from forged.pipeline.failure import (
     GOAL_FIT_PROBLEMS,
     RUBRIC_DIMENSIONS,
@@ -35,6 +36,7 @@ from forged.pipeline.failure import (
     RubricScores,
     classify,
 )
+from forged.pipeline.remake import RemakeDecision, decide_remake
 from forged.pipeline.router import Router, RoutingBudget, RoutingRequest
 from forged.pipeline.state import (
     Evidence,
@@ -50,6 +52,11 @@ from forged.pipeline.state import (
 from . import Agent, AgentOutput
 
 _LOG = logging.getLogger(__name__)
+
+# How many digest entries a *patch* brief carries. A remake gets the whole digest;
+# a patch gets just the head — the most persistent findings — so the accumulated
+# context does not bury the specific cells the brief names.
+_DIGEST_BRIEF_LIMIT = 8
 
 
 class RevisorAgent(Agent[AgentOutput]):
@@ -89,6 +96,14 @@ class RevisorAgent(Agent[AgentOutput]):
         if fidelity_signal is not None:
             state = state.with_topic_fidelity(fidelity_signal)
 
+        # Accumulate this iteration's findings so the critique digest carries every
+        # iteration's critique, not just the last brief (R6). Recorded up front, on
+        # every return path, so the digest never loses a finding to a terminal run.
+        merged_findings = tuple(grade_report.findings) if grade_report else ()
+        state = state.with_iteration_findings(state.iteration, merged_findings)
+        digest = build_digest(state.critique_history)
+        self._write_digest_artifact(state, store, digest)
+
         classification = classify(
             exec_report,
             grade_report,
@@ -109,12 +124,28 @@ class RevisorAgent(Agent[AgentOutput]):
         if result.next_stage is None:
             raise RuntimeError("Router returned non-terminal result with no next_stage")
 
+        # A remake is only weighed on a code-author route — a rewrite is the author's
+        # tool, not the planner's or the prose reviser's. The decision is recorded in
+        # the brief either way (repair or remake), so it is never silent (R7).
+        remake_decision = None
+        if result.next_stage == PipelineStage.CODE_AUTHOR:
+            remake_decision = decide_remake(
+                state.get_stage_attempt_count(PipelineStage.CODE_AUTHOR), digest
+            )
+            _LOG.info(
+                "RevisorAgent: remake=%s — %s",
+                remake_decision.remake,
+                remake_decision.reason,
+            )
+
         brief = self._synthesize_revision_brief(
             exec_report,
             grade_report,
             classification,
             result.next_stage,
             diagnosis=self._diagnose_failures(state, store),
+            digest=digest,
+            remake_decision=remake_decision,
         )
         brief_name = f"revision_brief_v{state.iteration}"
         store.put(Artifact(name=brief_name, kind="text", content=brief))
@@ -461,6 +492,27 @@ class RevisorAgent(Agent[AgentOutput]):
             _LOG.warning("RevisorAgent: could not diagnose failures: %s", exc)
             return None
 
+    def _write_digest_artifact(
+        self, state: PipelineState, store: ArtifactStore, digest: CritiqueDigest
+    ) -> None:
+        """Persist the accumulated critique digest as its own run artifact.
+
+        Written every iteration (even at termination) so the run dir keeps a standalone
+        record of what accumulated, independent of any single brief. Empty digests are
+        skipped — there is nothing to record on a first pass with no findings yet.
+        """
+        from forged.artifacts import Artifact
+
+        if digest.is_empty:
+            return
+        store.put(
+            Artifact(
+                name=f"critique_digest_v{state.iteration}",
+                kind="text",
+                content=render_digest(digest),
+            )
+        )
+
     def _synthesize_revision_brief(
         self,
         exec_report: ExecutionReport | None,
@@ -468,6 +520,8 @@ class RevisorAgent(Agent[AgentOutput]):
         classification,
         next_stage: PipelineStage,
         diagnosis: str | None = None,
+        digest: CritiqueDigest | None = None,
+        remake_decision: RemakeDecision | None = None,
     ) -> str:
         """Create structured feedback artifact for rerouted agents.
 
@@ -478,6 +532,14 @@ class RevisorAgent(Agent[AgentOutput]):
         lines.append(f"**Classification**: {classification.category.value}\n")
         lines.append(f"**Reason**: {classification.reason}\n")
         lines.append(f"**Next Stage**: {next_stage.value}\n\n")
+
+        # The remake decision is the first thing an author must read: it changes
+        # whether they patch the named cells or rewrite the lesson wholesale. Recorded
+        # here on every code-author route, remake or not, so it is never silent (R7).
+        if remake_decision is not None:
+            verdict = "REMAKE" if remake_decision.remake else "Repair (default)"
+            lines.append("## Remake decision\n")
+            lines.append(f"**{verdict}** — {remake_decision.reason}\n\n")
 
         if exec_report:
             lines.append("## Execution Report\n")
@@ -523,10 +585,29 @@ class RevisorAgent(Agent[AgentOutput]):
                     lines.append(f"  - [{finding.severity}{src}] {loc}{finding.text}\n")
             lines.append("\n")
 
+        # The accumulated critique (R6). On a remake the author gets the whole digest —
+        # "write it again knowing everything the critics have said" is the point. On a
+        # patch it is capped: enough persistent context to avoid re-breaking a root
+        # cause, without burying the named cells under the full history.
+        if digest is not None and not digest.is_empty:
+            is_remake = remake_decision is not None and remake_decision.remake
+            rendered = render_digest(digest, limit=None if is_remake else _DIGEST_BRIEF_LIMIT)
+            if rendered:
+                lines.append(rendered)
+                lines.append("\n")
+
         lines.append("## Action Items\n")
         if next_stage == PipelineStage.CODE_AUTHOR:
-            lines.append("- Fix the code failures listed above\n")
-            lines.append("- Ensure all cells execute without error\n")
+            if remake_decision is not None and remake_decision.remake:
+                lines.append(
+                    "- **Remake the notebook** (return the full cell array, not a patch), "
+                    "guided by the accumulated critique above — start from the most "
+                    "persistent findings, which earlier patches never fixed\n"
+                )
+                lines.append("- Ensure all cells execute without error\n")
+            else:
+                lines.append("- Fix the code failures listed above\n")
+                lines.append("- Ensure all cells execute without error\n")
         elif next_stage == PipelineStage.PLANNER:
             lines.append("- Revise the lesson structure and learning objectives\n")
             lines.append("- Address the quality gaps identified above\n")
