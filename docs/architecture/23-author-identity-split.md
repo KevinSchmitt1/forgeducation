@@ -282,16 +282,19 @@ Implemented as designed: two persona files, one author node. Every Part III "no 
 `config/pipeline.*.yaml` are untouched. Nothing in the design turned out to be wrong; two details
 the doc left open were settled as follows.
 
-**How the agent swaps persona without touching the base class.** `Agent._complete_llm` (in
-`agents/__init__.py`, outside this lane's file map) sends `self.persona`, which the base loads once
-at construction. Rather than widen the base with a `persona=` parameter, `CodeAuthorAgent.run`
-re-derives the mode from the latest plan each run and calls `_for_mode(mode)`: for `executable` it
-returns `self` untouched (so the executable prompt input is exactly what the base always sent —
-pinned by `test_executable_prompt_input_is_pinned`); for `artifact`/`conceptual` it returns a
-shallow copy bound to `artifact_author.md`. The agent itself is never mutated, and the artifact
-persona is read lazily, so a personas dir holding only `code_author.md` still serves executable
-lessons (which every existing test fixture relies on). The mode→file map is a pure function,
+**How the agent swaps persona: one optional argument on the base class.** `Agent._complete_llm`
+(`agents/__init__.py`) used to always send `self.persona`, loaded once at construction. It now takes
+an optional `persona=` that overrides it for that call only; every other agent omits it and is
+unchanged. `CodeAuthorAgent.run` re-derives the mode from the latest plan each run and passes
+`_persona_for(mode)`: for `executable` that is the base-loaded `self.persona` itself (so the
+executable prompt input is exactly what it always was — pinned by
+`test_executable_prompt_input_is_pinned`); for `artifact`/`conceptual` it is `artifact_author.md`,
+read on demand, so a personas dir holding only `code_author.md` still serves executable lessons
+(which every existing test fixture relies on). The agent is never mutated — `self.persona` stays the
+code persona after an artifact run (tested). The mode→file map is a pure function,
 `persona_filename(mode)`, defaulting to `code_author.md` for anything but `artifact`/`conceptual`.
+The first cut bound a shallow copy of the agent instead, to stay out of `agents/__init__.py`
+(outside the lane's file map); the kwarg was chosen in review as the plainer mechanism.
 
 **What "shared" means, mechanically.** Part V asked for verbatim-identical shared sections plus a
 test. The shared machinery is now six whole `##` sections that close both files in the same order:

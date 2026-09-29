@@ -323,3 +323,39 @@ def test_both_authors_carry_the_load_bearing_invariants(name: str) -> None:
     assert "Stand-ins must announce themselves" in text
     assert "Remake decision" in text  # R7
     assert "Accumulated critique" in text  # R6
+
+
+# ── the base class carries the per-call persona; the agent is never mutated ──────
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("override", "expected"), [(None, "BASE"), ("OVERRIDE", "OVERRIDE")])
+def test_complete_llm_sends_the_override_persona_only_when_given(
+    tmp_path: Path, override: str | None, expected: str
+) -> None:
+    store = _store(tmp_path)
+    client = _StubClient("[]")
+    agent = CodeAuthorAgent(personas_dir=PERSONAS, llm_client=client)
+    agent.persona = "BASE"
+
+    agent._complete_llm(
+        stage_name=PipelineStage.CODE_AUTHOR,
+        state=create_initial_state(run_id="override"),
+        store=store,
+        user_msg="u",
+        input_artifacts=(),
+        output_artifact="x",
+        persona=override,
+    )
+
+    assert client.system_prompts == [expected]
+
+
+@pytest.mark.unit
+def test_an_artifact_run_leaves_the_agents_own_persona_untouched(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    agent = CodeAuthorAgent(personas_dir=PERSONAS, llm_client=_StubClient(json.dumps(CELLS)))
+
+    _run(agent, _first_pass(store, _plan("artifact")), store)
+
+    assert agent.persona == _read(CODE_PERSONA)

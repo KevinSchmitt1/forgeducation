@@ -17,7 +17,6 @@ assembly into .ipynb happens here, exactly as in the linear LLMAgent.
 
 from __future__ import annotations
 
-import copy
 import logging
 from collections.abc import Mapping
 from pathlib import Path
@@ -82,20 +81,18 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         path = self.personas_dir / _CODE_PERSONA
         return path.read_text(encoding="utf-8")
 
-    def _for_mode(self, mode: LessonMode) -> CodeAuthorAgent:
-        """This agent, speaking as the author ``mode`` calls for.
+    def _persona_for(self, mode: LessonMode) -> str:
+        """The system prompt for a lesson of ``mode``.
 
-        The executable path returns ``self`` untouched, so its prompt input is exactly
-        what it was before the split. Other modes get a shallow copy bound to the
-        artifact persona: the base class's ``_complete_llm`` sends ``self.persona``, and
-        a copy keeps this agent immutable across runs of different modes.
+        Executable returns the persona the base class loaded at construction, so that
+        path's prompt input is exactly what it was before the split. The artifact persona
+        is read on demand, so a personas dir holding only code_author.md still serves
+        executable lessons.
         """
         filename = persona_filename(mode)
         if filename == _CODE_PERSONA:
-            return self
-        bound = copy.copy(self)
-        bound.persona = (self.personas_dir / filename).read_text(encoding="utf-8")
-        return bound
+            return self.persona
+        return (self.personas_dir / filename).read_text(encoding="utf-8")
 
     def _lesson_mode(self, state: PipelineState, store: ArtifactStore) -> LessonMode:
         """The plan's declared mode; the conservative default when there is no plan."""
@@ -110,9 +107,9 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         user_msg = self._build_user_message(state, store)
         artifact_name = f"lesson_notebook_v{state.iteration}"
         degradation: Degradation | None = None
-        author = self._for_mode(self._lesson_mode(state, store))
+        persona = self._persona_for(self._lesson_mode(state, store))
         try:
-            response = author._call_llm(state, store, user_msg, artifact_name)
+            response = self._call_llm(state, store, user_msg, artifact_name, persona)
         except RuntimeError as exc:
             _LOG.warning("CodeAuthorAgent LLM call failed, using fallback cells: %s", exc)
             response = build_notebook(_FALLBACK_CELLS)
@@ -139,6 +136,7 @@ class CodeAuthorAgent(Agent[AgentOutput]):
         store: ArtifactStore,
         user_msg: str,
         output_artifact: str,
+        persona: str,
     ) -> str:
         """Call the LLM and return assembled nbformat notebook JSON."""
         plan_name = self._latest_plan_name(state)
@@ -152,6 +150,7 @@ class CodeAuthorAgent(Agent[AgentOutput]):
             user_msg=user_msg,
             input_artifacts=input_artifacts,
             output_artifact=output_artifact,
+            persona=persona,
         )
         return self._assemble(raw, self._previous_notebook(state, store))
 

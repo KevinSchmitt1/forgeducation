@@ -129,8 +129,16 @@ class Agent(ABC, Generic[T]):
         input_artifacts: tuple[str, ...],
         output_artifact: str,
         response_format: dict | None = None,
+        persona: str | None = None,
     ) -> str:
+        """Complete one LLM call for this stage.
+
+        ``persona`` overrides ``self.persona`` for this call only — for an agent whose
+        identity depends on the run (the author picks its persona per lesson mode, doc 23).
+        """
         from forged.llm import LLMTraceContext
+
+        system_prompt = self.persona if persona is None else persona
 
         artifact_names = list(input_artifacts)
         if store.has("lesson_context") and "lesson_context" not in artifact_names:
@@ -153,13 +161,13 @@ class Agent(ABC, Generic[T]):
         )
         if response_format is None:
             return self._llm_client.complete(
-                self.persona,
+                system_prompt,
                 user_msg,
                 trace_context=trace_context,
             )
 
         return self._llm_client.complete(
-            self.persona,
+            system_prompt,
             user_msg,
             trace_context=trace_context,
             response_format=response_format,
