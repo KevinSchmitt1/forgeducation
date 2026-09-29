@@ -1,7 +1,9 @@
 # Lane 7 — UI backend seam (`course_from_dict` + gate-as-step-function) (CODE, additive)
 
 **Branch:** `feat/ui-backend-seam` · **Type:** code, additive · **Depends on:** none
-**Status:** not started.
+**Status:** scope 1–2 implemented + exercised (`course_from_dict` round-trips a real
+`course_plan.json`; `apply_adjustment` is the callable step function `run_gate` now drives).
+Scope 3 (service wrapper) deliberately deferred to the UI lane (YAGNI — no consumer yet). CI green.
 **Process:** see "Lane workflow" in root `CLAUDE.md`. Read `docs/architecture/25-*.md`
 ("First-implementer plan" + "Why the backend is more ready than it looks") and
 `docs/architecture/19-*.md` (identifies the `course_from_dict` gap) first.

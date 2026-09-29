@@ -13,7 +13,13 @@ import io
 import pytest
 
 from forged.curriculum.adjuster import AdjustmentIntent
-from forged.curriculum.gate import GateOutcome, render_plan, run_gate
+from forged.curriculum.gate import (
+    AdjustmentResult,
+    GateOutcome,
+    apply_adjustment,
+    render_plan,
+    run_gate,
+)
 from forged.curriculum.model import CourseSpec, ModuleSpec
 from forged.models import TopicSpecification
 
@@ -323,3 +329,120 @@ def test_the_scope_note_reads_naturally_for_a_single_module() -> None:
 
     assert "for the 1 module that will run" in text
     assert "module(s)" not in text
+
+
+# ── apply_adjustment: the deterministic step function beneath the gate (Lane 7) ──────
+#
+# The gate now applies every classified intent through `apply_adjustment`, an I/O-free
+# step function a service can drive directly (doc 25). These tests pin each op at that
+# seam; the run_gate tests above prove the CLI loop still drives the same edits through it.
+
+
+def _intent(op: str, targets=(), instruction: str = "") -> AdjustmentIntent:
+    return AdjustmentIntent(op=op, targets=tuple(targets), instruction=instruction)
+
+
+@pytest.mark.unit
+def test_apply_adjustment_confirm_sets_terminal_flag_and_keeps_course() -> None:
+    course = _course()
+    result = apply_adjustment(course, _intent("confirm"))
+    assert result == AdjustmentResult(course=course, confirmed=True)
+    assert result.course is course  # confirm never edits the plan
+
+
+@pytest.mark.unit
+def test_apply_adjustment_cancel_sets_terminal_flag() -> None:
+    course = _course()
+    result = apply_adjustment(course, _intent("cancel"))
+    assert result.cancelled is True
+    assert result.confirmed is False and result.needs_replan is False
+    assert result.course is course
+
+
+@pytest.mark.unit
+def test_apply_adjustment_replan_signals_without_calling_any_replanner() -> None:
+    """replan is the caller's LLM call; the step function only signals the need for it."""
+    course = _course()
+    result = apply_adjustment(course, _intent("replan", instruction="make it deeper"))
+    assert result.needs_replan is True
+    assert result.course is course
+
+
+@pytest.mark.unit
+def test_apply_adjustment_merge_returns_new_course_with_fewer_modules() -> None:
+    course = _course()
+    result = apply_adjustment(course, _intent("merge", targets=(0, 1)))
+    assert len(result.course.modules) == len(course.modules) - 1
+    assert len(course.modules) == 3  # input untouched (immutability)
+    assert not result.confirmed and not result.cancelled and not result.needs_replan
+
+
+@pytest.mark.unit
+def test_apply_adjustment_drop_warns_about_lost_capabilities() -> None:
+    result = apply_adjustment(_course(), _intent("drop", targets=(1,)))
+    assert len(result.course.modules) == 2
+    assert "Dropped capabilities" in result.warning
+    assert "fine-tune with LoRA" in result.warning
+
+
+@pytest.mark.unit
+def test_apply_adjustment_force_single_collapses_to_one_module_with_note() -> None:
+    result = apply_adjustment(_course(), _intent("force_single"))
+    assert len(result.course.modules) == 1
+    assert "one lesson" in result.warning
+
+
+@pytest.mark.unit
+def test_apply_adjustment_reorder_permutes_modules() -> None:
+    # A prereq-free course so any permutation is legal (reorder rejects placing a module
+    # before its prerequisite).
+    course = CourseSpec(
+        title="Indep",
+        modules=(
+            _module("A", 0, ["a"], []),
+            _module("B", 1, ["b"], []),
+            _module("C", 2, ["c"], []),
+        ),
+        rationale="",
+    )
+    result = apply_adjustment(course, _intent("reorder", targets=(2, 0, 1)))
+    titles = [m.spec.title for m in result.course.modules]
+    assert titles == ["C", "A", "B"]
+
+
+@pytest.mark.unit
+def test_apply_adjustment_set_mode_reads_the_mode_from_the_instruction() -> None:
+    result = apply_adjustment(
+        _course(), _intent("set_mode", targets=(1,), instruction="make module 1 conceptual")
+    )
+    assert result.course.modules[1].lesson_mode == "conceptual"
+
+
+@pytest.mark.unit
+def test_apply_adjustment_raises_on_bad_target() -> None:
+    """A malformed structural target raises ValueError — the gate turns this into a
+    re-prompt; a service surfaces the message. Either way the seam does not guess."""
+    with pytest.raises(ValueError):
+        apply_adjustment(_course(), _intent("merge", targets=(0,)))
+    with pytest.raises(ValueError):
+        apply_adjustment(_course(), _intent("drop", targets=(99,)))
+
+
+@pytest.mark.unit
+def test_run_gate_drives_edits_through_apply_adjustment() -> None:
+    """The CLI loop and the step function stay in lock-step: driving 'drop module 1'
+    through run_gate yields the same course apply_adjustment produces directly."""
+    course = _course()
+    expected = apply_adjustment(course, _intent("drop", targets=(1,))).course
+
+    adjuster = _ScriptedAdjuster([("drop", [1]), ("confirm", [])])
+    outcome = run_gate(
+        course,
+        _caps(course),
+        adjuster,
+        _RecordingReplanner(),
+        io.StringIO("drop the second one\nyes\n"),
+        io.StringIO(),
+    )
+    assert outcome.confirmed is True
+    assert outcome.course == expected
