@@ -34,14 +34,18 @@ can't both be in flight — one serializes after the other.
 
 ## ▶ Dispatch — what an orchestrator can start now (2026-09-29)
 
-Each lane runs in its own `git worktree` under `.worktrees/` on its own branch; start an agent with the prompt shown.
+Start a lane with **`scripts/start_lane.sh NN`** (from inside tmux): it creates the worktree under
+`.worktrees/` on the brief's branch and opens tmux window `laneNN` with an agent that begins at
+**CP0**. Every lane then stops at its **human checkpoints** (CP0 kickoff · CP1 demo · CP2 merge ·
+SPEND) — see CLAUDE.md → "Human checkpoints". **What is waiting on you:**
+`python scripts/checkpoint.py list` (or open `INBOX.md` in the main checkout).
 Everything else (roadmap, why) is in `TODO.md`.
 
-| Order | Lane | Ready? | Prompt for the lane agent | Needs the user for |
+| Order | Lane | Ready? | Start with | Checkpoints that need the user |
 |---|---|---|---|---|
-| ~~1~~ | ~~**8** — finish~~ | ✅ **done — MERGED #63** | *"continue lane 8 per `docs/lanes/08-ui-frontend.md` — do the Handover section; do not merge"* | reviewing + merging #63 |
-| 2 | **10** — paid run via UI | ✅ now | *"continue lane 10 per `docs/lanes/10-paid-run-via-ui.md`"* | **the key and the go-ahead to spend** (live-replays, then one build) |
-| 2 | **11** — package data | ✅ now | *"continue lane 11 per `docs/lanes/11-package-data.md`"* | nothing (free) |
+| — | 8 — UI frontend | ✅ **done — MERGED #63** | — | — |
+| 1 | **10** — paid run via UI | ✅ now | `scripts/start_lane.sh 10` | CP0 · CP1 · **SPEND ×2 (the key + go-ahead)** · CP2 |
+| 1 | **11** — package data | ✅ now | `scripts/start_lane.sh 11` | CP0 (pick approach a/b) · CP1 · CP2 |
 
 - **10 and 11 can run in parallel** (10 only writes a findings doc). 11 moves or re-points
   `personas/`, so **no persona lane may start while 11 is in flight** — and any fix that Lane 10's
@@ -49,9 +53,13 @@ Everything else (roadmap, why) is in `TODO.md`.
 - **Nothing judgement-heavy should start before Lane 10's findings** (doc 22 R3/R4/R8, content-reviser
   C5, doc-18 re-run): the paid run is what tells us which of those matter.
 - **Coordinator-only files:** `TODO.md` and this index. Lane agents update just their brief's
-  **Status** line and hand a proposed TODO update back.
-- **Worktree hygiene:** create the venv inside the worktree (`python3 -m venv .venv && .venv/bin/pip
-  install -e '.[dev]'`); never run `ipykernel install --user` from a worktree (see CLAUDE.md gotchas).
+  **Status** line and **Checkpoint log**, and hand a proposed TODO update back at CP2.
+- **Worktree hygiene:** run from the worktree root; use the shared `.venv` by absolute path, or a
+  `.venv` inside the worktree if the lane adds dependencies (`python3 -m venv .venv &&
+  .venv/bin/pip install -e '.[dev]'`). Never run `ipykernel install --user` from a worktree (see
+  CLAUDE.md gotchas).
+- **New lane?** Copy `docs/lanes/TEMPLATE.md` (keeps the Branch line `start_lane.sh` parses and the
+  Human checkpoints / Checkpoint log sections).
 
 **⛔ The paid artifact-lesson run is gated on a usable UI (2026-09-29).** It is the single
 validation gate for judgement-heavy work, so it must exercise the product a user actually touches:

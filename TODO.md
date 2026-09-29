@@ -8,12 +8,26 @@
 
 ## 🎯 STATE RIGHT NOW (2026-09-29) — the UI exists; the paid run through it is next
 
-> **Handover (2026-09-29).** R6→R7 (#60), the author split (#62) and the UI backend seam (#59) are
-> merged. The **UI front door is merged — #63** (Lane 8: `forged ui`, BYOK, Gradio, Docker; driven
-> in a real browser against a fake LLM; the Docker image has not been built yet). Next:
-> **the paid artifact-lesson run through the UI (Lane 10, needs the user's key and consent)** — in parallel, **Lane 11** (make a wheel install find `personas/`/`config/`).
-> Dispatch table with ready-made agent prompts: [`docs/lanes/README.md`](docs/lanes/README.md) → "▶ Dispatch".
-> How to run and test the UI: `CLAUDE.md` → "The web UI".
+> **Handover (2026-09-29, end of day).** Merged: R6→R7 (#60), UI backend seam (#59), author split
+> (#62), **UI front door (#63)** — `forged ui`, BYOK, Gradio; driven in a real browser against a fake
+> LLM; the Docker image has never been built. Nothing since 2026-08-13 is *validated* by a paid run.
+>
+> **New since this handover — human checkpoints.** Every lane now stops and waits at **CP0 kickoff ·
+> CP1 demo · CP2 merge · SPEND**, posts to one gitignored `INBOX.md` (+ macOS notification), and
+> merging is the user's call at CP2. Protocol: `CLAUDE.md` → "Human checkpoints". Lanes start with
+> `scripts/start_lane.sh NN` (worktree under `.worktrees/` + tmux window). Waiting on you:
+> `python scripts/checkpoint.py list`.
+>
+> **Next (both ready, parallel-safe):**
+> - **Lane 10 — the paid artifact-lesson run through the UI.** The binding validation gate. Needs
+>   the user's key and two SPEND approvals (live-replays for cents, then one build).
+> - **Lane 11 — package data** (a wheel install can't find `personas/`/`config/`). Free. CP0 decision:
+>   move under `forged/` vs a resolver.
+>
+> **Starting a new chat as coordinator:** *"Act as coordinator: read TODO.md and docs/lanes/README.md,
+> check `gh pr list` and the inbox, then start lanes 10 and 11."* Dispatch table:
+> [`docs/lanes/README.md`](docs/lanes/README.md) → "▶ Dispatch". How to run the UI: `CLAUDE.md` →
+> "The web UI".
 
 *Below: the 2026-08-30 state, still accurate about what is and is not validated.*
 
@@ -30,8 +44,8 @@ in six places.
 > The next paid artifact-lesson run is the binding constraint on almost every open question here,
 > and it is worth more than the next feature.
 
-**What to do first, in order:** (1) read this file's ▶ NEXT block; (2) ~~finish Lane 8~~ — ✅ merged #63 (Docker build still unrun); (3) **now** the paid artifact-lesson run,
-**through the UI** (Lane 10) — it was gated on a usable UI (decision 2026-09-29) so it exercises the
+**What to do first, in order:** (1) read this file's ▶ NEXT block; (2) ~~finish Lane 8~~ — ✅ merged #63 (Docker build
+still unrun); (3) **now** the paid artifact-lesson run, **through the UI** (Lane 10) — it was gated on a usable UI (decision 2026-09-29) so it exercises the
 product a user actually touches. When you do run it, read
 the findings, not just the verdict. Details for both paths are below.
 

@@ -28,6 +28,8 @@ htmlcov/
 .sessions/
 # parallel-lane git worktrees (see CLAUDE.md "Lane workflow")
 .worktrees/
+# human-checkpoint inbox, written by scripts/checkpoint.py (live queue, not a record)
+INBOX.md
 .python-version
 
 # OS / editor

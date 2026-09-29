@@ -28,6 +28,15 @@ the Dockerfile installs editable as a workaround, and "bundled defaults ship wit
 references in tests/docs, `Dockerfile`. **Hot-directory rule:** if (a), no persona lane may be in
 flight — coordinate with whoever owns `personas/` next.
 
+## Human checkpoints
+Post each with `scripts/checkpoint.py` and end the turn (CLAUDE.md → "Human checkpoints").
+- **CP0 kickoff:** approach (a) move under `forged/` vs (b) resolver over the repo layout — with a
+  recommendation and what each moves; the user picks. (a) freezes persona lanes while in flight.
+- **CP1 demo:** commands to build a wheel into a fresh temp venv and run `forged ui --fake-llm` from
+  outside the repo (and the Docker image, if the daemon is up).
+- **CP2 merge:** review packet (standard contents).
+- **SPEND:** none — this lane makes no billable calls.
+
 ## Verification
 - A test that builds a wheel into a temp venv and runs `python -m forged.cli ui --help` **and** a
   fake-LLM plan (`forged.service.ForgeService(llm_factory=FakeLLM)`) from outside the repo — proves
@@ -38,3 +47,6 @@ flight — coordinate with whoever owns `personas/` next.
 ## Done means
 `pip install .` in a fresh venv → `forged ui --fake-llm` plans successfully from any cwd; Docker no
 longer needs `-e`; PR opened.
+
+## Checkpoint log
+<!-- one line per answered checkpoint: YYYY-MM-DD · CPn · the user's decision -->
