@@ -429,7 +429,10 @@ they were, because each cost something before it was fixed.
 - **`--plan-only` cannot be built.** A probe produced exactly the wanted plan (1 module,
   `mode: artifact`) and there was no way to build *that* plan — the build path always re-plans, and
   the planner is non-deterministic. Design: `docs/architecture/19-build-from-a-saved-plan.md` (PR
-  #39). The missing piece is `course_from_dict`; `model.py` has `course_to_dict` and no inverse.
+  #39). ~~The missing piece is `course_from_dict`~~ — **`course_from_dict` now exists** (Lane 7,
+  `feat/ui-backend-seam`): a saved `course_plan.json` round-trips back to an identical `CourseSpec`.
+  Wiring a `--from-plan` build path onto it (skip the planner, feed the reconstructed course to the
+  orchestrator) is the remaining, now-unblocked, step.
 - **`conceptual` has never been observed firing.** Five planning calls, including two probes on
   deliberately non-computational topics ("when should I use Copilot agent mode vs chat vs inline
   completions") — both returned `artifact`. Doc 18 debiased mode selection and proved a *mix* is

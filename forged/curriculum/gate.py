@@ -22,6 +22,7 @@ from typing import TextIO, get_args
 
 from forged.pipeline.mode import LessonMode
 
+from .adjuster import AdjustmentIntent
 from .fidelity import assess_course_fidelity
 from .model import CourseSpec
 from .operations import (
@@ -67,6 +68,48 @@ class GateOutcome:
     confirmed: bool
     course: CourseSpec
     rounds_used: int
+
+
+@dataclass(frozen=True)
+class AdjustmentResult:
+    """What applying one classified intent produced, decoupled from any I/O.
+
+    Exactly one of the terminal flags (`confirmed` / `cancelled` / `needs_replan`) is
+    set for the non-structural ops; for a structural op all three are False and `course`
+    is the new (possibly warning-carrying) plan. `course` is always populated — it is the
+    *input* course unchanged for `confirmed`/`cancelled`/`needs_replan`, since those ops
+    do not edit the plan here (a re-plan is the caller's LLM call, kept out of this seam).
+    """
+
+    course: CourseSpec
+    warning: str = ""
+    confirmed: bool = False
+    cancelled: bool = False
+    needs_replan: bool = False
+
+
+def apply_adjustment(course: CourseSpec, intent: AdjustmentIntent) -> AdjustmentResult:
+    """Apply one classified `AdjustmentIntent` to a course — the gate's step function.
+
+    This is the deterministic seam beneath `run_gate`: it owns none of the stdin/stdout,
+    so a service (doc 25's front door) can drive the same edits the CLI gate drives.
+    Structural ops (`merge`/`drop`/`force_single`/`reorder`/`set_mode`) return a **new**
+    frozen course, never mutating the input; `confirm`/`cancel`/`replan` return the course
+    untouched with the matching terminal flag set. A malformed structural target raises
+    `ValueError` (the caller decides whether to re-prompt or surface the message), exactly
+    as `run_gate` has always handled it.
+    """
+    if intent.op == "confirm":
+        return AdjustmentResult(course=course, confirmed=True)
+    if intent.op == "cancel":
+        return AdjustmentResult(course=course, cancelled=True)
+    if intent.op == "replan":
+        return AdjustmentResult(course=course, needs_replan=True)
+
+    new_course, warning = _apply_structural(
+        course, intent.op, intent.targets, intent.instruction
+    )
+    return AdjustmentResult(course=new_course, warning=warning)
 
 
 # ── Rendering (pure) ────────────────────────────────────────────────────────────────
@@ -220,29 +263,28 @@ def run_gate(
         titles = tuple(module.spec.title for module in course.modules)
         intent = adjuster.classify(titles, sentence)
 
-        if intent.op == "confirm":
-            return GateOutcome(confirmed=True, course=course, rounds_used=rounds)
-        if intent.op == "cancel":
-            emit("Cancelled — nothing was run.")
-            return GateOutcome(confirmed=False, course=course, rounds_used=rounds)
+        # Apply through the shared step function; a bad target re-prompts (counts a round).
+        try:
+            result = apply_adjustment(course, intent)
+        except ValueError as exc:
+            emit(f"Could not apply that change: {exc}")
+            continue
 
-        if intent.op == "replan":
+        if result.confirmed:
+            return GateOutcome(confirmed=True, course=result.course, rounds_used=rounds)
+        if result.cancelled:
+            emit("Cancelled — nothing was run.")
+            return GateOutcome(confirmed=False, course=result.course, rounds_used=rounds)
+        if result.needs_replan:
             try:
                 course = replanner(course, intent.instruction)
             except Exception as exc:  # noqa: BLE001 — a failed re-plan keeps the plan
                 emit(f"Re-planning failed: {exc}. Keeping the current plan.")
             continue
 
-        # Structural ops: apply deterministically; a bad target re-prompts (counts a round).
-        try:
-            course, warning = _apply_structural(
-                course, intent.op, intent.targets, intent.instruction
-            )
-        except ValueError as exc:
-            emit(f"Could not apply that change: {exc}")
-            continue
-        if warning:
-            emit(warning)
+        course = result.course
+        if result.warning:
+            emit(result.warning)
 
     emit(f"Reached the {max_rounds}-round adjustment limit — nothing was run.")
     return GateOutcome(confirmed=False, course=course, rounds_used=rounds)
