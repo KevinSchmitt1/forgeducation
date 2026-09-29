@@ -22,8 +22,10 @@ in six places.
 > and it is worth more than the next feature.
 
 **What to do first, in order:** (1) read this file's ▶ NEXT block; (2) if you are about to build,
-build R6 → R7; (3) if you are about to spend money, do the artifact-lesson run and read the
-findings, not just the verdict. Details for both paths are below.
+build the UI (Lane 7 backend seam → usable frontend) — R6→R7 already merged (#60); (3) **do not
+spend money on the artifact-lesson run until the UI is usable** — that paid run is gated on it
+(decision 2026-09-29), so it exercises the product a user actually touches. When you do run it, read
+the findings, not just the verdict. Details for both paths are below.
 
 The 2026-08-13 analysis that produced all of this work is kept below, unchanged, because every
 decision in docs 20–22 refers back to it.
@@ -154,20 +156,28 @@ and the actual-state fixes.
 | 3 · Author-identity split (design) | `docs/author-split-design` | design | ✅ MERGED #55 → doc 23 | usability (non-code lessons) |
 | 4 · SDK-as-provider / no-API-key (design) | `docs/sdk-provider-design` | design | ✅ MERGED #54 → doc 24 | usability |
 | 5 · UI grilling (decision) | `docs/ui-exploration` | design | ✅ MERGED #56 → doc 25 (BUILD, scoped) | UI |
-| **6 · Critique digest → remake (R6→R7)** | `feat/critique-digest-remake` | code+persona | **▶ ACTIVE** (hot-file lane) | the quality-loop fix; unblocks author-split impl |
+| 6 · Critique digest → remake (R6→R7) | `feat/critique-digest-remake` | code+persona | ✅ MERGED #60 (R6 offline-validated; R7 live-replay owed) | the quality-loop fix; unblocks author-split impl |
 | **7 · UI backend seam** | `feat/ui-backend-seam` | code (additive) | **▶ ACTIVE** (parallel-safe with 6) | UI build lane; also any 2nd entry point / automation |
 
-**Active pair (2026-09-24):** Lane 6 (R6→R7, doc 22 Parts III–VI) owns the hot files
-(`reviser.py`, `personas/`, …); Lane 7 (UI backend seam, doc 25 first-implementer plan —
-`course_from_dict` + gate-as-step-function) is additive and touches none of them → the two run in
-parallel via `git worktree`.
+**Lane 6 merged (2026-09-29, #60):** R6→R7 landed — the digest accumulates and orders by
+consequence (offline-proven on the corpus, with a fail-capable check), and a remake is a recorded,
+digest-informed decision. R7's remake *behaviour* still owes a live-replay run, which now rides
+**with the paid artifact-lesson run** — see the UI gate below.
 
-**Held back — serializes after Lane 6:** the **author-split *implementation*** (doc 23) collides
-with R6/R7 on `personas/`, `graph.py`, `reviser.py`; rebase it onto post-R7 `master` (doc 23 Part VI
-explains why landing it *after* R7 is also DRY-cheaper). **Optional / on-demand:** the Anthropic
-provider (doc 24 Option A) if provider portability becomes a real want; the UI *frontend* build lane
-after Lane 7's seam lands. The **paid artifact-lesson run** (NEXT §2) remains the single validation
-gate for everything judgement-heavy and outranks every feature above.
+**⛔ The paid run is gated on a usable UI (2026-09-29 decision).** Do **not** spend on the
+artifact-lesson run (NEXT §2) until the UI is in a **usable** version — the paid run is the one
+binding validation gate, and it should exercise the product a user actually touches, not the CLI in
+isolation. Concretely: Lane 7's backend seam **and** a usable UI *frontend* on top of it must be in
+place first. Until then, judgement-heavy work (R6/R7, R2/R5) stays validated **offline + by
+live-replay for cents**; the full paid run waits for the UI. This reorders NEXT: **UI first, paid run
+after.**
+
+**Now active:** Lane 7 (UI backend seam, doc 25 — `course_from_dict` + gate-as-step-function),
+then the UI *frontend* build lane on top of it. **Held back — serializes after Lane 6 (now
+unblocked):** the **author-split *implementation*** (doc 23) collided with R6/R7 on `personas/`,
+`graph.py`, `reviser.py`; rebase it onto post-#60 `master` (doc 23 Part VI explains why landing it
+*after* R7 is also DRY-cheaper). **Optional / on-demand:** the Anthropic provider (doc 24 Option A)
+if provider portability becomes a real want.
 
 **Vertical vs horizontal (Lane 1's reason to exist):** today all checks are horizontal — unit tests
 and a *mocked-LLM* graph test prove plumbing carries a value, never that a critic judges *well*. The
@@ -188,28 +198,25 @@ written** (all four corpus iterations were already not-acceptable via the execut
 route, before any rubric is read; the real test is a counterfactual), and **only the Reviewer
 may report `drifted`**, enforced in three places because a replan can delete a capability.*
 
-**1. Build R6, then R7** (doc 22, in this order — the digest must exist before a remake can be
-informed by it).
+**1. ✅ R6 then R7 — DONE (#60, 2026-09-29).** The `critique_digest` accumulates findings across
+iterations (instead of each brief superseding the last) and orders them by consequence
+(recurrence-first), and a remake is now a recorded, digest-informed decision. R6's doc 22 Part VI
+offline check is run and pinned: rebuilt from the real four-iteration corpus, the `PASSWORD`
+self-referential-validator finding lands at the top, and the counterfactual (last-iteration-only
+digest) buries it — so the check can actually fail (R1's lesson). See doc 22's "Implementation note
+— R6 and R7". **Still owed:** R7's remake *behaviour* via the live-replay harness — folded into §2.
 
-R6 is the `critique_digest`: findings accumulate across iterations instead of each brief
-superseding the last. The defect is already confirmed, not suspected — every agent reads exactly
-`revision_brief_v{iteration - 1}` (verified in `code_author.py`, `planner.py`,
-`content_reviser.py`), so the iteration-3 rewrite knew nothing of what iterations 0–2 found.
-That is the mechanism behind quality going **74 → 82 → 74 → 71**.
-
-It has a real offline check, and doc 22 Part VI names it: rebuild the digest from the four
-existing `revision_brief_v*.md` in the 2026-08-13 run dir and confirm the `PASSWORD`
-self-referential-validator finding survives to the top rather than being lost with its
-iteration. **Confirm that check can actually fail before trusting it** — that is exactly the
-mistake R1's criterion made.
-
-**2. Then the paid artifact-lesson run** — this is the binding constraint, and it outranks
-building R3/R4/R8. Use `--plan-only` first to confirm the mode for cents (see "New loose ends").
-It validates C1–C5, R1, R2 and R5 at once. **R2 and R5 need it most**: both are judgements an
-LLM critic makes, and the tests prove only that the instruction is present and the plumbing
-carries the answer, never that the critics use it well. For R5, doc 22's own check — can the
-verdict tell v3's 26-cell sprawl from a 12-cell lesson teaching the same thing? — **cannot be
-run offline**, because the corpus contains no verdicts; nothing asked for one at the time.
+**2. UI first, THEN the paid artifact-lesson run.** ⛔ **The paid run is gated on a usable UI**
+(decision 2026-09-29): it is the one binding validation gate, so it must exercise the product a user
+actually touches — Lane 7's backend seam **and** a usable UI frontend on top of it — not the CLI in
+isolation. Until the UI is usable, keep judgement-heavy changes validated **offline + by live-replay
+for cents** (R6 is fully offline-validated; run the Lane 1 live-replay for R7 before relying on its
+remake behaviour). Once the UI is usable, the paid run validates C1–C5, R1, R2, R5 **and** R7 at
+once. Use `--plan-only` first to confirm the mode for cents (see "New loose ends"). **R2, R5 and R7
+need it most**: all are judgements an LLM makes, and the tests prove only that the instruction is
+present and the plumbing carries the answer, never that they are *used* well. For R5, doc 22's own
+check — can the verdict tell v3's 26-cell sprawl from a 12-cell lesson teaching the same thing? —
+**cannot be run offline**, because the corpus contains no verdicts; nothing asked for one at the time.
 
 **When it finishes, read the findings, not just the verdict.** Specifically: did the critics
 stop restating failed cells (R2)? Did either file a `goal_fit` refusal, and was it right (R5)?

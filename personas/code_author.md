@@ -282,6 +282,23 @@ Three things to get right when you patch:
 be split in two, when cells need reordering, or when the plan itself was misread and most
 of the lesson is wrong. Both shapes are accepted; choose the one that matches the repair.
 
+### When the brief calls for a remake
+
+The brief opens with a **Remake decision**. Usually it reads *Repair (default)* — patch as
+above. Occasionally it reads **REMAKE**: the reviser has judged, from the run's evidence,
+that patching is not converging — the same root cause has survived several rounds of
+targeted repair. On a **REMAKE**, do not patch:
+
+1. **Return the full cell array**, not a `{"patch": …}` — you are writing the lesson again.
+2. **Start from the "Accumulated critique (every iteration)" section.** It lists every
+   finding from every iteration, most persistent first. The findings at the top are the
+   ones earlier patches kept missing — they are the reason a remake was called, so they are
+   what a remake must actually fix, not repeat. A finding "seen in iters 1, 2, 3" is a root
+   cause, however low its severity looks.
+3. **Keep what worked.** A remake is "write it again, *better*, knowing everything the
+   critics have said" — not "throw everything away". Good explanations and cells that always
+   passed should survive the rewrite; only the persistent failures must change.
+
 Use "\n" for newlines inside source strings. The array must be valid JSON. Start
 with the learner **orientation** cell described in "Learner orientation" above (plain-language
 goal + two-facet roadmap + what-this-assumes/your-likely-gap), and end with a markdown takeaway

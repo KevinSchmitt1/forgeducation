@@ -1,7 +1,11 @@
 # Lane 6 — R6 → R7: critique digest, then informed remake (CODE + PERSONA)
 
 **Branch:** `feat/critique-digest-remake` · **Type:** code + persona · **Depends on:** Lane 1 (done)
-**Status:** not started.
+**Status:** ✅ MERGED #60 (2026-09-29). R6 + R7 implemented — digest accumulates + orders by
+consequence (offline-proven on the corpus with a fail-capable check), remake is a recorded,
+digest-informed decision. All three CI gates green. **R7's live-replay run is still owed** (needs
+`OPENAI_API_KEY`) — run it before relying on remake behaviour; it now rides with the paid
+artifact-lesson run, which is **gated on a usable UI** (see `TODO.md` / `docs/lanes/README.md`).
 **Process:** see "Lane workflow" in root `CLAUDE.md`. Read `docs/architecture/22-*.md`
 (Parts III–VI) first — this lane *implements* R6 then R7 from that doc.
 

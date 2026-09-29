@@ -11,6 +11,7 @@ import pytest
 from forged.pipeline.state import (
     Degradation,
     Evidence,
+    IterationFindings,
     Location,
     LocationType,
     PipelineStage,
@@ -535,6 +536,38 @@ def test_with_topic_fidelity_does_not_mutate_original(initial_state: PipelineSta
     initial_state.with_topic_fidelity(signal)
 
     assert initial_state.topic_fidelity == []
+
+
+@pytest.mark.unit
+def test_with_iteration_findings_appends_record(initial_state: PipelineState):
+    """with_iteration_findings records one iteration's findings for the digest."""
+    finding = Evidence(
+        source="student",
+        severity="LOW",
+        scope="content",
+        location=Location(type=LocationType.GLOBAL),
+        text="a nitpick",
+    )
+
+    new_state = initial_state.with_iteration_findings(2, (finding,))
+
+    assert new_state.critique_history == [IterationFindings(iteration=2, findings=(finding,))]
+
+
+@pytest.mark.unit
+def test_with_iteration_findings_does_not_mutate_original(initial_state: PipelineState):
+    """The original state is untouched — immutability holds."""
+    initial_state.with_iteration_findings(0, ())
+
+    assert initial_state.critique_history == []
+
+
+@pytest.mark.unit
+def test_iteration_findings_is_immutable():
+    """IterationFindings must be frozen like the other value objects."""
+    record = IterationFindings(iteration=0, findings=())
+    with pytest.raises((TypeError, AttributeError)):
+        record.iteration = 1  # type: ignore[misc]
 
 
 @pytest.mark.unit
