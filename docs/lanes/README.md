@@ -1,8 +1,8 @@
 # docs/lanes — workstream briefs
 
 This directory holds the **coordination brief for each lane** of the current effort. A "lane" is an
-independent slice of work on its own **branch in this repo** (everything lives here — no external
-worktrees, no sibling folders). Its brief states scope, file ownership (the collision map), the
+independent slice of work on its own **branch in this repo** (everything lives here — no sibling
+folders; parallel-lane worktrees go under the gitignored `.worktrees/`). Its brief states scope, file ownership (the collision map), the
 verification rung it must reach, and its definition of done.
 
 - **How to start or resume a lane** (branch setup, verification-by-deliverable, sync): see the
@@ -22,10 +22,10 @@ verification rung it must reach, and its definition of done.
 | 5 · UI grilling | [05-ui-exploration.md](05-ui-exploration.md) | `docs/ui-exploration` | decision doc → doc 25 (BUILD, scoped) | review | — · **MERGED #56** |
 | 6 · Critique digest → remake (R6→R7) | [06-critique-digest-remake.md](06-critique-digest-remake.md) | `feat/critique-digest-remake` | code + persona | live-replay + offline corpus | Lane 1 ✅ · **MERGED #60** (R6 offline-validated; R7 live-replay owed) |
 | 7 · UI backend seam | [07-ui-backend-seam.md](07-ui-backend-seam.md) | `feat/ui-backend-seam` | code, additive | exercised (`--plan-only` round-trip) | doc 25 ✅ · **MERGED #59** |
-| 8 · UI frontend v1 (BYOK front door) | [08-ui-frontend.md](08-ui-frontend.md) | `feat/ui-frontend` | code, additive | real browser (Playwright, stubbed LLM) ✅ | Lane 7 ✅ · **PR #63 open** — Docker check left, then user merges |
+| 8 · UI frontend v1 (BYOK front door) | [08-ui-frontend.md](08-ui-frontend.md) | `feat/ui-frontend` | code, additive | real browser (Playwright, stubbed LLM) ✅ | Lane 7 ✅ · **MERGED #63** (Docker build not yet run) |
 | 9 · Author-split implementation | [09-author-split-impl.md](09-author-split-impl.md) | `feat/author-split` | code + persona | offline + exercised (live-replay owed → Lane 10) | doc 23 ✅, Lane 6 ✅ · **MERGED #62** |
-| **10 · Paid run via the UI** | [10-paid-run-via-ui.md](10-paid-run-via-ui.md) | `docs/paid-run-via-ui` | validation run → doc 26 | *is* the validated rung | #63 merged · **user consent + key** |
-| **11 · Package data (wheel install)** | [11-package-data.md](11-package-data.md) | `fix/package-data` | code + packaging | exercised (wheel in temp venv, Docker) | #63 merged · **touches `personas/`** |
+| **10 · Paid run via the UI** | [10-paid-run-via-ui.md](10-paid-run-via-ui.md) | `docs/paid-run-via-ui` | validation run → doc 26 | *is* the validated rung | #63 ✅ · **user consent + key** |
+| **11 · Package data (wheel install)** | [11-package-data.md](11-package-data.md) | `fix/package-data` | code + packaging | exercised (wheel in temp venv, Docker) | #63 ✅ · **touches `personas/`** |
 
 **One lane at a time** in the working tree (single repo → one branch checked out at once), **unless**
 lanes are made truly simultaneous via `git worktree` (the sanctioned escape hatch). Lanes that share a
@@ -34,14 +34,18 @@ can't both be in flight — one serializes after the other.
 
 ## ▶ Dispatch — what an orchestrator can start now (2026-09-29)
 
-Each lane runs in its own `git worktree` on its own branch; start an agent with the prompt shown.
+Start a lane with **`scripts/start_lane.sh NN`** (from inside tmux): it creates the worktree under
+`.worktrees/` on the brief's branch and opens tmux window `laneNN` with an agent that begins at
+**CP0**. Every lane then stops at its **human checkpoints** (CP0 kickoff · CP1 demo · CP2 merge ·
+SPEND) — see CLAUDE.md → "Human checkpoints". **What is waiting on you:**
+`python scripts/checkpoint.py list` (or open `INBOX.md` in the main checkout).
 Everything else (roadmap, why) is in `TODO.md`.
 
-| Order | Lane | Ready? | Prompt for the lane agent | Needs the user for |
+| Order | Lane | Ready? | Start with | Checkpoints that need the user |
 |---|---|---|---|---|
-| 1 | **8** — finish | ✅ now | *"continue lane 8 per `docs/lanes/08-ui-frontend.md` — do the Handover section; do not merge"* | reviewing + merging #63 |
-| 2 | **10** — paid run via UI | after #63 merges | *"continue lane 10 per `docs/lanes/10-paid-run-via-ui.md`"* | **the key and the go-ahead to spend** (live-replays, then one build) |
-| 2 | **11** — package data | after #63 merges | *"continue lane 11 per `docs/lanes/11-package-data.md`"* | nothing (free) |
+| — | 8 — UI frontend | ✅ **done — MERGED #63** | — | — |
+| 1 | **10** — paid run via UI | ✅ now | `scripts/start_lane.sh 10` | CP0 · CP1 · **SPEND ×2 (the key + go-ahead)** · CP2 |
+| 1 | **11** — package data | ✅ now | `scripts/start_lane.sh 11` | CP0 (pick approach a/b) · CP1 · CP2 |
 
 - **10 and 11 can run in parallel** (10 only writes a findings doc). 11 moves or re-points
   `personas/`, so **no persona lane may start while 11 is in flight** — and any fix that Lane 10's
@@ -49,13 +53,17 @@ Everything else (roadmap, why) is in `TODO.md`.
 - **Nothing judgement-heavy should start before Lane 10's findings** (doc 22 R3/R4/R8, content-reviser
   C5, doc-18 re-run): the paid run is what tells us which of those matter.
 - **Coordinator-only files:** `TODO.md` and this index. Lane agents update just their brief's
-  **Status** line and hand a proposed TODO update back.
-- **Worktree hygiene:** create the venv inside the worktree (`python3 -m venv .venv && .venv/bin/pip
-  install -e '.[dev]'`); never run `ipykernel install --user` from a worktree (see CLAUDE.md gotchas).
+  **Status** line and **Checkpoint log**, and hand a proposed TODO update back at CP2.
+- **Worktree hygiene:** run from the worktree root; use the shared `.venv` by absolute path, or a
+  `.venv` inside the worktree if the lane adds dependencies (`python3 -m venv .venv &&
+  .venv/bin/pip install -e '.[dev]'`). Never run `ipykernel install --user` from a worktree (see
+  CLAUDE.md gotchas).
+- **New lane?** Copy `docs/lanes/TEMPLATE.md` (keeps the Branch line `start_lane.sh` parses and the
+  Human checkpoints / Checkpoint log sections).
 
 **⛔ The paid artifact-lesson run is gated on a usable UI (2026-09-29).** It is the single
 validation gate for judgement-heavy work, so it must exercise the product a user actually touches:
-Lane 7's backend seam (✅ #59) **and** a usable UI frontend (Lane 8, PR #63) must land first — that
+Lane 7's backend seam (✅ #59) **and** a usable UI frontend (Lane 8, ✅ #63) must land first — that
 run is now Lane 10. Until then, keep judgement-heavy
 lanes validated **offline + by live-replay for cents** — that includes running the live-replay for
 Lane 6's R7 before relying on its remake behaviour. See `TODO.md`.

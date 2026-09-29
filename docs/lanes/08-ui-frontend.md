@@ -1,7 +1,7 @@
 # Lane 8 — UI frontend v1: local BYOK front door (CODE, additive)
 
 **Branch:** `feat/ui-frontend` · **Type:** code, additive · **Depends on:** Lane 7 (✅ #59)
-**Status:** built — **PR #63 open, not merged** (2026-09-29). Green (935 passed, 90% cov) +
+**Status:** ✅ **MERGED #63** (2026-09-29); Docker build not yet run. Green (935 passed, 90% cov) +
 *exercised* + driven in a real browser against the fake LLM (`tests/ui/screenshots/`); *not
 validated* (no paid run — that is Lane 10). **Remaining for the next agent (see "Handover" below).**
 **Process:** see "Lane workflow" in root `CLAUDE.md`. Read `docs/architecture/25-ui-exploration.md`

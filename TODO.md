@@ -8,13 +8,26 @@
 
 ## 🎯 STATE RIGHT NOW (2026-09-29) — the UI exists; the paid run through it is next
 
-> **Handover (2026-09-29).** R6→R7 (#60), the author split (#62) and the UI backend seam (#59) are
-> merged. The **UI front door is built — PR #63, open, not merged** (Lane 8: `forged ui`, BYOK,
-> Gradio, Docker; driven in a real browser against a fake LLM; one Docker check left). Next, in order:
-> **finish + merge #63 → the paid artifact-lesson run through the UI (Lane 10, needs the user's key
-> and consent)** — in parallel, **Lane 11** (make a wheel install find `personas/`/`config/`).
-> Dispatch table with ready-made agent prompts: [`docs/lanes/README.md`](docs/lanes/README.md) → "▶ Dispatch".
-> How to run and test the UI: `CLAUDE.md` → "The web UI".
+> **Handover (2026-09-29, end of day).** Merged: R6→R7 (#60), UI backend seam (#59), author split
+> (#62), **UI front door (#63)** — `forged ui`, BYOK, Gradio; driven in a real browser against a fake
+> LLM; the Docker image has never been built. Nothing since 2026-08-13 is *validated* by a paid run.
+>
+> **New since this handover — human checkpoints.** Every lane now stops and waits at **CP0 kickoff ·
+> CP1 demo · CP2 merge · SPEND**, posts to one gitignored `INBOX.md` (+ macOS notification), and
+> merging is the user's call at CP2. Protocol: `CLAUDE.md` → "Human checkpoints". Lanes start with
+> `scripts/start_lane.sh NN` (worktree under `.worktrees/` + tmux window). Waiting on you:
+> `python scripts/checkpoint.py list`.
+>
+> **Next (both ready, parallel-safe):**
+> - **Lane 10 — the paid artifact-lesson run through the UI.** The binding validation gate. Needs
+>   the user's key and two SPEND approvals (live-replays for cents, then one build).
+> - **Lane 11 — package data** (a wheel install can't find `personas/`/`config/`). Free. CP0 decision:
+>   move under `forged/` vs a resolver.
+>
+> **Starting a new chat as coordinator:** *"Act as coordinator: read TODO.md and docs/lanes/README.md,
+> check `gh pr list` and the inbox, then start lanes 10 and 11."* Dispatch table:
+> [`docs/lanes/README.md`](docs/lanes/README.md) → "▶ Dispatch". How to run the UI: `CLAUDE.md` →
+> "The web UI".
 
 *Below: the 2026-08-30 state, still accurate about what is and is not validated.*
 
@@ -31,9 +44,8 @@ in six places.
 > The next paid artifact-lesson run is the binding constraint on almost every open question here,
 > and it is worth more than the next feature.
 
-**What to do first, in order:** (1) read this file's ▶ NEXT block; (2) finish Lane 8 (PR #63: the
-Docker check) and let the user merge it — the UI is built; (3) **then** the paid artifact-lesson run,
-**through the UI** (Lane 10) — it was gated on a usable UI (decision 2026-09-29) so it exercises the
+**What to do first, in order:** (1) read this file's ▶ NEXT block; (2) ~~finish Lane 8~~ — ✅ merged #63 (Docker build
+still unrun); (3) **now** the paid artifact-lesson run, **through the UI** (Lane 10) — it was gated on a usable UI (decision 2026-09-29) so it exercises the
 product a user actually touches. When you do run it, read
 the findings, not just the verdict. Details for both paths are below.
 
@@ -168,10 +180,10 @@ and the actual-state fixes.
 | 5 · UI grilling (decision) | `docs/ui-exploration` | design | ✅ MERGED #56 → doc 25 (BUILD, scoped) | UI |
 | 6 · Critique digest → remake (R6→R7) | `feat/critique-digest-remake` | code+persona | ✅ MERGED #60 (R6 offline-validated; R7 live-replay owed) | the quality-loop fix; unblocks author-split impl |
 | 7 · UI backend seam | `feat/ui-backend-seam` | code (additive) | ✅ MERGED #59 | UI build lane; also any 2nd entry point / automation |
-| 8 · UI frontend v1 (BYOK front door) | `feat/ui-frontend` | code (additive) | **PR #63 open** — built, browser-e2e'd; Docker check left | **gates the paid run** |
+| 8 · UI frontend v1 (BYOK front door) | `feat/ui-frontend` | code (additive) | ✅ MERGED #63 — browser-e2e'd; Docker build not yet run | **gates the paid run** |
 | 9 · Author-split implementation | `feat/author-split` | code+persona | ✅ MERGED #62 (live-replay owed → Lane 10) | usability (non-code lessons) |
-| **10 · Paid run via the UI** | `docs/paid-run-via-ui` | validation → doc 26 | ⬜ after #63; **user key + consent** | validates R1/R2/R5/R7, C1–C5, author split, UI |
-| **11 · Package data (wheel install)** | `fix/package-data` | code+packaging | ⬜ after #63; parallel with 10; touches `personas/` | Docker non-editable; "bundled defaults ship" true |
+| **10 · Paid run via the UI** | `docs/paid-run-via-ui` | validation → doc 26 | ⬜ ready; **user key + consent** | validates R1/R2/R5/R7, C1–C5, author split, UI |
+| **11 · Package data (wheel install)** | `fix/package-data` | code+packaging | ⬜ ready; parallel with 10; touches `personas/` | Docker non-editable; "bundled defaults ship" true |
 
 **Lane 6 merged (2026-09-29, #60):** R6→R7 landed — the digest accumulates and orders by
 consequence (offline-proven on the corpus, with a fail-capable check), and a remake is a recorded,
@@ -186,7 +198,7 @@ place first. Until then, judgement-heavy work (R6/R7, R2/R5) stays validated **o
 live-replay for cents**; the full paid run waits for the UI. This reorders NEXT: **UI first, paid run
 after.**
 
-**Update 2026-09-29 (evening):** Lane 9 merged (#62); Lane 8 built and in review (PR #63). The
+**Update 2026-09-29 (evening):** Lane 9 merged (#62); Lane 8 merged (#63). The
 paragraph below is the morning's plan, kept for the record — the live plan is the Dispatch table in
 `docs/lanes/README.md`.
 

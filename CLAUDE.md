@@ -172,6 +172,8 @@ Process degrades under momentum — that is exactly when these get skipped. Pref
   still hold: conventional-commit messages, **no attribution trailer** (repo convention), always work
   on a feature branch + PR, **never commit straight to `master`**, and never push until the three CI
   gates are green locally. Force-push or history rewrites on shared branches still need a heads-up.
+  **Merging is the user's call** — at the CP2 checkpoint (see "Human checkpoints" below), never on
+  CI alone and never without their explicit word.
   Standing best-practice steps (always do these, not just when asked):
   - **Name the branch for the work**, not the ticket-of-the-moment. If scope shifts so the branch
     name no longer fits, move the commits to a correctly-named branch before opening the PR.
@@ -207,9 +209,11 @@ Process degrades under momentum — that is exactly when these get skipped. Pref
 ## Lane workflow (how-to for agents)
 
 Work is split into independent slices ("lanes"). Each lane is a **branch in this repo** with a
-tracked brief in **`docs/lanes/`**. **Everything lives in this one repository** — no external
-worktrees, no sibling folders. `docs/lanes/README.md` is the live index; each `docs/lanes/NN-*.md`
-owns one lane's scope, file-ownership (collision map), and definition of done.
+tracked brief in **`docs/lanes/`**. **Everything lives in this one repository** — no sibling
+folders (parallel-lane worktrees go under the repo's gitignored `.worktrees/`, see below).
+`docs/lanes/README.md` is the live index; each `docs/lanes/NN-*.md` owns one lane's scope,
+file-ownership (collision map), human checkpoints, and definition of done. New briefs start from
+`docs/lanes/TEMPLATE.md`.
 
 **To start a lane:**
 
@@ -231,6 +235,22 @@ master if it doesn't exist yet), reads the brief, and picks up from `git log` + 
 - **One lane at a time in the working tree.** This repo has a single working tree, so only one lane's
   branch is checked out at once — finish, commit, or stash before switching. (Two lanes *truly*
   simultaneously is the one case for `git worktree`, but the default here is branch-switching.)
+- **Parallel lanes → worktrees live inside the repo, under the gitignored `.worktrees/`** — never in
+  a sibling folder next to the repo. A worktree exists only while its lane runs in parallel with
+  another; once the lane's PR merges, remove it (the work is in git — nothing is lost):
+
+  ```bash
+  scripts/start_lane.sh <NN>          # worktree under .worktrees/ + Claude in tmux window laneNN
+  git worktree remove .worktrees/<lane-slug> && git branch -D <lane-branch>  # after merge
+  ```
+
+  `start_lane.sh` reads the branch from the brief, creates (or resumes) the worktree from `master`,
+  and opens a tmux window whose agent starts at CP0. `--dry-run` prints what it would do.
+
+  Run commands from the worktree's own root so `forged` imports resolve to that checkout (the
+  editable install follows the cwd) — the shared `.venv` by absolute path is fine. A lane that adds
+  dependencies gets its own `.venv` inside its worktree rather than mutating the shared one. While lanes run in parallel, only the coordinating
+  session edits `TODO.md` and `docs/lanes/README.md`.
 - **Use the project `.venv`** (`.venv/bin/python`, `.venv/bin/ruff`, …) — it's already installed; no
   per-lane venv bootstrap.
 - **Verify before merge — by deliverable, not by lane number** (rungs: green → exercised → validated,
@@ -249,6 +269,33 @@ master if it doesn't exist yet), reads the brief, and picks up from `git log` + 
 Lane briefs are coordination docs, not project state — **`TODO.md` remains the single source of truth**
 for status, dependencies between lanes, and what's held back (e.g. R6/R7 and the author-split
 *implementation*, which serialize because they share hot files).
+
+### Human checkpoints (every lane — added 2026-09-29)
+
+PR review alone was not enough human-in-the-loop: by the time a PR exists, every decision in it has
+been made. So every lane **stops and waits** at planned checkpoints. A brief may add checkpoints but
+not drop them; the one exception is CP1 for a docs-only lane (nothing to demo — say so in the brief).
+
+| | When | The packet the agent posts | The user answers |
+|---|---|---|---|
+| **CP0 kickoff** | after reading the brief, **before any code** | its understanding in ≤3 lines · the plan (steps, files) · each real choice with a recommendation · open questions · what CP1 will demo | go / adjust |
+| **CP1 demo** | once the core works, **before polish, tests-to-80% and the PR** | copy-paste commands to try it hands-on (free: fake LLM, no key) · what to look at · known rough edges | looks right / change X |
+| **CP2 merge** | PR opened, CI green | the review packet: what changed in plain words · 3 things worth checking (`file:line`) · how to try it · confidence level (green / exercised / validated) · what's not done · decisions and follow-ups for the user. The PR body carries the same packet. | merge / send back |
+| **SPEND** | before **any** billable call (live-replay, paid run) | what call, estimated cost, why now. One approval covers one run — never implied, never reused. | yes / no |
+
+**Mechanics** — the same for every lane, so the user has one place to look:
+
+1. Post: `python scripts/checkpoint.py post --lane NN --cp CP0 --summary "<what you need>" < packet.md`
+   (or `--body`). It appends to the single, gitignored **`INBOX.md` in the main checkout** — the
+   same file from any worktree — and pops a macOS notification.
+2. **End the turn.** Do not continue past a checkpoint in the same turn, and do not treat silence
+   as approval.
+3. When the user answers (in the lane's tmux window): add one line to the brief's **Checkpoint
+   log** (date · CP · decision), run `python scripts/checkpoint.py resolve --lane NN --cp CP0
+   --note "<decision>"`, and continue.
+
+The user sees what is waiting with `python scripts/checkpoint.py list` (or by opening `INBOX.md`).
+The coordinating session watches the inbox too, and relays or summarizes packets on request.
 
 ## Resuming work in a new session
 

@@ -39,6 +39,17 @@ explicit, per-run instruction from the user. Keep it to **one** paid build (CLAU
 - Read-only everything else. Bugs found become **new lanes/briefs**, not fixes in this lane —
   except a trivial UI blocker that prevents the run itself (then: tiny fix on its own branch + PR).
 
+## Human checkpoints
+Post each with `scripts/checkpoint.py` and end the turn (CLAUDE.md → "Human checkpoints").
+- **CP0 kickoff:** the topic + profile you will use, Docker or local, what the findings doc will
+  answer, and the cost estimate for the whole lane.
+- **CP1 demo:** after the free preparation — the merged UI works on `master` (`forged ui
+  --fake-llm` + the browser e2e) and, if chosen, in the Docker image. The user clicks through once.
+- **SPEND #1:** the live-replays (`pytest -m live …`), a few cents. **SPEND #2:** the one paid build
+  through the UI — estimate from the 2026-08-13 run (≈170K tokens). Separate approvals.
+- **CP2 merge:** the findings doc as the review packet — answers to TODO NEXT §2's questions, what
+  the UI got wrong, cost/tokens, and which lanes it validated or not.
+
 ## Verification
 This lane *is* the "validated" rung for Lanes 6, 8, 9 and doc 22. Report plainly which of those it
 validated and which it did not.
@@ -46,3 +57,6 @@ validated and which it did not.
 ## Done means
 One paid run completed via the UI (or an honest record of why it could not), findings doc merged,
 and a proposed TODO update handed to the coordinator (who owns `TODO.md`).
+
+## Checkpoint log
+<!-- one line per answered checkpoint: YYYY-MM-DD · CPn · the user's decision -->
