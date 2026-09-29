@@ -26,6 +26,8 @@ htmlcov/
 
 # Local dev only
 .sessions/
+# parallel-lane git worktrees (see CLAUDE.md "Lane workflow")
+.worktrees/
 .python-version
 
 # OS / editor

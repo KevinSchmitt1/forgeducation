@@ -9,10 +9,9 @@
 ## 🎯 STATE RIGHT NOW (2026-09-29) — the UI exists; the paid run through it is next
 
 > **Handover (2026-09-29).** R6→R7 (#60), the author split (#62) and the UI backend seam (#59) are
-> merged. The **UI front door is built — PR #63, open, not merged** (Lane 8: `forged ui`, BYOK,
-> Gradio, Docker; driven in a real browser against a fake LLM; one Docker check left). Next, in order:
-> **finish + merge #63 → the paid artifact-lesson run through the UI (Lane 10, needs the user's key
-> and consent)** — in parallel, **Lane 11** (make a wheel install find `personas/`/`config/`).
+> merged. The **UI front door is merged — #63** (Lane 8: `forged ui`, BYOK, Gradio, Docker; driven
+> in a real browser against a fake LLM; the Docker image has not been built yet). Next:
+> **the paid artifact-lesson run through the UI (Lane 10, needs the user's key and consent)** — in parallel, **Lane 11** (make a wheel install find `personas/`/`config/`).
 > Dispatch table with ready-made agent prompts: [`docs/lanes/README.md`](docs/lanes/README.md) → "▶ Dispatch".
 > How to run and test the UI: `CLAUDE.md` → "The web UI".
 
@@ -31,8 +30,7 @@ in six places.
 > The next paid artifact-lesson run is the binding constraint on almost every open question here,
 > and it is worth more than the next feature.
 
-**What to do first, in order:** (1) read this file's ▶ NEXT block; (2) finish Lane 8 (PR #63: the
-Docker check) and let the user merge it — the UI is built; (3) **then** the paid artifact-lesson run,
+**What to do first, in order:** (1) read this file's ▶ NEXT block; (2) ~~finish Lane 8~~ — ✅ merged #63 (Docker build still unrun); (3) **now** the paid artifact-lesson run,
 **through the UI** (Lane 10) — it was gated on a usable UI (decision 2026-09-29) so it exercises the
 product a user actually touches. When you do run it, read
 the findings, not just the verdict. Details for both paths are below.
@@ -168,10 +166,10 @@ and the actual-state fixes.
 | 5 · UI grilling (decision) | `docs/ui-exploration` | design | ✅ MERGED #56 → doc 25 (BUILD, scoped) | UI |
 | 6 · Critique digest → remake (R6→R7) | `feat/critique-digest-remake` | code+persona | ✅ MERGED #60 (R6 offline-validated; R7 live-replay owed) | the quality-loop fix; unblocks author-split impl |
 | 7 · UI backend seam | `feat/ui-backend-seam` | code (additive) | ✅ MERGED #59 | UI build lane; also any 2nd entry point / automation |
-| 8 · UI frontend v1 (BYOK front door) | `feat/ui-frontend` | code (additive) | **PR #63 open** — built, browser-e2e'd; Docker check left | **gates the paid run** |
+| 8 · UI frontend v1 (BYOK front door) | `feat/ui-frontend` | code (additive) | ✅ MERGED #63 — browser-e2e'd; Docker build not yet run | **gates the paid run** |
 | 9 · Author-split implementation | `feat/author-split` | code+persona | ✅ MERGED #62 (live-replay owed → Lane 10) | usability (non-code lessons) |
-| **10 · Paid run via the UI** | `docs/paid-run-via-ui` | validation → doc 26 | ⬜ after #63; **user key + consent** | validates R1/R2/R5/R7, C1–C5, author split, UI |
-| **11 · Package data (wheel install)** | `fix/package-data` | code+packaging | ⬜ after #63; parallel with 10; touches `personas/` | Docker non-editable; "bundled defaults ship" true |
+| **10 · Paid run via the UI** | `docs/paid-run-via-ui` | validation → doc 26 | ⬜ ready; **user key + consent** | validates R1/R2/R5/R7, C1–C5, author split, UI |
+| **11 · Package data (wheel install)** | `fix/package-data` | code+packaging | ⬜ ready; parallel with 10; touches `personas/` | Docker non-editable; "bundled defaults ship" true |
 
 **Lane 6 merged (2026-09-29, #60):** R6→R7 landed — the digest accumulates and orders by
 consequence (offline-proven on the corpus, with a fail-capable check), and a remake is a recorded,
@@ -186,7 +184,7 @@ place first. Until then, judgement-heavy work (R6/R7, R2/R5) stays validated **o
 live-replay for cents**; the full paid run waits for the UI. This reorders NEXT: **UI first, paid run
 after.**
 
-**Update 2026-09-29 (evening):** Lane 9 merged (#62); Lane 8 built and in review (PR #63). The
+**Update 2026-09-29 (evening):** Lane 9 merged (#62); Lane 8 merged (#63). The
 paragraph below is the morning's plan, kept for the record — the live plan is the Dispatch table in
 `docs/lanes/README.md`.
 

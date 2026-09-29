@@ -207,8 +207,8 @@ Process degrades under momentum — that is exactly when these get skipped. Pref
 ## Lane workflow (how-to for agents)
 
 Work is split into independent slices ("lanes"). Each lane is a **branch in this repo** with a
-tracked brief in **`docs/lanes/`**. **Everything lives in this one repository** — no external
-worktrees, no sibling folders. `docs/lanes/README.md` is the live index; each `docs/lanes/NN-*.md`
+tracked brief in **`docs/lanes/`**. **Everything lives in this one repository** — no sibling
+folders (parallel-lane worktrees go under the repo's gitignored `.worktrees/`, see below). `docs/lanes/README.md` is the live index; each `docs/lanes/NN-*.md`
 owns one lane's scope, file-ownership (collision map), and definition of done.
 
 **To start a lane:**
@@ -231,6 +231,19 @@ master if it doesn't exist yet), reads the brief, and picks up from `git log` + 
 - **One lane at a time in the working tree.** This repo has a single working tree, so only one lane's
   branch is checked out at once — finish, commit, or stash before switching. (Two lanes *truly*
   simultaneously is the one case for `git worktree`, but the default here is branch-switching.)
+- **Parallel lanes → worktrees live inside the repo, under the gitignored `.worktrees/`** — never in
+  a sibling folder next to the repo. A worktree exists only while its lane runs in parallel with
+  another; once the lane's PR merges, remove it (the work is in git — nothing is lost):
+
+  ```bash
+  git worktree add -b <lane-branch> .worktrees/<lane-slug> master            # create
+  git worktree remove .worktrees/<lane-slug> && git branch -D <lane-branch>  # after merge
+  ```
+
+  Run commands from the worktree's own root so `forged` imports resolve to that checkout (the
+  editable install follows the cwd). A lane that adds dependencies gets its own `.venv` inside its
+  worktree rather than mutating the shared one. While lanes run in parallel, only the coordinating
+  session edits `TODO.md` and `docs/lanes/README.md`.
 - **Use the project `.venv`** (`.venv/bin/python`, `.venv/bin/ruff`, …) — it's already installed; no
   per-lane venv bootstrap.
 - **Verify before merge — by deliverable, not by lane number** (rungs: green → exercised → validated,
