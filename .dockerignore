@@ -1,0 +1,23 @@
+# Never ship secrets, run output, or local environments into the image.
+.env
+.env.*
+!.env.example
+runs/
+e2e-runs/
+test-e2e*/
+.venv/
+venv/
+.git/
+.github/
+.claude/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage*
+htmlcov/
+tests/
+docs/
+future_work/

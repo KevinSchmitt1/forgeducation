@@ -131,6 +131,35 @@ Output lands in `./runs/<timestamp>_<slug>/` for a single lesson (or `./runs/<ti
 for a course): open `lesson.ipynb`, read `SUMMARY.md`. Cap cost with `--max-modules N` (limit how many
 course modules actually run) and `--no-provision` (skip per-lesson virtualenv building).
 
+### The web front door (`forged ui`)
+
+Prefer a form to YAML? `forged ui` serves a local page that does the same plan → confirm → build
+flow in a browser: typed inputs for the learner profile and topic spec (dropdowns for the enums,
+add/remove rows for the lists, validation shown inline), the plan preview (modules, per-module
+lesson mode, cost estimate, fidelity), plan edits (merge / drop / reorder / single lesson / set a
+module's mode, or a plain-language change for a guided re-plan, with undo), and **Launch**. The
+build runs as a child process into `./runs/…`; the page shows the run directory and points you at
+Langfuse for watching it. Live streaming and notebook reading are deliberately not in the UI.
+
+```bash
+pip install -e '.[ui]'        # Gradio is an optional extra; the CLI stays lean
+forged ui                     # → http://127.0.0.1:7860  (also: python -m forged.ui)
+forged ui --fake-llm          # offline demo: canned plans, no API calls, launch is a dry run
+```
+
+**Bring your own key.** Paste your OpenAI key into the page. It is held in memory only, used for
+the planner calls, and handed to the build process through its environment — never written to
+disk, never logged, never part of a prompt or trace. (A key already in the environment or `.env`
+is used when the field is blank.)
+
+**Docker** (single-tenant; the container is also the sandbox the generated notebooks run in):
+
+```bash
+docker build -t forgeducation .
+docker run --rm -p 127.0.0.1:7860:7860 -v "$PWD/runs:/app/runs" forgeducation
+# → open http://localhost:7860 and paste your key
+```
+
 ### Other commands
 
 There is **one** build command — `forged learn`. It plans first and decides for itself whether your
@@ -140,6 +169,7 @@ utilities:
 | Command | What it's for |
 |---|---|
 | `forged learn --topic … --plan-only [--out DIR]` | Print the plan and its coverage verdict, then stop. Cheap (one planner call) and builds nothing — the way to see the shape of a course before spending on it. `--out` also saves `course_plan.json` + `COURSE.md`. |
+| `forged ui [--fake-llm]` | The local web front door above (needs `pip install -e '.[ui]'`). |
 | `forged pipelines` | List the bundled pipeline configs. |
 | `forged clean --keep N` | Prune old run directories (asks before deleting). |
 
@@ -316,8 +346,21 @@ templates in `templates/` (ready-to-use examples in `templates/examples/`).
 ```bash
 pip install -e ".[dev]"
 pytest -q                        # offline: no API key needed
-pytest --cov=forged              # with coverage (~92%)
+pytest --cov=forged              # with coverage (~90%)
 ```
+
+**Testing the web UI.** The UI's logic is unit-tested without a browser (`tests/test_service.py`,
+`tests/ui/`); on top of that one end-to-end test drives the real app in Chromium against the offline
+fake LLM — no key, no network, and Launch is a dry run:
+
+```bash
+pip install -e ".[dev,e2e]" && python -m playwright install chromium
+pytest tests/test_service.py tests/ui -q                          # includes the browser e2e
+FORGED_E2E_SCREENSHOTS=tests/ui/screenshots pytest tests/ui/test_browser_e2e.py   # keep screenshots
+```
+
+The browser test skips itself when Playwright or its browser is not installed (as in CI). To click
+through by hand, run `forged ui --fake-llm` and open http://127.0.0.1:7860.
 
 Covers config validation, notebook assembly, cell indexing, the executor catching a
 failing cell, run finalization, summary generation, the acceptance gate, the bounded

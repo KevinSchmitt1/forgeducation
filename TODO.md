@@ -6,7 +6,17 @@
 
 ---
 
-## 🎯 STATE RIGHT NOW (2026-08-30) — the review has been rebuilt; nothing has been re-run
+## 🎯 STATE RIGHT NOW (2026-09-29) — the UI exists; the paid run through it is next
+
+> **Handover (2026-09-29).** R6→R7 (#60), the author split (#62) and the UI backend seam (#59) are
+> merged. The **UI front door is built — PR #63, open, not merged** (Lane 8: `forged ui`, BYOK,
+> Gradio, Docker; driven in a real browser against a fake LLM; one Docker check left). Next, in order:
+> **finish + merge #63 → the paid artifact-lesson run through the UI (Lane 10, needs the user's key
+> and consent)** — in parallel, **Lane 11** (make a wheel install find `personas/`/`config/`).
+> Dispatch table with ready-made agent prompts: [`docs/lanes/README.md`](docs/lanes/README.md) → "▶ Dispatch".
+> How to run and test the UI: `CLAUDE.md` → "The web UI".
+
+*Below: the 2026-08-30 state, still accurate about what is and is not validated.*
 
 Everything doc 22 scoped as "smallest change, largest effect" is on `master`: **R1** (a fatal
 rubric dimension refuses the lesson instead of averaging into it), **R2** (critics stop
@@ -21,10 +31,10 @@ in six places.
 > The next paid artifact-lesson run is the binding constraint on almost every open question here,
 > and it is worth more than the next feature.
 
-**What to do first, in order:** (1) read this file's ▶ NEXT block; (2) if you are about to build,
-build the UI (Lane 7 backend seam → usable frontend) — R6→R7 already merged (#60); (3) **do not
-spend money on the artifact-lesson run until the UI is usable** — that paid run is gated on it
-(decision 2026-09-29), so it exercises the product a user actually touches. When you do run it, read
+**What to do first, in order:** (1) read this file's ▶ NEXT block; (2) finish Lane 8 (PR #63: the
+Docker check) and let the user merge it — the UI is built; (3) **then** the paid artifact-lesson run,
+**through the UI** (Lane 10) — it was gated on a usable UI (decision 2026-09-29) so it exercises the
+product a user actually touches. When you do run it, read
 the findings, not just the verdict. Details for both paths are below.
 
 The 2026-08-13 analysis that produced all of this work is kept below, unchanged, because every
@@ -158,8 +168,10 @@ and the actual-state fixes.
 | 5 · UI grilling (decision) | `docs/ui-exploration` | design | ✅ MERGED #56 → doc 25 (BUILD, scoped) | UI |
 | 6 · Critique digest → remake (R6→R7) | `feat/critique-digest-remake` | code+persona | ✅ MERGED #60 (R6 offline-validated; R7 live-replay owed) | the quality-loop fix; unblocks author-split impl |
 | 7 · UI backend seam | `feat/ui-backend-seam` | code (additive) | ✅ MERGED #59 | UI build lane; also any 2nd entry point / automation |
-| **8 · UI frontend v1 (BYOK front door)** | `feat/ui-frontend` | code (additive) | **▶ ACTIVE** — critical path | **gates the paid run** |
-| **9 · Author-split implementation** | `feat/author-split` | code+persona | **▶ ACTIVE** (parallel-safe with 8) | usability (non-code lessons); live-replay owed |
+| 8 · UI frontend v1 (BYOK front door) | `feat/ui-frontend` | code (additive) | **PR #63 open** — built, browser-e2e'd; Docker check left | **gates the paid run** |
+| 9 · Author-split implementation | `feat/author-split` | code+persona | ✅ MERGED #62 (live-replay owed → Lane 10) | usability (non-code lessons) |
+| **10 · Paid run via the UI** | `docs/paid-run-via-ui` | validation → doc 26 | ⬜ after #63; **user key + consent** | validates R1/R2/R5/R7, C1–C5, author split, UI |
+| **11 · Package data (wheel install)** | `fix/package-data` | code+packaging | ⬜ after #63; parallel with 10; touches `personas/` | Docker non-editable; "bundled defaults ship" true |
 
 **Lane 6 merged (2026-09-29, #60):** R6→R7 landed — the digest accumulates and orders by
 consequence (offline-proven on the corpus, with a fail-capable check), and a remake is a recorded,
@@ -174,7 +186,11 @@ place first. Until then, judgement-heavy work (R6/R7, R2/R5) stays validated **o
 live-replay for cents**; the full paid run waits for the UI. This reorders NEXT: **UI first, paid run
 after.**
 
-**Now active (2026-09-29):** Lane 7 merged (#59). **Lane 8** builds the UI frontend on its seam
+**Update 2026-09-29 (evening):** Lane 9 merged (#62); Lane 8 built and in review (PR #63). The
+paragraph below is the morning's plan, kept for the record — the live plan is the Dispatch table in
+`docs/lanes/README.md`.
+
+**Now active (2026-09-29, morning):** Lane 7 merged (#59). **Lane 8** builds the UI frontend on its seam
 (doc 25 steps 2–4: service layer, Gradio/Streamlit app, Dockerfile, Playwright-verified) — the
 critical path to the paid run. **Lane 9** implements the author-identity split (doc 23, option B:
 two persona files, one node), now unblocked by #60; it runs in parallel because the two lanes'
@@ -208,7 +224,8 @@ self-referential-validator finding lands at the top, and the counterfactual (las
 digest) buries it — so the check can actually fail (R1's lesson). See doc 22's "Implementation note
 — R6 and R7". **Still owed:** R7's remake *behaviour* via the live-replay harness — folded into §2.
 
-**2. UI first, THEN the paid artifact-lesson run.** ⛔ **The paid run is gated on a usable UI**
+**2. UI first, THEN the paid artifact-lesson run.** *(2026-09-29: the UI is built — PR #63; the run
+is now **Lane 10**, `docs/lanes/10-paid-run-via-ui.md`, and folds in Lane 9's owed live-replay.)* ⛔ **The paid run is gated on a usable UI**
 (decision 2026-09-29): it is the one binding validation gate, so it must exercise the product a user
 actually touches — Lane 7's backend seam **and** a usable UI frontend on top of it — not the CLI in
 isolation. Until the UI is usable, keep judgement-heavy changes validated **offline + by live-replay

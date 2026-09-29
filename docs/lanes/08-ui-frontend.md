@@ -1,7 +1,9 @@
 # Lane 8 — UI frontend v1: local BYOK front door (CODE, additive)
 
 **Branch:** `feat/ui-frontend` · **Type:** code, additive · **Depends on:** Lane 7 (✅ #59)
-**Status:** not started.
+**Status:** built — **PR #63 open, not merged** (2026-09-29). Green (935 passed, 90% cov) +
+*exercised* + driven in a real browser against the fake LLM (`tests/ui/screenshots/`); *not
+validated* (no paid run — that is Lane 10). **Remaining for the next agent (see "Handover" below).**
 **Process:** see "Lane workflow" in root `CLAUDE.md`. Read `docs/architecture/25-ui-exploration.md`
 in full (scope, stack recommendation, first-implementer plan steps 2–4, open questions) and
 `docs/architecture/19-*.md` (build from a saved plan) first.
@@ -69,3 +71,24 @@ top of it — and it is now on the critical path:** the paid artifact-lesson run
 ## Done means
 A user can `docker run` (or `forged ui`), paste their key, author inputs without YAML, see and edit
 the plan, and launch a build — proven in a real browser against a stubbed LLM; PR opened.
+
+## Handover (2026-09-29) — what is left before #63 merges
+
+Resume with: *"continue lane 8 per `docs/lanes/08-ui-frontend.md`"* on branch `feat/ui-frontend`
+(PR #63; master already merged in at `d64b1ee`).
+
+1. **Docker, once** (the daemon was down when the lane was built; it is now up):
+   `docker build -t forgeducation .` then
+   `docker run --rm -p 127.0.0.1:7860:7860 -v "$PWD/runs:/app/runs" forgeducation forged ui --host 0.0.0.0 --fake-llm`
+   and drive it: either point the Playwright e2e at the container, or at minimum load the page and
+   click Plan → Confirm → Launch (dry run). Check the kernel is registered in the image
+   (`docker run --rm forgeducation jupyter kernelspec list`) and that `runs/` is writable by uid 1000.
+   Fix anything found in `Dockerfile`/`.dockerignore` only. Record the result in the PR body.
+2. **Confirm remote CI is green** on #63 (`gh pr checks 63`); CI installs `.[dev]`, which pulls in
+   gradio, so the UI tests run there (the browser e2e skips — no Playwright in CI).
+3. **Do not merge on green alone** (CLAUDE.md norm 3): the user merges after reviewing; the paid run
+   (Lane 10) is the validation.
+
+Known small follow-ups (backlog, not blocking): "Check status" reports a pid the service did not
+launch (e.g. after a UI restart) as running; Gradio is pinned `<6` (`css=`/`show_api=` are
+deprecated there); the wheel/package-data gap is Lane 11.
